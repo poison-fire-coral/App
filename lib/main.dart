@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-// 1. 카카오 SDK 임포트 추가
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
+import 'package:firebase_core/firebase_core.dart'; // 1. Firebase Core 임포트 추가
 
 import 'models/user_model.dart';
 import 'screens/login_screen.dart';
@@ -10,10 +10,16 @@ import 'screens/onboarding_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 2. 카카오 SDK 초기화 추가
-  // Kakao Developers 콘솔에서 발급받은 '네이티브 앱 키'를 입력해 주세요.
+  // Firebase 초기화 예외 처리
+  try {
+    await Firebase.initializeApp();
+    debugPrint("✅ Firebase 초기화 성공!");
+  } catch (e) {
+    debugPrint("❌ Firebase 초기화 실패 에러: $e");
+  }
+
+  // 카카오 SDK 초기화
   kakao.KakaoSdk.init(nativeAppKey: 'bddd99905a1b4d3731ed3b0f370aa8da');
-  //debugPrint("🔑 내 앱의 카카오 키 해시: ${await kakao.KakaoSdk.origin}");
 
   final prefs = await SharedPreferences.getInstance();
   final bool isLoggedIn = prefs.getBool('is_logged_in') ?? false;
