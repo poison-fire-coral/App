@@ -90,14 +90,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     textColor: darkBorder,
                     onTap: () => _handleSocialLogin(AuthService.signInWithGoogle),
                   ),
-                  const SizedBox(height: 10),
-                  _buildSocialButton(
-                    label: 'Apple로 시작하기',
-                    icon: '🍎',
-                    bgColor: darkBorder,
-                    textColor: Colors.white,
-                    onTap: () => _handleSocialLogin(AuthService.signInWithApple),
-                  ),
                   const SizedBox(height: 20),
 
                   // 둘러보기 (게스트 모드)

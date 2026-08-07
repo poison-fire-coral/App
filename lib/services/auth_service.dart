@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+
 
 class AuthService {
   // ---------------------------------------------------------------------------
@@ -50,25 +50,5 @@ class AuthService {
       debugPrint('Google 로그인 실패: $e');
       return false;
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // 3. Apple 로그인
-  // ---------------------------------------------------------------------------
-  static Future<bool> signInWithApple() async {
-    try {
-      final credential = await SignInWithApple.getAppleIDCredential(
-        scopes: [
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName,
-        ],
-      );
-
-      debugPrint('Apple 로그인 성공 ID: ${credential.userIdentifier}');
-      return true;
-    } catch (e) {
-      debugPrint('Apple 로그인 실패: $e');
-      return false;
-    }
-  }
+}
 }
