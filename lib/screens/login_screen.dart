@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import 'signup_screen.dart';
 
+// -----------------------------------------------------------------------------
+// 1b. 로그인 화면 (계속하기 3종 + 회원가입 진입)
+// -----------------------------------------------------------------------------
 class LoginScreen extends StatefulWidget {
   final VoidCallback onLoginSuccess;
 
@@ -19,10 +23,9 @@ class _LoginScreenState extends State<LoginScreen> {
   static const Color primaryRed = Color(0xFF9E2B1E);
   static const Color darkBorder = Color(0xFF2A1512);
   static const Color bgCream = Color(0xFFFFFDFB);
-  static const Color subTextColor = Color(0x8C2A1512);
-  static const Color kakaoYellow = Color(0xFFFEE500);
+  static const Color noteBorder = Color(0xFFA2908A);
+  static const Color noteText = Color(0xFF6D5A55);
 
-  // 로그인 핸들러
   Future<void> _handleSocialLogin(Future<bool> Function() loginMethod) async {
     setState(() => _isLoading = true);
 
@@ -41,6 +44,21 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _handleEmailLogin() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('이메일 로그인은 준비 중입니다.')),
+    );
+  }
+
+  void _goToSignup() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SignupScreen(onSignupSuccess: widget.onLoginSuccess),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -51,54 +69,40 @@ class _LoginScreenState extends State<LoginScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Spacer(),
-                  // 로고 영역
-                  Container(
-                    width: 90,
-                    height: 90,
-                    decoration: BoxDecoration(
-                      color: primaryRed,
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: darkBorder, width: 1.5),
-                    ),
-                    child: const Center(child: Text('🚩', style: TextStyle(fontSize: 44))),
-                  ),
-                  const SizedBox(height: 20),
+                  const Spacer(flex: 3),
                   const Text(
-                    '로컬 퀘스트지상주의',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: darkBorder),
+                    '모험을 시작할까요?',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: darkBorder),
                   ),
-                  const SizedBox(height: 8),
-                  const Text('일상 속 골목길이 특별한 모험이 되는 순간', style: TextStyle(fontSize: 12, color: subTextColor)),
-                  const Spacer(),
+                  const Spacer(flex: 3),
 
-                  // 소셜 로그인 버튼들
-                  _buildSocialButton(
-                    label: '카카오로 시작하기',
-                    icon: '💬',
-                    bgColor: kakaoYellow,
-                    textColor: darkBorder,
+                  // 계속하기 3종
+                  _buildOutlineButton(
+                    label: 'Google로 계속하기',
+                    onTap: () => _handleSocialLogin(AuthService.signInWithGoogle),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildOutlineButton(
+                    label: '카카오로 계속하기',
                     onTap: () => _handleSocialLogin(AuthService.signInWithKakao),
                   ),
                   const SizedBox(height: 10),
-                  _buildSocialButton(
-                    label: 'Google로 시작하기',
-                    icon: '🌐',
-                    bgColor: Colors.white,
-                    textColor: darkBorder,
-                    onTap: () => _handleSocialLogin(AuthService.signInWithGoogle),
+                  _buildOutlineButton(
+                    label: '이메일로 계속하기',
+                    onTap: _handleEmailLogin,
                   ),
                   const SizedBox(height: 20),
 
-                  // 둘러보기 (게스트 모드)
-                  GestureDetector(
-                    onTap: widget.onLoginSuccess,
-                    child: const Text(
-                      '로그인 없이 둘러보기',
-                      style: TextStyle(fontSize: 12, color: subTextColor, decoration: TextDecoration.underline),
-                    ),
+                  // 회원가입 진입 (1c)
+                  _buildPrimaryButton(
+                    label: '회원가입',
+                    onTap: _goToSignup,
+                  ),
+                  const SizedBox(height: 14),
+
+                  _buildDashedNote(
+                    '미가입 계정으로 시도 → "가입된 계정이 없습니다" 토스트 후 이 화면 유지',
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -119,31 +123,55 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildSocialButton({
-    required String label,
-    required String icon,
-    required Color bgColor,
-    required Color textColor,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildOutlineButton({required String label, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 13),
         decoration: BoxDecoration(
-          color: bgColor,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: darkBorder, width: 1.5),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(icon, style: const TextStyle(fontSize: 15)),
-            const SizedBox(width: 8),
-            Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textColor)),
-          ],
+        child: Center(
+          child: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: darkBorder)),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPrimaryButton({required String label, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: primaryRed,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: darkBorder, width: 1.5),
+        ),
+        child: Center(
+          child: Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDashedNote(String text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        border: Border.all(color: noteBorder, width: 1.5),
+        borderRadius: BorderRadius.circular(7),
+        color: bgCream,
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 11, color: noteText, height: 1.3),
       ),
     );
   }
