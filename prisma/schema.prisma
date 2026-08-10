@@ -1,0 +1,145 @@
+datasource db {
+  provider = "postgresql"
+
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            Int           @id @default(autoincrement())
+  provider      String
+  providerUid   String        @map("provider_uid")
+  email         String?
+  nickname      String        @unique
+  avatarId      String?       @map("avatar_id")
+  homeRegion    String?       @map("home_region")
+  activityLevel String?       @map("activity_level") // 추가: 활동강도
+  refreshToken  String?       @map("refresh_token")  // 추가: JWT 리프레시 토큰
+  termsAgreed   Boolean       @default(false) @map("terms_agreed")   // 추가: 약관동의 여부
+  termsAgreedAt DateTime?     @map("terms_agreed_at") // 추가: 약관동의 일시
+  termsVersion  String?       @map("terms_version")   // 추가: 약관 버전
+  level         Int           @default(1)
+  expTotal      Int           @default(0) @map("exp_total")
+  expCurrent    Int           @default(0) @map("exp_current")
+  streakDays    Int           @default(0) @map("streak_days")
+  lastActiveAt  DateTime?     @map("last_active_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  keywords      UserKeyword[]
+  quests        UserQuest[]
+  completions   QuestCompletion[]
+  badges        UserBadge[]
+
+  @@map("users")
+}
+
+model UserKeyword {
+  userId    Int    @map("user_id")
+  keywordId String @map("keyword_id")
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, keywordId])
+  @@map("user_keywords")
+}
+
+model Place {
+  id              Int      @id @default(autoincrement())
+  name            String
+  regionCode      String   @map("region_code")
+  address         String?
+  lat             Float    // WGS84 위도
+  lng             Float    // WGS84 경도
+  photoUrl        String?  @map("photo_url")
+  congestionScore Int      @default(1) @map("congestion_score")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  quests          Quest[]
+
+  @@index([lat, lng])
+  @@map("places")
+}
+
+model Quest {
+  id          Int               @id @default(autoincrement())
+  placeId     Int               @map("place_id")
+  place       Place             @relation(fields: [placeId], references: [id])
+  title       String
+  story       String?
+  difficulty  Int               @default(1)
+  halfStep    Boolean           @default(false) @map("half_step")
+  baseExp     Int               @map("base_exp")
+  verifyType  String            @map("verify_type")
+  radiusM     Int               @default(50) @map("radius_m")
+  keywords    String[]
+  active      Boolean           @default(true)
+  userQuests  UserQuest[]
+  completions QuestCompletion[]
+
+  @@map("quests")
+}
+
+model UserQuest {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
+  questId     Int       @map("quest_id")
+  status      String    @default("accepted") // accepted, done, abandoned
+  startedAt   DateTime  @default(now()) @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quest       Quest     @relation(fields: [questId], references: [id])
+
+  @@map("user_quests")
+}
+
+model QuestCompletion {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @map("user_id")
+  questId         Int      @map("quest_id")
+  expAwarded      Int      @map("exp_awarded")
+  multipliersJson Json?    @map("multipliers_json")
+  photoUrl        String?  @map("photo_url")
+  lat             Float
+  lng             Float
+  accuracyM       Float    @map("accuracy_m")
+  requestId       String   @unique @map("request_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quest           Quest    @relation(fields: [questId], references: [id])
+
+  @@map("quest_completions")
+}
+
+model Badge {
+  id          Int         @id @default(autoincrement())
+  name        String
+  description String
+  artUrl      String      @map("art_url")
+  ruleJson    Json        @map("rule_json")
+  threshold   Int
+  regionCode  String?     @map("region_code")
+  hidden      Boolean     @default(false)
+  userBadges  UserBadge[]
+
+  @@map("badges")
+}
+
+model UserBadge {
+  userId        Int       @map("user_id")
+  badgeId       Int       @map("badge_id")
+  progress      Int       @default(0)
+  achievedAt    DateTime? @map("achieved_at")
+  isFeatured    Boolean   @default(false) @map("is_featured")
+  featuredOrder Int?      @map("featured_order")
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge         Badge     @relation(fields: [badgeId], references: [id])
+
+  @@id([userId, badgeId])
+  @@map("user_badges")
+}
+
+model LevelTable {
+  level       Int @id
+  requiredExp Int @map("required_exp")
+
+  @@map("level_table")
+}
