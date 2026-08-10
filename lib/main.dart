@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart'; // 1. Firebase Core 임포트
 import 'models/user_model.dart';
 import 'screens/login_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,12 +59,20 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   late bool _isLoggedIn;
   late UserModel? _currentUser;
   bool _isEditingSurvey = false;
+  bool _showSplash = true;
 
   @override
   void initState() {
     super.initState();
     _isLoggedIn = widget.initialIsLoggedIn;
     _currentUser = widget.initialUser;
+
+    // 1a 스플래시 화면을 앱 실행 시 항상 노출 (추후 버전 체크·토큰 유효성 검사로 대체 예정)
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) {
+        setState(() => _showSplash = false);
+      }
+    });
   }
 
   // 로그인 성공 시
@@ -111,6 +120,11 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   }
 
   Widget _buildCurrentScreen() {
+    // 0. 스플래시 화면 (앱 실행 시 항상 우선 표시)
+    if (_showSplash) {
+      return const SplashScreen();
+    }
+
     // 1. 로그인 전 -> 로그인 화면
     if (!_isLoggedIn) {
       return LoginScreen(

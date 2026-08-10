@@ -26,7 +26,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   int _selectedAvatarIndex = 0;
   late TextEditingController _nicknameController;
   late TextEditingController _regionController;
-  Set<String> _selectedKeywords = {'#골목산책', '#전통시장', '#바다·해안'};
+  Set<String> _selectedKeywords = {'#로컬맛집', '#전통시장', '#카페투어', '#골목산책', '#사진스팟'};
   String _selectedIntensity = '보통';
 
   // 테마 색상 정의 (디자인 도큐먼트 스펙 기준)
@@ -35,11 +35,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   static const Color bgCream = Color(0xFFFFFDFB);
   static const Color subTextColor = Color(0x8C2A1512);
 
-  final List<String> _keywordsList = [
-    '#골목산책', '#로컬맛집', '#전통시장', '#카페투어',
-    '#역사유적', '#바다·해안', '#산·트레킹', '#야경',
-    '#사진스팟', '#공방·체험', '#축제', '#미술관', '#폐공간', '#주민이야기'
-  ];
+  // 카테고리별 키워드 (퀘스트 태그 · 지도 필터 칩 · 배지 분류축으로 재사용됨)
+  final Map<String, List<String>> _keywordCategories = const {
+    '먹기': ['#로컬맛집', '#전통시장', '#카페투어', '#노포·백년가게', '#야시장', '#술한잔'],
+    '걷기': ['#골목산책', '#바다·해안', '#산·트레킹', '#강·호수', '#들판·논밭', '#숲길·섬'],
+    '배우기': ['#역사유적', '#한옥·고택', '#박물관', '#미술관', '#근대건축', '#폐공간', '#종교건축'],
+    '즐기기': ['#사진스팟', '#야경·일출일몰', '#공방·체험', '#축제·행사', '#벽화·거리예술', '#독립서점', '#소품샵'],
+    '사람': ['#주민이야기', '#로컬브랜드', '#드라마촬영지', '#전설·설화'],
+  };
 
   @override
   void initState() {
@@ -203,17 +206,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       border: Border.all(color: darkBorder, width: 1.5),
                       color: Colors.white,
                     ),
-                    child: Center(
+                    child: const Center(
                       child: Text(
-                        '아바타\n${_selectedAvatarIndex + 1}',
+                        '아바타\n선택',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 10, color: subTextColor, fontWeight: FontWeight.bold),
+                        style: TextStyle(fontSize: 10, color: subTextColor, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                const Text('탭하여 아바타 변경 (기본 6종)', style: TextStyle(fontSize: 10, color: subTextColor)),
               ],
             ),
           ),
@@ -273,72 +274,89 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   // ---------------------------------------------------------------------------
   Widget _buildKeywordStep() {
     return Padding(
-      padding: const EdgeInsets.all(20.0),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('관심 키워드를 골라주세요', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: darkBorder)),
           const SizedBox(height: 4),
-          const Text('복수 선택 · 3개 이상 (추후 퀘스트 추천에 사용)', style: TextStyle(fontSize: 11, color: subTextColor)),
-          const SizedBox(height: 16),
-
-          // 키워드 칩 그리드
-          Wrap(
-            spacing: 6,
-            runSpacing: 8,
-            children: _keywordsList.map((keyword) {
-              final isSelected = _selectedKeywords.contains(keyword);
-              return _buildChip(
-                keyword,
-                isSelected: isSelected,
-                onTap: () {
-                  setState(() {
-                    if (isSelected) {
-                      _selectedKeywords.remove(keyword);
-                    } else {
-                      _selectedKeywords.add(keyword);
-                    }
-                  });
-                },
-              );
-            }).toList(),
+          Text(
+            '복수 선택 · 3개 이상 · ${_selectedKeywords.length}개 선택됨',
+            style: const TextStyle(fontSize: 11, color: subTextColor),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
 
-          // 활동 강도 설정 박스
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              border: Border.all(color: darkBorder, width: 1.5),
-              borderRadius: BorderRadius.circular(7),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('활동 강도', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: darkBorder)),
-                const SizedBox(height: 8),
-                Row(
-                  children: ['가볍게', '보통', '많이 걷기'].map((intensity) {
-                    final isSelected = _selectedIntensity == intensity;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: _buildChip(
-                        intensity,
-                        isSelected: isSelected,
-                        onTap: () {
-                          setState(() => _selectedIntensity = intensity);
-                        },
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ],
+          // 카테고리별 키워드 칩 (세로 스크롤)
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final category in _keywordCategories.entries) ...[
+                    Text(
+                      category.key,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: primaryRed),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 8,
+                      children: category.value.map((keyword) {
+                        final isSelected = _selectedKeywords.contains(keyword);
+                        return _buildChip(
+                          keyword,
+                          isSelected: isSelected,
+                          onTap: () {
+                            setState(() {
+                              if (isSelected) {
+                                _selectedKeywords.remove(keyword);
+                              } else {
+                                _selectedKeywords.add(keyword);
+                              }
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+
+                  // 활동 강도 설정 박스
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: darkBorder, width: 1.5),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('활동 강도', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: darkBorder)),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: ['가볍게', '보통', '많이 걷기'].map((intensity) {
+                            final isSelected = _selectedIntensity == intensity;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: _buildChip(
+                                intensity,
+                                isSelected: isSelected,
+                                onTap: () {
+                                  setState(() => _selectedIntensity = intensity);
+                                },
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
 
-          const Spacer(),
-          const Center(child: Text('3 / 3 위치 권한 설정 →', style: TextStyle(fontSize: 11, color: subTextColor))),
-          const SizedBox(height: 6),
+          const SizedBox(height: 12),
           _buildPrimaryButton('다음', onTap: _nextPage),
         ],
       ),
