@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
+import { verifyAccessToken } from "../utils/jwt";
 import { CustomError } from "../utils/CustomError";
 
 export interface AuthenticatedRequest extends Request {
@@ -21,13 +21,13 @@ export const authenticateToken = (
   }
 
   try {
-    const secret = process.env.JWT_SECRET || "secret";
-    const decoded = jwt.verify(token, secret) as { userId: number };
-    
-    // req.user.id 로 통일
+    // jwt.ts의 verifyAccessToken을 사용하여 검증 키 일치화
+    const decoded = verifyAccessToken(token);
+
     req.user = { id: decoded.userId };
     next();
   } catch (err) {
+    console.error("====== 실제 JWT 에러 내용 ======", err);
     return next(new CustomError(401, "UNAUTHORIZED", "유효하지 않은 토큰입니다."));
   }
 };

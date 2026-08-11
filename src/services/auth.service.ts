@@ -76,7 +76,23 @@ export class AuthService {
     };
   }
 
-  // 2. 회원가입 API (약관동의 및 온보딩 정보 동시 저장)
+  // 2. 닉네임 중복 확인 API (추가)
+  static async checkNickname(nickname: string) {
+    if (!nickname || nickname.trim().length === 0) {
+      throw new AppError("BAD_REQUEST", "검사할 닉네임을 입력해 주세요.");
+    }
+
+    const existingUser = await prisma.user.findUnique({
+      where: { nickname: nickname.trim() },
+    });
+
+    return {
+      nickname: nickname.trim(),
+      isAvailable: !existingUser,
+    };
+  }
+
+  // 3. 회원가입 API (약관동의 및 온보딩 정보 동시 저장)
   static async signup(dto: SignupDTO) {
     const {
       provider,
@@ -126,9 +142,12 @@ export class AuthService {
         level: 1,
         expTotal: 0,
         expCurrent: 0,
-        keywords: keywords && keywords.length > 0 ? {
-          create: keywords.map((keywordId) => ({ keywordId })),
-        } : undefined,
+        keywords:
+          keywords && keywords.length > 0
+            ? {
+                create: keywords.map((keywordId) => ({ keywordId })),
+              }
+            : undefined,
       },
       include: {
         keywords: true,
@@ -147,8 +166,12 @@ export class AuthService {
     };
   }
 
-  // 3. Refresh Token으로 Access Token 갱신
+  // 4. Refresh Token으로 Access Token 갱신
   static async refreshTokens(refreshToken: string) {
+    if (!refreshToken) {
+      throw new AppError("BAD_REQUEST", "리프레시 토큰이 필요합니다.");
+    }
+
     try {
       const decoded = verifyRefreshToken(refreshToken);
       const user = await prisma.user.findUnique({
