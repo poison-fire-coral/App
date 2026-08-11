@@ -13,7 +13,7 @@ export const errorHandler = (
   const errorCode = err?.errorCode || err?.code || "BAD_REQUEST";
   const message = err?.message || "요청 처리 중 오류가 발생했습니다.";
 
-  // statusCode나 errorCode가 존재하는 예외 객체 처리
+  // statusCode나 errorCode가 존재하는 예외 객체 처리.
   if (statusCode || err?.errorCode || err?.name === "CustomError") {
     return res.status(statusCode || 400).json({
       data: null,

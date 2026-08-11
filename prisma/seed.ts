@@ -3,12 +3,30 @@ import { prisma } from "../src/utils/prisma";
 async function main() {
   console.log("테스트 데이터 생성 시작...");
 
-  // 기존 데이터 초기화
+  // 기존 데이터 초기화 (외래 키 참조 순서 고려)
+  await prisma.questCompletion?.deleteMany().catch(() => {});
   await prisma.userQuest.deleteMany();
   await prisma.quest.deleteMany();
   await prisma.place.deleteMany();
+  await prisma.levelTable.deleteMany();
 
-  // 1. 장소 데이터 생성 (서울/수원 인근)
+  // 1. 레벨 테이블 데이터 생성
+  await prisma.levelTable.createMany({
+    data: [
+      { level: 1, requiredExp: 0 },
+      { level: 2, requiredExp: 100 },
+      { level: 3, requiredExp: 250 },
+      { level: 4, requiredExp: 450 },
+      { level: 5, requiredExp: 700 },
+      { level: 6, requiredExp: 1000 },
+      { level: 7, requiredExp: 1400 },
+      { level: 8, requiredExp: 1900 },
+      { level: 9, requiredExp: 2500 },
+      { level: 10, requiredExp: 3200 },
+    ],
+  });
+
+  // 2. 장소 데이터 생성 (서울/수원 인근)
   const place1 = await prisma.place.create({
     data: {
       name: "수원화성 방화수류정",
@@ -45,7 +63,7 @@ async function main() {
     },
   });
 
-  // 2. 퀘스트 데이터 생성
+  // 3. 퀘스트 데이터 생성 (verifyType 제거)
   await prisma.quest.createMany({
     data: [
       {
@@ -54,7 +72,6 @@ async function main() {
         story: "성곽길을 따라 오르며 야경을 감상하고 인증샷을 찍어보세요.",
         difficulty: 1,
         baseExp: 100,
-        verifyType: "GPS",
         radiusM: 50,
         keywords: ["산책", "야경", "역사"],
         active: true,
@@ -65,7 +82,6 @@ async function main() {
         story: "골목길 사이 감성 카페를 찾아 방문해보세요.",
         difficulty: 2,
         baseExp: 150,
-        verifyType: "GPS",
         radiusM: 30,
         keywords: ["카페", "데이트", "맛집"],
         active: true,
@@ -76,7 +92,6 @@ async function main() {
         story: "남산 순환로를 따라 타워 정상까지 올라가보세요.",
         difficulty: 3,
         baseExp: 300,
-        verifyType: "GPS",
         radiusM: 100,
         keywords: ["산책", "운동", "전망"],
         active: true,
