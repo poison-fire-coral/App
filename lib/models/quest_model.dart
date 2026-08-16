@@ -29,7 +29,9 @@ class QuestModel {
   final double longitude;
   final double validRadiusMeters;
   final String spotName;
+  final String regionLabel;
   final List<String> keywords;
+  final double crowdMultiplier; // 피로도(혼잡도) 배율 · 기획서 6b 기준 (한산 ×1.4 ~ 혼잡 ×0.7)
 
   QuestModel({
     required this.id,
@@ -42,6 +44,11 @@ class QuestModel {
     required this.longitude,
     this.validRadiusMeters = 50.0,
     required this.spotName,
+    this.regionLabel = '',
     required this.keywords,
+    this.crowdMultiplier = 1.0,
   });
+
+  /// 최종 보상 EXP = 반스타 보정 EXP × 피로도 배율 (기획서 6a·6b 기준)
+  int get rewardExp => (QuestDifficulty.getExpWithHalfStar(base: difficulty, hasHalfStar: hasHalfStar) * crowdMultiplier).floor();
 }
