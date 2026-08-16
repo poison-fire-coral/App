@@ -6,8 +6,12 @@ import 'package:firebase_core/firebase_core.dart'; // 1. Firebase Core 임포트
 import 'models/user_model.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/map_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
+
+// 하단 내비게이션 탭 (배지 탭은 아직 화면 미구현)
+enum _AppTab { home, map }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,10 +40,7 @@ void main() async {
     }
   }
 
-  runApp(LocalQuestApp(
-    initialIsLoggedIn: isLoggedIn,
-    initialUser: savedUser,
-  ));
+  runApp(LocalQuestApp(initialIsLoggedIn: isLoggedIn, initialUser: savedUser));
 }
 
 class LocalQuestApp extends StatefulWidget {
@@ -61,6 +62,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   late UserModel? _currentUser;
   bool _isEditingSurvey = false;
   bool _showSplash = true;
+  _AppTab _currentTab = _AppTab.home;
 
   @override
   void initState() {
@@ -103,6 +105,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       _isLoggedIn = false;
       _currentUser = null;
       _isEditingSurvey = false;
+      _currentTab = _AppTab.home;
     });
   }
 
@@ -128,9 +131,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
 
     // 1. 로그인 전 -> 로그인 화면
     if (!_isLoggedIn) {
-      return LoginScreen(
-        onLoginSuccess: _handleLoginSuccess,
-      );
+      return LoginScreen(onLoginSuccess: _handleLoginSuccess);
     }
 
     // 2. 로그인 완료 + 온보딩 미완료(또는 재설정 모드) -> 온보딩 화면
@@ -141,10 +142,19 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       );
     }
 
-    // 3. 로그인 및 온보딩 완료 -> 메인 홈 화면 (2b)
+    // 3. 로그인 및 온보딩 완료 -> 탭 전환 (홈 · 지도)
+    if (_currentTab == _AppTab.map) {
+      return MapScreen(
+        user: _currentUser!,
+        onOpenHome: () => setState(() => _currentTab = _AppTab.home),
+        onOpenSettings: (mapContext) => _showDevMenu(mapContext),
+      );
+    }
+
     return HomeScreen(
       user: _currentUser!,
       onOpenSettings: (homeContext) => _showDevMenu(homeContext),
+      onOpenMap: () => setState(() => _currentTab = _AppTab.map),
     );
   }
 
