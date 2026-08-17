@@ -1,7 +1,11 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
+
+import '../data/quest_repository.dart';
 import '../models/quest_model.dart';
 import '../models/user_model.dart';
+import '../services/geo.dart';
+import '../theme/app_colors.dart';
+import '../widgets/app_widgets.dart';
 
 // -----------------------------------------------------------------------------
 // 분기 C · 지도 화면
@@ -11,6 +15,16 @@ import '../models/user_model.dart';
 // -----------------------------------------------------------------------------
 class MapScreen extends StatefulWidget {
   final UserModel user;
+
+  /// 이미 수락해 진행 중인 퀘스트 id. 해당 마커의 시트는 "이어서 하기"로 바뀐다.
+  final Set<String> activeQuestIds;
+
+  /// 퀘스트 수락 (또는 진행 중이면 이어서 하기)
+  final ValueChanged<QuestModel> onAcceptQuest;
+
+  /// 외부에서 특정 퀘스트 시트를 열어 달라고 요청한 경우 (홈 추천 목록 → 지도)
+  final String? focusQuestId;
+
   final VoidCallback? onOpenHome;
   final VoidCallback? onOpenBadges;
   final void Function(BuildContext context)? onOpenSettings;
@@ -18,6 +32,9 @@ class MapScreen extends StatefulWidget {
   const MapScreen({
     super.key,
     required this.user,
+    required this.onAcceptQuest,
+    this.activeQuestIds = const {},
+    this.focusQuestId,
     this.onOpenHome,
     this.onOpenBadges,
     this.onOpenSettings,
@@ -32,120 +49,14 @@ enum _SheetState { closed, preview, detail }
 class _MarkerCluster {
   final Offset position;
   final List<QuestModel> quests;
+
   _MarkerCluster(this.position, this.quests);
+
   bool get isCluster => quests.length > 1;
 }
 
 class _MapScreenState extends State<MapScreen> {
-  static const Color primaryRed = Color(0xFF9E2B1E);
-  static const Color darkBorder = Color(0xFF2A1512);
-  static const Color bgCream = Color(0xFFFFFDFB);
-  static const Color subTextColor = Color(0x8C2A1512);
-  static const Color noteBorder = Color(0xFFA2908A);
-  static const Color noteText = Color(0xFF6D5A55);
-  static const Color progressBg = Color(0xFFE8DCD6);
-  static const Color navBg = Color(0xFFFAF5F2);
-  static const Color dividerColor = Color(0xFFE6DCD6);
-
-  // 임시 목업 퀘스트 데이터 (전주 한옥마을 일대 · 실좌표 기반 거리/투영 계산용)
-  static final List<QuestModel> _quests = [
-    QuestModel(
-      id: 'q1',
-      title: '남부시장 야시장 방문',
-      summary: '남부시장 야시장 서쪽 끝까지 걸어 들어가 가장 오래된 점포를 찾아보세요.',
-      description: '남부시장 야시장 서쪽 끝까지 걸어 들어가 가장 오래된 점포를 찾아보세요.',
-      difficulty: QuestDifficulty.star2,
-      hasHalfStar: true,
-      latitude: 35.8115,
-      longitude: 127.1470,
-      spotName: '남부시장',
-      regionLabel: '전주시 완산구',
-      keywords: const ['#전통시장', '#야시장'],
-      crowdMultiplier: 1.4,
-    ),
-    QuestModel(
-      id: 'q2',
-      title: '청년몰 골목 한바퀴',
-      summary: '남부시장 청년몰 골목을 한 바퀴 돌며 로컬 브랜드 소품샵 2곳을 방문해 보세요.',
-      description: '남부시장 청년몰 골목을 한 바퀴 돌며 로컬 브랜드 소품샵 2곳을 방문해 보세요.',
-      difficulty: QuestDifficulty.star1,
-      latitude: 35.8110,
-      longitude: 127.1465,
-      spotName: '남부시장 청년몰',
-      regionLabel: '전주시 완산구',
-      keywords: const ['#로컬브랜드', '#소품샵'],
-      crowdMultiplier: 1.0,
-    ),
-    QuestModel(
-      id: 'q3',
-      title: '경기전 돌담길 걷기',
-      summary: '경기전 돌담을 따라 걸으며 가장 마음에 드는 풍경을 사진으로 남겨보세요.',
-      description: '경기전 돌담을 따라 걸으며 가장 마음에 드는 풍경을 사진으로 남겨보세요.',
-      difficulty: QuestDifficulty.star1,
-      latitude: 35.8156,
-      longitude: 127.1523,
-      spotName: '경기전',
-      regionLabel: '전주시 완산구',
-      keywords: const ['#한옥·고택', '#역사유적'],
-      crowdMultiplier: 0.7,
-    ),
-    QuestModel(
-      id: 'q4',
-      title: '전동성당 사진 남기기',
-      summary: '전동성당 정면이 가장 잘 보이는 자리에서 인증 사진을 남겨보세요.',
-      description: '전동성당 정면이 가장 잘 보이는 자리에서 인증 사진을 남겨보세요.',
-      difficulty: QuestDifficulty.star2,
-      latitude: 35.8135,
-      longitude: 127.1538,
-      spotName: '전동성당',
-      regionLabel: '전주시 완산구',
-      keywords: const ['#종교건축', '#사진스팟'],
-      crowdMultiplier: 1.0,
-    ),
-    QuestModel(
-      id: 'q5',
-      title: '산지천 야경 담기',
-      summary: '해질 무렵 산지천을 따라 걸으며 야경 사진 한 장을 남겨보세요.',
-      description: '해질 무렵 산지천을 따라 걸으며 야경 사진 한 장을 남겨보세요.',
-      difficulty: QuestDifficulty.star2,
-      latitude: 35.8175,
-      longitude: 127.1575,
-      spotName: '산지천',
-      regionLabel: '전주시 완산구',
-      keywords: const ['#야경·일출일몰', '#사진스팟'],
-      crowdMultiplier: 1.2,
-    ),
-    QuestModel(
-      id: 'q6',
-      title: '오목대 전망 오르기',
-      summary: '오목대에 올라 한옥마을 전경이 한눈에 들어오는 자리를 찾아보세요.',
-      description: '오목대에 올라 한옥마을 전경이 한눈에 들어오는 자리를 찾아보세요.',
-      difficulty: QuestDifficulty.star3,
-      latitude: 35.8163,
-      longitude: 127.1607,
-      spotName: '오목대',
-      regionLabel: '전주시 완산구',
-      keywords: const ['#근대건축', '#야경·일출일몰'],
-      crowdMultiplier: 1.0,
-    ),
-    QuestModel(
-      id: 'q7',
-      title: '자만벽화마을 벽화 찾기',
-      summary: '자만벽화마을 골목에서 가장 오래된 벽화를 찾아 사진으로 남겨보세요.',
-      description: '자만벽화마을 골목에서 가장 오래된 벽화를 찾아 사진으로 남겨보세요.',
-      difficulty: QuestDifficulty.star3,
-      latitude: 35.8206,
-      longitude: 127.1653,
-      spotName: '자만벽화마을',
-      regionLabel: '전주시 덕진구',
-      keywords: const ['#벽화·거리예술', '#사진스팟'],
-      crowdMultiplier: 1.5,
-    ),
-  ];
-
-  // 임시 사용자 현재 위치 (한옥마을 초입 부근 고정 좌표)
-  static const double _userLat = 35.8150;
-  static const double _userLng = 127.1540;
+  List<QuestModel> get _quests => QuestRepository.all;
 
   late final double _minLat, _maxLat, _minLng, _maxLng;
 
@@ -159,12 +70,32 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
-    final lats = _quests.map((q) => q.latitude);
-    final lngs = _quests.map((q) => q.longitude);
-    _minLat = lats.reduce(min);
-    _maxLat = lats.reduce(max);
-    _minLng = lngs.reduce(min);
-    _maxLng = lngs.reduce(max);
+    final lats = _quests.map((q) => q.latitude).toList();
+    final lngs = _quests.map((q) => q.longitude).toList();
+    _minLat = lats.reduce((a, b) => a < b ? a : b);
+    _maxLat = lats.reduce((a, b) => a > b ? a : b);
+    _minLng = lngs.reduce((a, b) => a < b ? a : b);
+    _maxLng = lngs.reduce((a, b) => a > b ? a : b);
+
+    _applyFocusRequest();
+  }
+
+  @override
+  void didUpdateWidget(MapScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focusQuestId != oldWidget.focusQuestId) {
+      _applyFocusRequest();
+    }
+  }
+
+  /// 홈 추천 목록에서 넘어온 퀘스트가 있으면 해당 시트를 바로 펼친다 (와이어프레임 2a → 3b).
+  void _applyFocusRequest() {
+    final id = widget.focusQuestId;
+    if (id == null) return;
+    final quest = QuestRepository.findById(id);
+    if (quest == null) return;
+    _selectedQuest = quest;
+    _sheetState = _SheetState.preview;
   }
 
   @override
@@ -174,25 +105,8 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // 위치 · 투영 · 클러스터링 계산
+  // 투영 · 클러스터링 계산
   // ---------------------------------------------------------------------------
-  double _deg2rad(double deg) => deg * pi / 180;
-
-  double _distanceMeters(double lat1, double lng1, double lat2, double lng2) {
-    const r = 6371000.0;
-    final dLat = _deg2rad(lat2 - lat1);
-    final dLng = _deg2rad(lng2 - lng1);
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(_deg2rad(lat1)) * cos(_deg2rad(lat2)) * sin(dLng / 2) * sin(dLng / 2);
-    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    return r * c;
-  }
-
-  String _formatDistance(double meters) {
-    if (meters < 1000) return '${meters.round()}m';
-    return '${(meters / 1000).toStringAsFixed(1)}km';
-  }
-
   Offset _project(QuestModel q, Size canvas) {
     const pad = 0.16;
     final latSpan = (_maxLat - _minLat).abs() < 1e-6 ? 1e-6 : (_maxLat - _minLat);
@@ -205,10 +119,12 @@ class _MapScreenState extends State<MapScreen> {
   List<QuestModel> get _visibleQuests {
     final query = _searchQuery.trim();
     return _quests.where((q) {
-      final matchesKeyword = _selectedKeywordFilter == '전체' || q.keywords.contains(_selectedKeywordFilter);
+      final matchesKeyword =
+          _selectedKeywordFilter == '전체' || q.keywords.contains(_selectedKeywordFilter);
       final matchesQuery = query.isEmpty ||
           q.title.contains(query) ||
           q.spotName.contains(query) ||
+          q.regionLabel.contains(query) ||
           q.keywords.any((k) => k.contains(query));
       return matchesKeyword && matchesQuery;
     }).toList();
@@ -273,19 +189,16 @@ class _MapScreenState extends State<MapScreen> {
 
   void _unclusterMap() => setState(() => _clusterMode = false);
 
+  /// 3b·3c 시트의 수락 버튼 → 분기 D(4a 이동 화면)로 넘긴다.
   void _acceptQuest(QuestModel q) {
     _closeSheet();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('"${q.title}" 퀘스트를 수락했어요! (진행 화면은 준비 중입니다)')),
-    );
+    widget.onAcceptQuest(q);
   }
 
-  VoidCallback _fallback(String label) {
-    return () {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$label 화면은 준비 중입니다.')),
-      );
-    };
+  void _notReady(String label) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$label 화면은 준비 중입니다.')),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -294,11 +207,17 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bgCream,
+      backgroundColor: AppColors.bgCream,
       body: SafeArea(
         child: Column(
           children: [
-            _buildTopBar(context),
+            AppTopBar(
+              nickname: widget.user.nickname,
+              level: widget.user.level,
+              levelProgress: widget.user.levelProgress,
+              onTapProfile: () => _notReady('프로필'),
+              onTapSettings: () => widget.onOpenSettings?.call(context),
+            ),
             Expanded(
               child: Stack(
                 children: [
@@ -312,7 +231,7 @@ class _MapScreenState extends State<MapScreen> {
                           onTap: _selectedQuest != null ? _closeSheet : null,
                           child: Stack(
                             children: [
-                              CustomPaint(size: size, painter: _MapBackgroundPainter()),
+                              const Positioned.fill(child: MapBackdrop()),
                               Positioned(
                                 left: size.width * 0.5 - 9,
                                 top: size.height * 0.55 - 9,
@@ -332,123 +251,17 @@ class _MapScreenState extends State<MapScreen> {
                 ],
               ),
             ),
-            _buildBottomNav(context),
+            AppBottomNav(
+              current: AppTab.map,
+              onSelect: (tab) {
+                if (tab == AppTab.home) {
+                  (widget.onOpenHome ?? () => _notReady('홈'))();
+                } else if (tab == AppTab.badges) {
+                  (widget.onOpenBadges ?? () => _notReady('배지'))();
+                }
+              },
+            ),
           ],
-        ),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // 상단 바 · 하단 내비게이션 (홈 화면과 동일한 셸)
-  // ---------------------------------------------------------------------------
-  Widget _buildTopBar(BuildContext context) {
-    final user = widget.user;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: darkBorder, width: 1.5)),
-      ),
-      child: Row(
-        children: [
-          _buildProfileRing(user.levelProgress),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(user.nickname, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: darkBorder)),
-                Text(
-                  'Lv.${user.level} · ${(user.levelProgress * 100).round()}%',
-                  style: const TextStyle(fontSize: 12, color: subTextColor),
-                ),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: () => widget.onOpenSettings != null ? widget.onOpenSettings!(context) : _fallback('설정')(),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(
-                border: Border.all(color: noteBorder, width: 1.5),
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: const Icon(Icons.settings_outlined, size: 16, color: noteText),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProfileRing(double progress) {
-    return Container(
-      width: 38,
-      height: 38,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: SweepGradient(
-          startAngle: -pi / 2,
-          endAngle: 3 * pi / 2,
-          colors: [primaryRed, primaryRed, progressBg, progressBg],
-          stops: [0, progress, progress, 1],
-        ),
-      ),
-      child: Center(
-        child: Container(
-          width: 30,
-          height: 30,
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white,
-            border: Border.fromBorderSide(BorderSide(color: darkBorder, width: 1)),
-          ),
-          child: const Center(
-            child: Text('프로필', style: TextStyle(fontSize: 7, color: subTextColor)),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBottomNav(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: navBg,
-        border: Border(top: BorderSide(color: darkBorder, width: 1.5)),
-      ),
-      child: Row(
-        children: [
-          _buildNavItem('배지', isActive: false, onTap: widget.onOpenBadges ?? _fallback('배지'), showDivider: true),
-          _buildNavItem('홈', isActive: false, onTap: widget.onOpenHome ?? _fallback('홈'), showDivider: true),
-          _buildNavItem('지도', isActive: true, onTap: () {}, showDivider: false),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavItem(String label, {required bool isActive, required VoidCallback onTap, required bool showDivider}) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isActive ? primaryRed : Colors.transparent,
-            border: Border(
-              right: showDivider ? const BorderSide(color: Color(0xFFD8CCC6), width: 1) : BorderSide.none,
-            ),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                color: isActive ? Colors.white : darkBorder,
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -463,8 +276,8 @@ class _MapScreenState extends State<MapScreen> {
       height: 18,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: bgCream,
-        border: Border.all(color: primaryRed, width: 2),
+        color: AppColors.bgCream,
+        border: Border.all(color: AppColors.primaryRed, width: 2),
       ),
     );
   }
@@ -484,8 +297,8 @@ class _MapScreenState extends State<MapScreen> {
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: isBig ? primaryRed : bgCream,
-              border: Border.all(color: darkBorder, width: 1.5),
+              color: isBig ? AppColors.primaryRed : AppColors.bgCream,
+              border: Border.all(color: AppColors.darkBorder, width: 1.5),
             ),
             child: Center(
               child: Text(
@@ -493,7 +306,7 @@ class _MapScreenState extends State<MapScreen> {
                 style: TextStyle(
                   fontSize: isBig ? 14 : 13,
                   fontWeight: FontWeight.bold,
-                  color: isBig ? Colors.white : darkBorder,
+                  color: isBig ? Colors.white : AppColors.darkBorder,
                 ),
               ),
             ),
@@ -503,28 +316,14 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     final quest = cluster.quests.first;
-    final isSelected = _selectedQuest?.id == quest.id;
+    final isHighlighted =
+        _selectedQuest?.id == quest.id || widget.activeQuestIds.contains(quest.id);
     return Positioned(
       left: cluster.position.dx - 10,
       top: cluster.position.dy - 20,
       child: GestureDetector(
         onTap: () => _selectQuest(quest),
-        child: Transform.rotate(
-          angle: -pi / 4,
-          child: Container(
-            width: 20,
-            height: 20,
-            decoration: BoxDecoration(
-              color: isSelected ? primaryRed : bgCream,
-              border: Border.all(color: darkBorder, width: 1.5),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(10),
-                topRight: Radius.circular(10),
-                bottomLeft: Radius.circular(10),
-              ),
-            ),
-          ),
-        ),
+        child: QuestMarker(isActive: isHighlighted),
       ),
     );
   }
@@ -540,8 +339,8 @@ class _MapScreenState extends State<MapScreen> {
       child: Container(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 9),
         decoration: const BoxDecoration(
-          color: bgCream,
-          border: Border(bottom: BorderSide(color: darkBorder, width: 1.5)),
+          color: AppColors.bgCream,
+          border: Border(bottom: BorderSide(color: AppColors.darkBorder, width: 1.5)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -549,18 +348,18 @@ class _MapScreenState extends State<MapScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               decoration: BoxDecoration(
-                border: Border.all(color: darkBorder, width: 1.5),
+                border: Border.all(color: AppColors.darkBorder, width: 1.5),
                 borderRadius: BorderRadius.circular(7),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.search, size: 15, color: noteText),
+                  const Icon(Icons.search, size: 15, color: AppColors.noteText),
                   const SizedBox(width: 6),
                   Expanded(
                     child: TextField(
                       controller: _searchController,
                       onChanged: (v) => setState(() => _searchQuery = v),
-                      style: const TextStyle(fontSize: 13, color: darkBorder),
+                      style: const TextStyle(fontSize: 13, color: AppColors.darkBorder),
                       decoration: const InputDecoration(
                         hintText: '지역 · 퀘스트 검색',
                         isDense: true,
@@ -593,25 +392,12 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Widget _filterChip(String label) {
-    final isSelected = _selectedKeywordFilter == label;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedKeywordFilter = label),
-      child: Container(
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 11),
-        decoration: BoxDecoration(
-          color: isSelected ? primaryRed : bgCream,
-          border: Border.all(color: isSelected ? primaryRed : darkBorder, width: 1.2),
-          borderRadius: BorderRadius.circular(13),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12.5,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            color: isSelected ? Colors.white : darkBorder,
-          ),
-        ),
+    return Center(
+      child: TagChip(
+        label: label,
+        isSelected: _selectedKeywordFilter == label,
+        fontSize: 12.5,
+        onTap: () => setState(() => _selectedKeywordFilter = label),
       ),
     );
   }
@@ -621,15 +407,12 @@ class _MapScreenState extends State<MapScreen> {
       left: 24,
       right: 24,
       top: 84,
-      child: Container(
+      child: NoteBox(
+        alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: bgCream,
-          border: Border.all(color: noteBorder, width: 1.5, style: BorderStyle.solid),
-          borderRadius: BorderRadius.circular(7),
-        ),
-        child: const Center(
-          child: Text('조건에 맞는 퀘스트가 없어요', style: TextStyle(fontSize: 12, color: noteText)),
+        child: const Text(
+          '조건에 맞는 퀘스트가 없어요',
+          style: TextStyle(fontSize: 12, color: AppColors.noteText),
         ),
       ),
     );
@@ -644,11 +427,15 @@ class _MapScreenState extends State<MapScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
           decoration: BoxDecoration(
-            color: bgCream,
-            border: Border.all(color: darkBorder, width: 1.5),
+            color: AppColors.bgCream,
+            border: Border.all(color: AppColors.darkBorder, width: 1.5),
             borderRadius: BorderRadius.circular(7),
           ),
-          child: Icon(_clusterMode ? Icons.add : Icons.remove, size: 16, color: darkBorder),
+          child: Icon(
+            _clusterMode ? Icons.add : Icons.remove,
+            size: 16,
+            color: AppColors.darkBorder,
+          ),
         ),
       ),
     );
@@ -667,10 +454,10 @@ class _MapScreenState extends State<MapScreen> {
       bottom: 0,
       top: isDetail ? 80 : null,
       child: Container(
-        decoration: BoxDecoration(
-          color: bgCream,
-          border: Border.all(color: darkBorder, width: 1.5),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        decoration: const BoxDecoration(
+          color: AppColors.bgCream,
+          border: Border.fromBorderSide(BorderSide(color: AppColors.darkBorder, width: 1.5)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
         child: isDetail
@@ -680,61 +467,12 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _grabHandle({required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 38,
-        height: 4,
-        margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(color: const Color(0xFFD6C8C2), borderRadius: BorderRadius.circular(2)),
-      ),
-    );
-  }
-
-  Widget _starsChip(QuestModel q) {
-    final stars = '★' * q.difficulty.stars.toInt();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(border: Border.all(color: darkBorder, width: 1.2), borderRadius: BorderRadius.circular(11)),
-      child: Text(q.hasHalfStar ? '$stars½' : stars, style: const TextStyle(fontSize: 11, color: darkBorder)),
-    );
-  }
-
-  Widget _solidBox(String text) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(9),
-      decoration: BoxDecoration(border: Border.all(color: darkBorder, width: 1.5), borderRadius: BorderRadius.circular(7)),
-      child: Text(text, style: const TextStyle(fontSize: 13, color: darkBorder, height: 1.25)),
-    );
-  }
-
-  Widget _dashedBox(String text) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(9),
-      decoration: BoxDecoration(border: Border.all(color: noteBorder, width: 1.5), borderRadius: BorderRadius.circular(7)),
-      child: Text(text, style: const TextStyle(fontSize: 13, color: noteText, height: 1.25)),
-    );
-  }
-
-  Widget _primaryButton(String label, {required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 11),
-        decoration: BoxDecoration(
-          color: primaryRed,
-          border: Border.all(color: darkBorder, width: 1.5),
-          borderRadius: BorderRadius.circular(22),
-        ),
-        child: const Center(
-          child: Text('퀘스트 수락', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
-        ),
-      ),
+  /// 이미 수락한 퀘스트는 다시 수락하지 않고 4a 이동 화면으로 바로 들어간다.
+  Widget _acceptButton(QuestModel quest) {
+    final isActive = widget.activeQuestIds.contains(quest.id);
+    return PrimaryButton(
+      label: isActive ? '이어서 하기' : '퀘스트 수락',
+      onTap: () => _acceptQuest(quest),
     );
   }
 
@@ -743,24 +481,32 @@ class _MapScreenState extends State<MapScreen> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Center(child: _grabHandle(onTap: _expandSheet)),
+        Center(child: GrabHandle(onTap: _expandSheet)),
         Row(
           children: [
-            Expanded(child: Text(quest.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: darkBorder))),
-            _starsChip(quest),
+            Expanded(
+              child: Text(
+                quest.title,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
+              ),
+            ),
+            TagChip(label: quest.starLabel, fontSize: 11),
           ],
         ),
         const SizedBox(height: 8),
-        _solidBox('보상 : EXP ${quest.rewardExp}'),
+        SolidBox.text('보상 : EXP ${quest.displayExp}'),
         const SizedBox(height: 8),
-        _dashedBox(quest.summary),
+        NoteBox.text(quest.summary),
         const SizedBox(height: 10),
-        _primaryButton('퀘스트 수락', onTap: () => _acceptQuest(quest)),
+        _acceptButton(quest),
         const SizedBox(height: 6),
         GestureDetector(
           onTap: _expandSheet,
           child: const Center(
-            child: Text('▲ 위로 드래그하면 관광지 정보', style: TextStyle(fontSize: 12, color: subTextColor)),
+            child: Text(
+              '▲ 위로 드래그하면 관광지 정보',
+              style: TextStyle(fontSize: 12, color: AppColors.subText),
+            ),
           ),
         ),
       ],
@@ -768,33 +514,35 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Widget _buildDetailContent(QuestModel quest) {
-    final distance = _formatDistance(_distanceMeters(_userLat, _userLng, quest.latitude, quest.longitude));
-    final crowdLabel = quest.crowdMultiplier >= 1.3
-        ? '한산'
-        : quest.crowdMultiplier <= 0.8
-            ? '혼잡'
-            : '보통';
+    final distance = Geo.formatDistance(QuestRepository.distanceFromUser(quest));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Center(child: _grabHandle(onTap: _collapseSheet)),
+        Center(child: GrabHandle(onTap: _collapseSheet)),
         Row(
           children: [
-            Expanded(child: Text(quest.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: darkBorder))),
-            _starsChip(quest),
+            Expanded(
+              child: Text(
+                quest.title,
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
+              ),
+            ),
+            TagChip(label: quest.starLabel, fontSize: 11),
           ],
         ),
         const SizedBox(height: 8),
-        _solidBox('보상 : EXP ${quest.rewardExp}'),
+        SolidBox.text('보상 : EXP ${quest.displayExp}'),
         const SizedBox(height: 8),
-        _dashedBox(quest.description),
+        NoteBox.text(quest.description),
         const SizedBox(height: 8),
-        _solidBox('달성 기준\n목표 좌표 반경 ${quest.validRadiusMeters.toInt()}m 도달 · 사진 1장'),
+        SolidBox.text('달성 기준\n${quest.completionCriteria}'),
         const SizedBox(height: 10),
-        const Divider(color: dividerColor, height: 1),
+        const Divider(color: AppColors.divider, height: 1),
         const SizedBox(height: 10),
-        const Center(child: Text('― 관광지 정보 ―', style: TextStyle(fontSize: 11, color: subTextColor))),
+        const Center(
+          child: Text('― 관광지 정보 ―', style: TextStyle(fontSize: 11, color: AppColors.subText)),
+        ),
         const SizedBox(height: 8),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -803,65 +551,48 @@ class _MapScreenState extends State<MapScreen> {
               width: 78,
               height: 62,
               alignment: Alignment.center,
-              decoration: BoxDecoration(border: Border.all(color: noteBorder, width: 1.5), borderRadius: BorderRadius.circular(7)),
-              child: const Text('사진 1장', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: noteText)),
+              decoration: BoxDecoration(
+                border: Border.all(color: AppColors.noteBorder, width: 1.5),
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: const Text(
+                '사진 1장',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: AppColors.noteText),
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(quest.spotName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: darkBorder)),
+                  Text(
+                    quest.spotName,
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
+                  ),
                   const SizedBox(height: 5),
                   Wrap(
                     spacing: 5,
                     runSpacing: 4,
-                    children: [for (final k in quest.keywords) _filterTag(k)],
+                    children: [for (final k in quest.keywords) TagChip(label: k, fontSize: 11)],
                   ),
                   const SizedBox(height: 5),
-                  Text('${quest.regionLabel} · $distance', style: const TextStyle(fontSize: 12, color: subTextColor)),
+                  Text(
+                    '${quest.regionLabel} · $distance',
+                    style: const TextStyle(fontSize: 12, color: AppColors.subText),
+                  ),
                 ],
               ),
             ),
           ],
         ),
         const SizedBox(height: 8),
-        _dashedBox('피로도 : $crowdLabel EXP ×${quest.crowdMultiplier.toStringAsFixed(1)}'),
+        NoteBox.text(
+          '혼잡도 : ${quest.crowdLabel} · EXP ×${quest.crowdMultiplier.toStringAsFixed(1)}',
+        ),
         const SizedBox(height: 12),
-        _primaryButton('퀘스트 수락', onTap: () => _acceptQuest(quest)),
+        _acceptButton(quest),
       ],
     );
   }
-
-  Widget _filterTag(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(border: Border.all(color: darkBorder, width: 1.2), borderRadius: BorderRadius.circular(11)),
-      child: Text(label, style: const TextStyle(fontSize: 11, color: darkBorder)),
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// placeholder 지도 배경 (45도 반복 대각선 패턴, 실제 타일맵 대체용)
-// -----------------------------------------------------------------------------
-class _MapBackgroundPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final base = Paint()..color = const Color(0xFFF7F3F0);
-    canvas.drawRect(Offset.zero & size, base);
-
-    final stripe = Paint()
-      ..color = const Color(0xFFECE4DF)
-      ..strokeWidth = 9;
-    const gap = 18.0;
-    final diagonalCount = ((size.width + size.height) / gap).ceil() + 2;
-    for (int i = -diagonalCount; i < diagonalCount; i++) {
-      final offset = i * gap;
-      canvas.drawLine(Offset(offset, 0), Offset(offset + size.height, size.height), stripe);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _MapBackgroundPainter oldDelegate) => false;
 }
