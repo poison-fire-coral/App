@@ -1,3 +1,4 @@
+import axios from "axios";
 import { prisma } from "../utils/prisma";
 import { CustomError } from "../utils/CustomError";
 import { calculateHaversineDistance, checkSpeedAbuse } from "../utils/geo.util";
@@ -33,7 +34,171 @@ export interface NearbyQueryDto {
   keywords?: string[];
 }
 
+interface KakaoPlace {
+  id: string;
+  place_name: string;
+  category_name: string;
+  address_name: string;
+  x: string; // lng
+  y: string; // lat;
+}
+
 export class QuestService {
+  // -------------------------------------------------------------
+  // [카카오 연동 헬퍼] 카카오 API 검색 및 퀘스트 자동 생성을 위한 모듈
+  // -------------------------------------------------------------
+
+  /** 카카오 로컬 API 키워드 검색 */
+  private static async searchKakaoPlaces(
+    lat: number,
+    lng: number,
+    keyword: string,
+    radiusM: number
+  ): Promise<KakaoPlace[]> {
+    const kakaoApiKey = process.env.KAKAO_REST_API_KEY;
+    if (!kakaoApiKey) {
+      console.warn("⚠️ KAKAO_REST_API_KEY가 설정되지 않았습니다. 실시간 검색을 스킵합니다.");
+      return [];
+    }
+
+    try {
+      const response = await axios.get("https://dapi.kakao.com/v2/local/search/keyword.json", {
+        headers: { Authorization: `KakaoAK ${kakaoApiKey}` },
+        params: {
+          query: keyword,
+          x: lng.toString(),
+          y: lat.toString(),
+          radius: Math.min(radiusM, 20000), // 카카오 최대 반경 20km
+          sort: "distance",
+        },
+      });
+      return response.data?.documents || [];
+    } catch (error) {
+      console.error(`카카오 API 호출 실패 (${keyword}):`, error);
+      return [];
+    }
+  }
+
+  /** 카카오 카테고리/장소명 기반 퀘스트 메타데이터 자동 생성 규칙 */
+  private static generateQuestMetadata(place: KakaoPlace) {
+    const category = place.category_name;
+    const name = place.place_name;
+
+    if (category.includes("공원") || name.includes("공원") || name.includes("산책")) {
+      return {
+        title: `${name} 산책 퀘스트`,
+        story: `${name} 주변을 가볍게 거닐며 힐링하는 시간을 가져보세요!`,
+        difficulty: 1,
+        baseExp: 50,
+        keywords: ["산책", "공원", "힐링"],
+      };
+    } else if (category.includes("시장") || name.includes("시장")) {
+      return {
+        title: `${name} 활기찬 시장 탐방`,
+        story: `${name}의 풍성한 먹거리와 활기찬 정취를 느껴보세요.`,
+        difficulty: 2,
+        baseExp: 110,
+        keywords: ["시장", "탐방", "쇼핑"],
+      };
+    } else if (category.includes("카페") || category.includes("음료")) {
+      return {
+        title: `${name} 여유 스팟 방문`,
+        story: `${name}에서 향기로운 음료와 함께 휴식을 취해보세요.`,
+        difficulty: 1,
+        baseExp: 50,
+        keywords: ["카페", "휴식"],
+      };
+    } else if (category.includes("관광") || category.includes("문화") || name.includes("명소")) {
+      return {
+        title: `${name} 역사·문화 탐방`,
+        story: `${name}에 도달하여 장소의 특별한 매력을 발견해보세요!`,
+        difficulty: 3,
+        baseExp: 220,
+        keywords: ["명소", "탐험", "문화"],
+      };
+    }
+
+    return {
+      title: `${name} 스팟 도달`,
+      story: `${name} 목표 지점에 도달하여 인증을 완료해보세요.`,
+      difficulty: 1,
+      baseExp: 50,
+      keywords: ["방문", "탐험"],
+    };
+  }
+
+  /** 주변 카카오 장소를 실시간 수집 및 DB 동기화 */
+  private static async syncNearbyKakaoQuests(lat: number, lng: number, radiusM: number) {
+    const searchKeywords = ["공원", "시장", "명소", "카페"];
+    const kakaoPlaces: KakaoPlace[] = [];
+
+    // 1. 카카오 API에서 주요 키워드별 주변 장소 검색
+    for (const kw of searchKeywords) {
+      const places = await this.searchKakaoPlaces(lat, lng, kw, radiusM);
+      kakaoPlaces.push(...places);
+    }
+
+    // 2. 검색된 장소를 DB Place 및 Quest 테이블에 Upsert (중복 방지)
+    for (const kPlace of kakaoPlaces) {
+      const placeLat = parseFloat(kPlace.y);
+      const placeLng = parseFloat(kPlace.x);
+      const meta = this.generateQuestMetadata(kPlace);
+      const regionCode = kPlace.address_name ? kPlace.address_name.split(" ")[0] : "전국";
+
+      try {
+        // 기존 동일 이름/좌표 근처 장소가 있는지 확인
+        let place = await prisma.place.findFirst({
+          where: {
+            name: kPlace.place_name,
+            lat: { gte: placeLat - 0.0005, lte: placeLat + 0.0005 },
+            lng: { gte: placeLng - 0.0005, lte: placeLng + 0.0005 },
+          },
+        });
+
+        // 장소가 없으면 생성
+        if (!place) {
+          place = await prisma.place.create({
+            data: {
+              name: kPlace.place_name,
+              lat: placeLat,
+              lng: placeLng,
+              address: kPlace.address_name || "",
+              regionCode: regionCode,
+              congestionScore: 50,
+            },
+          });
+        }
+
+        // 해당 장소에 연결된 퀘스트가 없으면 생성
+        const existingQuest = await prisma.quest.findFirst({
+          where: { placeId: place.id },
+        });
+
+        if (!existingQuest) {
+          await prisma.quest.create({
+            data: {
+              title: meta.title,
+              story: meta.story,
+              difficulty: meta.difficulty,
+              baseExp: meta.baseExp,
+              keywords: meta.keywords,
+              placeId: place.id,
+              active: true,
+              radiusM: 50,
+              halfStep: false,
+            },
+          });
+        }
+      } catch (err) {
+        console.error(`퀘스트 동적 생성 실패 (${kPlace.place_name}):`, err);
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // [메인 서비스 메서드]
+  // -------------------------------------------------------------
+
   // 1. 지도 뷰포트 조회 & 클러스터링 & 검색
   static async getQuestsByViewport(dto: ViewportQueryDto) {
     const { swLat, swLng, neLat, neLng, zoom = 15, keywords, search } = dto;
@@ -105,10 +270,14 @@ export class QuestService {
     };
   }
 
-  // 2. 내 위치 기반 근처 퀘스트 조회 (거리순 정렬)
+  // 2. 내 위치 기반 근처 퀘스트 조회 (실시간 카카오 탐지 연동)
   static async getNearbyQuests(dto: NearbyQueryDto) {
     const { lat, lng, radiusM = 3000, keywords } = dto;
 
+    // 💡 [추가] 카카오 API를 호출하여 내 위치 주변 스팟을 실시간으로 퀘스트화 DB 등록
+    await this.syncNearbyKakaoQuests(lat, lng, radiusM);
+
+    // DB에서 실시간 생성된 항목을 포함하여 근처 퀘스트 조회
     const quests = await prisma.quest.findMany({
       where: {
         active: true,
@@ -129,7 +298,7 @@ export class QuestService {
     return nearbyQuests;
   }
 
-  // 3. 사용자 맞춤 추천 퀘스트 조회 (유저 온보딩 키워드 / 지역 기반)
+  // 3. 사용자 맞춤 추천 퀘스트 조회
   static async getRecommendedQuests(userId: number) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -239,7 +408,7 @@ export class QuestService {
     return { success: true, message: "퀘스트 수락을 취소했습니다." };
   }
 
-  // 8. 퀘스트 도달 인증 및 보상 지급 (3영역)
+  // 8. 퀘스트 도달 인증 및 보상 지급
   static async verifyQuest(dto: VerifyQuestDto) {
     const existingCompletion = await prisma.questCompletion.findUnique({
       where: { requestId: dto.requestId },

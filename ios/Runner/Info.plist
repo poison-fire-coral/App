@@ -80,5 +80,20 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+
+    <!-- 카카오 지도 웹뷰 로드용 보안 설정 및 임베디드 뷰 지원 -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+        <key>NSAllowsArbitraryLoadsInWebContent</key>
+        <true/>
+    </dict>
+    <key>io.flutter.embedded_views_preview</key>
+    <true/>
+
+    <!-- 위치 권한 안내 문구 -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>주변 퀘스트를 지도에 표시하기 위해 위치 권한이 필요합니다.</string>
 </dict>
 </plist>

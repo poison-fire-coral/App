@@ -1,23 +1,45 @@
-/// 퀘스트 난이도 및 기본 EXP (기획서 6a 기준)
+import '../services/geo.dart';
+
+/// 퀘스트 난이도 및 기본 EXP
 enum QuestDifficulty {
-  star1(1.0, 50),
-  star2(2.0, 110),
-  star3(3.0, 220),
-  star4(4.0, 400),
-  star5(5.0, 700);
+  star1(1, 50, '산책'),
+  star2(2, 110, '기본'),
+  star3(3, 220, '탐험'),
+  star4(4, 400, '원정'),
+  star5(5, 700, '전설');
 
-  final double stars;
+  final int stars;
   final int baseExp;
+  final String label;
 
-  const QuestDifficulty(this.stars, this.baseExp);
+  const QuestDifficulty(this.stars, this.baseExp, this.label);
+
+  static const double halfStarMultiplier = 1.15;
 
   static int getExpWithHalfStar({required QuestDifficulty base, bool hasHalfStar = false}) {
     if (!hasHalfStar) return base.baseExp;
-    return (base.baseExp * 1.15).floor();
+    return (base.baseExp * halfStarMultiplier).floor();
   }
 }
 
-/// 퀘스트 데이터 모델 (기획서 3b, 3c, 4a 기준)
+/// 퀘스트가 요구하는 방문 지점 하나
+class QuestSpot {
+  final String name;
+  final double latitude;
+  final double longitude;
+  final double radiusMeters;
+
+  const QuestSpot({
+    required this.name,
+    required this.latitude,
+    required this.longitude,
+    this.radiusMeters = 50,
+  });
+
+  GeoPoint get point => GeoPoint(latitude, longitude);
+}
+
+/// 퀘스트 데이터 모델
 class QuestModel {
   final String id;
   final String title;
@@ -31,7 +53,10 @@ class QuestModel {
   final String spotName;
   final String regionLabel;
   final List<String> keywords;
-  final double crowdMultiplier; // 피로도(혼잡도) 배율 · 기획서 6b 기준 (한산 ×1.4 ~ 혼잡 ×0.7)
+
+  final double crowdMultiplier;
+  final List<QuestSpot> spots;
+  final bool requiresPhoto;
 
   QuestModel({
     required this.id,
@@ -47,8 +72,93 @@ class QuestModel {
     this.regionLabel = '',
     required this.keywords,
     this.crowdMultiplier = 1.0,
-  });
+    this.spots = const [],
+    bool? requiresPhoto,
+  }) : requiresPhoto = requiresPhoto ?? difficulty != QuestDifficulty.star1;
 
-  /// 최종 보상 EXP = 반스타 보정 EXP × 피로도 배율 (기획서 6a·6b 기준)
-  int get rewardExp => (QuestDifficulty.getExpWithHalfStar(base: difficulty, hasHalfStar: hasHalfStar) * crowdMultiplier).floor();
+  GeoPoint get point => GeoPoint(latitude, longitude);
+
+  List<QuestSpot> get visitSpots => spots.isNotEmpty
+      ? spots
+      : [
+          QuestSpot(
+            name: spotName,
+            latitude: latitude,
+            longitude: longitude,
+            radiusMeters: validRadiusMeters,
+          ),
+        ];
+
+  int get spotCount => visitSpots.length;
+
+  String get starLabel => '★' * difficulty.stars + (hasHalfStar ? '½' : '');
+
+  int get displayExp =>
+      QuestDifficulty.getExpWithHalfStar(base: difficulty, hasHalfStar: hasHalfStar);
+
+  int get estimatedExp => (difficulty.baseExp * _halfStarFactor * crowdMultiplier).floor();
+
+  double get _halfStarFactor => hasHalfStar ? QuestDifficulty.halfStarMultiplier : 1.0;
+
+  String get crowdLabel {
+    if (crowdMultiplier >= 1.3) return '한산';
+    if (crowdMultiplier <= 0.8) return '혼잡';
+    return '보통';
+  }
+
+  String get completionCriteria {
+    final spotPart = spotCount > 1
+        ? '지점 $spotCount곳 순서대로 도달'
+        : '목표 좌표 반경 ${visitSpots.first.radiusMeters.round()}m 도달';
+    return requiresPhoto ? '$spotPart · 사진 1장' : spotPart;
+  }
+
+  /// 백엔드 Prisma JSON (Quest + Place) -> Flutter QuestModel 변환 팩토리
+  factory QuestModel.fromJson(Map<String, dynamic> json) {
+    final place = json['place'] as Map<String, dynamic>? ?? {};
+
+    // 1. 난이도 변환 (1~5 -> QuestDifficulty)
+    final int diffInt = json['difficulty'] as int? ?? 1;
+    QuestDifficulty diff;
+    switch (diffInt) {
+      case 1: diff = QuestDifficulty.star1; break;
+      case 2: diff = QuestDifficulty.star2; break;
+      case 3: diff = QuestDifficulty.star3; break;
+      case 4: diff = QuestDifficulty.star4; break;
+      case 5: diff = QuestDifficulty.star5; break;
+      default: diff = QuestDifficulty.star1;
+    }
+
+    // 2. 혼잡도 변환 (congestionScore 0~100)
+    double crowdMult = 1.0;
+    if (place.containsKey('congestionScore')) {
+      final score = (place['congestionScore'] as num).toDouble();
+      if (score <= 30) {
+        crowdMult = 1.4; // 한산
+      } else if (score >= 70) {
+        crowdMult = 0.7; // 혼잡
+      } else {
+        crowdMult = 1.0; // 보통
+      }
+    }
+
+    final double lat = (place['lat'] as num?)?.toDouble() ?? (json['latitude'] as num?)?.toDouble() ?? 0.0;
+    final double lng = (place['lng'] as num?)?.toDouble() ?? (json['longitude'] as num?)?.toDouble() ?? 0.0;
+
+    return QuestModel(
+      id: json['id']?.toString() ?? '',
+      title: json['title'] ?? '',
+      summary: json['story'] ?? json['summary'] ?? '',
+      description: json['story'] ?? json['description'] ?? '',
+      difficulty: diff,
+      hasHalfStar: json['halfStep'] ?? false,
+      latitude: lat,
+      longitude: lng,
+      validRadiusMeters: (json['radiusM'] as num?)?.toDouble() ?? 50.0,
+      spotName: place['name'] ?? json['spotName'] ?? '',
+      regionLabel: place['address'] ?? place['regionCode'] ?? json['regionLabel'] ?? '',
+      keywords: List<String>.from(json['keywords'] ?? []),
+      crowdMultiplier: crowdMult,
+    );
+  }
 }
