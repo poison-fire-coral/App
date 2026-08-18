@@ -1,6 +1,6 @@
 import 'dart:math';
 
-/// 위경도 한 쌍. 지도 SDK 도입 전까지 앱 내부에서 쓰는 최소 좌표 타입.
+/// 위경도 한 쌍. 앱 내부에서 사용하는 최소 좌표 타입.
 class GeoPoint {
   final double latitude;
   final double longitude;
