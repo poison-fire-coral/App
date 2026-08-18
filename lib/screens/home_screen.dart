@@ -59,13 +59,18 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadNearbyQuests();
   }
 
-  /// 백엔드 API를 호출하여 내 위치 기준 가장 가까운 퀘스트 3개를 로드합니다.
+/// 백엔드 API를 호출하여 내 위치 기준 가장 가까운 퀘스트 3개를 로드합니다.
   Future<void> _loadNearbyQuests() async {
     try {
-      // 1. Geolocator로 현재 GPS 위치 가져오기 (권한 거부/에러 시 mockUserLocation으로 대체)
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      ).catchError((_) => null);
+      // 1. Geolocator로 현재 GPS 위치 가져오기 (권한 거부/에러 시 null 처리)
+      Position? pos;
+      try {
+        pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+      } catch (_) {
+        pos = null;
+      }
 
       final lat = pos?.latitude ?? QuestRepository.mockUserLocation.latitude;
       final lng = pos?.longitude ?? QuestRepository.mockUserLocation.longitude;
@@ -92,7 +97,6 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
-
   @override
   void didUpdateWidget(HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
