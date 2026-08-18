@@ -7,12 +7,6 @@ import '../services/geo.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_widgets.dart';
 
-// -----------------------------------------------------------------------------
-// 분기 C · 지도 화면
-// 3a 0단계(마커+검색) · 3b 1단계(마커 클릭 요약 시트) · 3c 2단계(퀘스트 상세 시트)
-// 3d 마커 클러스터링. 실제 지도 SDK 없이(placeholder 맵) 좌표를 화면 좌표로
-// 투영해 마커를 배치하고, 화면상 거리 기반으로 클러스터를 묶는다.
-// -----------------------------------------------------------------------------
 class MapScreen extends StatefulWidget {
   final UserModel user;
 
@@ -60,12 +54,18 @@ class _MapScreenState extends State<MapScreen> {
 
   late final double _minLat, _maxLat, _minLng, _maxLng;
 
+  KakaoMapController? _mapController;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _selectedKeywordFilter = '전체';
-  bool _clusterMode = false;
   QuestModel? _selectedQuest;
   _SheetState _sheetState = _SheetState.closed;
+
+  LatLng? _userLocation;
+  bool _isFetchingLocation = false;
+  bool _isMapReady = false;
+
+  late final LatLng _initialCenter;
 
   @override
   void initState() {
@@ -104,6 +104,10 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
+  bool _isKoreaLatLng(double lat, double lng) {
+    return lat >= 33.0 && lat <= 39.0 && lng >= 124.0 && lng <= 132.0;
+  }
+
   // ---------------------------------------------------------------------------
   // 투영 · 클러스터링 계산
   // ---------------------------------------------------------------------------
@@ -116,6 +120,9 @@ class _MapScreenState extends State<MapScreen> {
     return Offset(fx * canvas.width, fy * canvas.height);
   }
 
+  // ---------------------------------------------------------------------------
+  // 필터링 및 마커 생성
+  // ---------------------------------------------------------------------------
   List<QuestModel> get _visibleQuests {
     final query = _searchQuery.trim();
     return _quests.where((q) {
@@ -138,45 +145,37 @@ class _MapScreenState extends State<MapScreen> {
     return set.toList();
   }
 
-  List<_MarkerCluster> _buildClusters(Size canvas) {
-    final quests = _visibleQuests;
-    final positions = {for (final q in quests) q.id: _project(q, canvas)};
+  List<Marker> _buildKakaoMarkers() {
+    final List<Marker> markers = [];
 
-    if (!_clusterMode) {
-      return [for (final q in quests) _MarkerCluster(positions[q.id]!, [q])];
+    for (final q in _visibleQuests) {
+      markers.add(
+        Marker(
+          markerId: q.id,
+          latLng: LatLng(q.latitude, q.longitude),
+        ),
+      );
     }
 
-    const threshold = 56.0;
-    final used = <String>{};
-    final clusters = <_MarkerCluster>[];
-    for (final q in quests) {
-      if (used.contains(q.id)) continue;
-      final base = positions[q.id]!;
-      final group = <QuestModel>[q];
-      used.add(q.id);
-      for (final other in quests) {
-        if (used.contains(other.id)) continue;
-        if ((positions[other.id]! - base).distance <= threshold) {
-          group.add(other);
-          used.add(other.id);
-        }
-      }
-      var centroid = Offset.zero;
-      for (final g in group) {
-        centroid += positions[g.id]!;
-      }
-      clusters.add(_MarkerCluster(centroid / group.length.toDouble(), group));
+    if (_userLocation != null) {
+      markers.add(
+        Marker(
+          markerId: 'user_my_location_pin',
+          latLng: _userLocation!,
+        ),
+      );
     }
-    return clusters;
+
+    return markers;
   }
 
-  // ---------------------------------------------------------------------------
-  // 상태 전환
-  // ---------------------------------------------------------------------------
-  void _selectQuest(QuestModel q) => setState(() {
-        _selectedQuest = q;
-        _sheetState = _SheetState.preview;
-      });
+  void _selectQuest(QuestModel q) {
+    setState(() {
+      _selectedQuest = q;
+      _sheetState = _SheetState.preview;
+    });
+    _mapController?.panTo(LatLng(q.latitude, q.longitude));
+  }
 
   void _closeSheet() => setState(() {
         _selectedQuest = null;
@@ -201,9 +200,6 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // 빌드
-  // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -244,9 +240,19 @@ class _MapScreenState extends State<MapScreen> {
                       },
                     ),
                   ),
+
                   if (_sheetState != _SheetState.detail) _buildSearchBar(),
-                  if (_visibleQuests.isEmpty) _buildEmptyResultNote(),
-                  _buildZoomButton(),
+                  if (_isLoadingQuests)
+                    const Positioned(
+                      top: 80,
+                      left: 0,
+                      right: 0,
+                      child: Center(child: LinearProgressIndicator(color: AppColors.primaryRed)),
+                    ),
+                  if (!_isLoadingQuests && _visibleQuests.isEmpty) _buildEmptyResultNote(),
+
+                  _buildMyLocationButton(),
+
                   if (_selectedQuest != null) _buildSheet(),
                 ],
               ),
@@ -328,9 +334,6 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // 3a · 검색 · 키워드 필터 바
-  // ---------------------------------------------------------------------------
   Widget _buildSearchBar() {
     return Positioned(
       left: 0,
@@ -441,9 +444,6 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // 3b · 3c · 퀘스트 미리보기 / 상세 시트
-  // ---------------------------------------------------------------------------
   Widget _buildSheet() {
     final quest = _selectedQuest!;
     final isDetail = _sheetState == _SheetState.detail;

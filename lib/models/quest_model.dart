@@ -1,6 +1,6 @@
 import '../services/geo.dart';
 
-/// 퀘스트 난이도 및 기본 EXP (기획서 6a 기준)
+/// 퀘스트 난이도 및 기본 EXP
 enum QuestDifficulty {
   star1(1, 50, '산책'),
   star2(2, 110, '기본'),
@@ -14,7 +14,6 @@ enum QuestDifficulty {
 
   const QuestDifficulty(this.stars, this.baseExp, this.label);
 
-  /// 반개(½)는 표시 전용이고 EXP는 ×1.15만 가산한다 (기획서 6a)
   static const double halfStarMultiplier = 1.15;
 
   static int getExpWithHalfStar({required QuestDifficulty base, bool hasHalfStar = false}) {
@@ -23,13 +22,11 @@ enum QuestDifficulty {
   }
 }
 
-/// 퀘스트가 요구하는 방문 지점 하나. ★★★ 이상은 여러 지점을 순서대로 방문한다 (기획서 6a).
+/// 퀘스트가 요구하는 방문 지점 하나
 class QuestSpot {
   final String name;
   final double latitude;
   final double longitude;
-
-  /// 도달로 인정하는 반경. 4a의 인증 버튼은 이 반경 안에서만 활성화된다.
   final double radiusMeters;
 
   const QuestSpot({

@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
-import 'package:firebase_core/firebase_core.dart'; // 1. Firebase Core 임포트 추가
+import 'package:kakao_map_plugin/kakao_map_plugin.dart'; // 카카오 지도 패키지
+import 'package:firebase_core/firebase_core.dart';
 
 import 'data/badge_repository.dart';
 import 'data/quest_repository.dart';
@@ -26,7 +27,7 @@ const String _activeQuestsPrefsKey = 'active_quests';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Firebase 초기화 예외 처리
+  // 1. Firebase 초기화
   try {
     await Firebase.initializeApp();
     debugPrint("✅ Firebase 초기화 성공!");
@@ -34,8 +35,14 @@ void main() async {
     debugPrint("❌ Firebase 초기화 실패 에러: $e");
   }
 
-  // 카카오 SDK 초기화
+  // 2. 카카오 로그인 SDK 초기화 (네이티브 앱 키)
   kakao.KakaoSdk.init(nativeAppKey: 'bddd99905a1b4d3731ed3b0f370aa8da');
+
+  // 3. 카카오 지도 SDK 초기화 (JavaScript 키 + baseUrl 지정)
+  AuthRepository.initialize(
+    appKey: '5956eb5b7490c0ec1be4c2419c0ffdae',
+    baseUrl: 'http://localhost',
+  );
 
   final prefs = await SharedPreferences.getInstance();
   final bool isLoggedIn = prefs.getBool('is_logged_in') ?? false;
@@ -306,7 +313,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        fontFamily: 'Pretendard', // 프로젝트에 설정된 폰트
+        fontFamily: 'Pretendard',
         colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primaryRed),
         useMaterial3: true,
       ),
@@ -315,7 +322,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   }
 
   Widget _buildCurrentScreen() {
-    // 0. 스플래시 화면 (앱 실행 시 항상 우선 표시)
+    // 0. 스플래시 화면
     if (_showSplash) {
       return const SplashScreen();
     }
@@ -325,7 +332,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       return LoginScreen(onLoginSuccess: _handleLoginSuccess);
     }
 
-    // 2. 로그인 완료 + 온보딩 미완료(또는 재설정 모드) -> 온보딩 화면
+    // 2. 온보딩 화면
     if (_currentUser == null || _isEditingSurvey) {
       return OnboardingScreen(
         initialData: _currentUser,
@@ -336,7 +343,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     final user = _currentUser!;
     final activeIds = {for (final a in _activeQuests) a.quest.id};
 
-    // 3. 로그인 및 온보딩 완료 -> 탭 전환 (홈 · 지도)
+    // 3. 지도 탭
     if (_currentTab == AppTab.map) {
       return MapScreen(
         user: user,
@@ -356,6 +363,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
         if (QuestRepository.findById(id) != null) QuestRepository.findById(id)!,
     ];
 
+    // 4. 홈 탭
     return HomeScreen(
       user: user,
       activeQuests: _activeQuests,
@@ -371,7 +379,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     );
   }
 
-  // 5d 설정 화면이 아직 없어 재설정·로그아웃 테스트용으로 임시 제공하는 메뉴
   void _showDevMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
