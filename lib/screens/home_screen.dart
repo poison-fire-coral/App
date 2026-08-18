@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 
 import '../data/badge_repository.dart';
 import '../data/quest_repository.dart';
@@ -46,57 +45,12 @@ class _HomeScreenState extends State<HomeScreen> {
   late final PageController _carouselController;
   int _carouselIndex = 0;
 
-  // Real-time nearest 3 quests state
-  List<QuestModel> _nearbyQuests = [];
-  bool _isLoadingNearby = true;
-  double? _userLat;
-  double? _userLng;
-
   @override
   void initState() {
     super.initState();
     _carouselController = PageController();
-    _loadNearbyQuests();
   }
 
-/// 백엔드 API를 호출하여 내 위치 기준 가장 가까운 퀘스트 3개를 로드합니다.
-  Future<void> _loadNearbyQuests() async {
-    try {
-      // 1. Geolocator로 현재 GPS 위치 가져오기 (권한 거부/에러 시 null 처리)
-      Position? pos;
-      try {
-        pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-        );
-      } catch (_) {
-        pos = null;
-      }
-
-      final lat = pos?.latitude ?? QuestRepository.mockUserLocation.latitude;
-      final lng = pos?.longitude ?? QuestRepository.mockUserLocation.longitude;
-
-      // 2. 백엔드에서 거리순 정렬된 내 주변 퀘스트 수집
-      final quests = await QuestRepository.fetchNearbyQuests(lat: lat, lng: lng);
-
-      if (mounted) {
-        setState(() {
-          _userLat = lat;
-          _userLng = lng;
-          // 가장 가까운 퀘스트 최대 3개만 추출
-          _nearbyQuests = quests.take(3).toList();
-          _isLoadingNearby = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          // API 실패 시 기본 전달받은 추천 목록 중 3개 사용
-          _nearbyQuests = widget.recommendedQuests.take(3).toList();
-          _isLoadingNearby = false;
-        });
-      }
-    }
-  }
   @override
   void didUpdateWidget(HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -136,7 +90,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final earnedBadges = widget.badges.where((b) => b.isEarned).take(3).toList();
-    final displayQuests = _nearbyQuests.isNotEmpty ? _nearbyQuests : widget.recommendedQuests.take(3).toList();
 
     return Scaffold(
       backgroundColor: AppColors.bgCream,
@@ -161,38 +114,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     else
                       _buildActiveQuestCarousel(),
                     const SizedBox(height: 18),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          '내 주변 추천 퀘스트',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            setState(() => _isLoadingNearby = true);
-                            _loadNearbyQuests();
-                          },
-                          child: const Icon(Icons.refresh_rounded, size: 18, color: AppColors.subText),
-                        ),
-                      ],
+                    const Text(
+                      '내 주변 추천 퀘스트',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
                     ),
                     const SizedBox(height: 8),
-                    if (_isLoadingNearby)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryRed),
-                          ),
-                        ),
-                      )
-                    else if (displayQuests.isEmpty)
+                    if (widget.recommendedQuests.isEmpty)
                       NoteBox.text('주변에 추천할 퀘스트가 없어요. 지도를 움직여 다른 지역을 살펴보세요.', fontSize: 12)
                     else
-                      for (final quest in displayQuests) _buildRecommendedRow(quest),
+                      for (final quest in widget.recommendedQuests) _buildRecommendedRow(quest),
                     const SizedBox(height: 18),
                     Row(
                       children: [
@@ -336,17 +266,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildActiveQuestCard(ActiveQuest active) {
     final quest = active.quest;
-    final double distanceMeters;
-    if (_userLat != null && _userLng != null) {
-      distanceMeters = Geolocator.distanceBetween(
-        _userLat!,
-        _userLng!,
-        active.currentSpot.point.latitude,
-        active.currentSpot.point.longitude,
-      );
-    } else {
-      distanceMeters = Geo.distanceMeters(QuestRepository.mockUserLocation, active.currentSpot.point);
-    }
+    final distance = Geo.distanceMeters(QuestRepository.mockUserLocation, active.currentSpot.point);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -383,7 +303,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   TagChip(label: quest.starLabel, fontSize: 11),
                   const SizedBox(width: 5),
                   Text(
-                    Geo.formatDistance(distanceMeters),
+                    Geo.formatDistance(distance),
                     style: const TextStyle(fontSize: 11, color: AppColors.subText),
                   ),
                 ],
@@ -446,19 +366,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildRecommendedRow(QuestModel quest) {
-    String distanceStr;
-    if (_userLat != null && _userLng != null && quest.spots.isNotEmpty) {
-      final meters = Geolocator.distanceBetween(
-        _userLat!,
-        _userLng!,
-        quest.spots.first.point.latitude,
-        quest.spots.first.point.longitude,
-      );
-      distanceStr = Geo.formatDistance(meters);
-    } else {
-      distanceStr = QuestRepository.distanceFromUser(quest);
-    }
-
+    final distance = QuestRepository.distanceFromUser(quest);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
@@ -471,7 +379,7 @@ class _HomeScreenState extends State<HomeScreen> {
             borderRadius: BorderRadius.circular(7),
           ),
           child: Text(
-            '🎯 ${quest.title} · $distanceStr · ${quest.starLabel}',
+            '🎯 ${quest.title} · ${Geo.formatDistance(distance)} · ${quest.starLabel}',
             style: const TextStyle(fontSize: 13, color: AppColors.darkBorder),
           ),
         ),

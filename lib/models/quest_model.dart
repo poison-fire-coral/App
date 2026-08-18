@@ -39,7 +39,7 @@ class QuestSpot {
   GeoPoint get point => GeoPoint(latitude, longitude);
 }
 
-/// 퀘스트 데이터 모델
+/// 퀘스트 데이터 모델 (기획서 3b, 3c, 4a 기준)
 class QuestModel {
   final String id;
   final String title;
@@ -54,8 +54,13 @@ class QuestModel {
   final String regionLabel;
   final List<String> keywords;
 
+  /// 혼잡도 배율 · 기획서 6b 기준 (한산 ×1.4 · 보통 ×1.0 · 혼잡 ×0.7)
   final double crowdMultiplier;
+
+  /// 순차 방문 지점. 비어 있으면 대표 좌표 한 곳짜리 퀘스트로 취급한다.
   final List<QuestSpot> spots;
+
+  /// 방문 인증 시 사진을 요구하는지 (★★ 이상은 도달 + 사진 인증 · 기획서 6a)
   final bool requiresPhoto;
 
   QuestModel({
@@ -78,6 +83,7 @@ class QuestModel {
 
   GeoPoint get point => GeoPoint(latitude, longitude);
 
+  /// 실제로 방문해야 하는 지점 목록 (지점이 지정되지 않았으면 대표 좌표 1곳)
   List<QuestSpot> get visitSpots => spots.isNotEmpty
       ? spots
       : [
@@ -91,74 +97,33 @@ class QuestModel {
 
   int get spotCount => visitSpots.length;
 
+  /// UI 표시용 별 문자열 (반개는 ½로 표시)
   String get starLabel => '★' * difficulty.stars + (hasHalfStar ? '½' : '');
 
+  /// 지도 시트에 "보상 : EXP n"으로 노출하는 표시용 값 (반개 보정까지만 반영).
+  ///
+  /// 실제 지급량은 [ExpService]가 `floor(난이도 기본 EXP × 배율들)`로 한 번에 계산한다.
+  /// 여기서 먼저 내림해 버리면 반올림 오차가 두 번 쌓이므로 표시 외의 용도로 쓰지 않는다.
   int get displayExp =>
       QuestDifficulty.getExpWithHalfStar(base: difficulty, hasHalfStar: hasHalfStar);
 
+  /// 혼잡도까지 반영한 예상 보상 EXP (최종 정산은 ExpService가 담당)
   int get estimatedExp => (difficulty.baseExp * _halfStarFactor * crowdMultiplier).floor();
 
   double get _halfStarFactor => hasHalfStar ? QuestDifficulty.halfStarMultiplier : 1.0;
 
+  /// 혼잡도 배율의 사람이 읽는 라벨 (기획서 6b)
   String get crowdLabel {
     if (crowdMultiplier >= 1.3) return '한산';
     if (crowdMultiplier <= 0.8) return '혼잡';
     return '보통';
   }
 
+  /// 4a·4b에 표시하는 달성 기준 문구
   String get completionCriteria {
     final spotPart = spotCount > 1
         ? '지점 $spotCount곳 순서대로 도달'
         : '목표 좌표 반경 ${visitSpots.first.radiusMeters.round()}m 도달';
     return requiresPhoto ? '$spotPart · 사진 1장' : spotPart;
-  }
-
-  /// 백엔드 Prisma JSON (Quest + Place) -> Flutter QuestModel 변환 팩토리
-  factory QuestModel.fromJson(Map<String, dynamic> json) {
-    final place = json['place'] as Map<String, dynamic>? ?? {};
-
-    // 1. 난이도 변환 (1~5 -> QuestDifficulty)
-    final int diffInt = json['difficulty'] as int? ?? 1;
-    QuestDifficulty diff;
-    switch (diffInt) {
-      case 1: diff = QuestDifficulty.star1; break;
-      case 2: diff = QuestDifficulty.star2; break;
-      case 3: diff = QuestDifficulty.star3; break;
-      case 4: diff = QuestDifficulty.star4; break;
-      case 5: diff = QuestDifficulty.star5; break;
-      default: diff = QuestDifficulty.star1;
-    }
-
-    // 2. 혼잡도 변환 (congestionScore 0~100)
-    double crowdMult = 1.0;
-    if (place.containsKey('congestionScore')) {
-      final score = (place['congestionScore'] as num).toDouble();
-      if (score <= 30) {
-        crowdMult = 1.4; // 한산
-      } else if (score >= 70) {
-        crowdMult = 0.7; // 혼잡
-      } else {
-        crowdMult = 1.0; // 보통
-      }
-    }
-
-    final double lat = (place['lat'] as num?)?.toDouble() ?? (json['latitude'] as num?)?.toDouble() ?? 0.0;
-    final double lng = (place['lng'] as num?)?.toDouble() ?? (json['longitude'] as num?)?.toDouble() ?? 0.0;
-
-    return QuestModel(
-      id: json['id']?.toString() ?? '',
-      title: json['title'] ?? '',
-      summary: json['story'] ?? json['summary'] ?? '',
-      description: json['story'] ?? json['description'] ?? '',
-      difficulty: diff,
-      hasHalfStar: json['halfStep'] ?? false,
-      latitude: lat,
-      longitude: lng,
-      validRadiusMeters: (json['radiusM'] as num?)?.toDouble() ?? 50.0,
-      spotName: place['name'] ?? json['spotName'] ?? '',
-      regionLabel: place['address'] ?? place['regionCode'] ?? json['regionLabel'] ?? '',
-      keywords: List<String>.from(json['keywords'] ?? []),
-      crowdMultiplier: crowdMult,
-    );
   }
 }

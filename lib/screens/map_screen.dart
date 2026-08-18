@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 
 import '../data/quest_repository.dart';
 import '../models/quest_model.dart';
@@ -11,8 +9,14 @@ import '../widgets/app_widgets.dart';
 
 class MapScreen extends StatefulWidget {
   final UserModel user;
+
+  /// 이미 수락해 진행 중인 퀘스트 id. 해당 마커의 시트는 "이어서 하기"로 바뀐다.
   final Set<String> activeQuestIds;
+
+  /// 퀘스트 수락 (또는 진행 중이면 이어서 하기)
   final ValueChanged<QuestModel> onAcceptQuest;
+
+  /// 외부에서 특정 퀘스트 시트를 열어 달라고 요청한 경우 (홈 추천 목록 → 지도)
   final String? focusQuestId;
 
   final VoidCallback? onOpenHome;
@@ -36,10 +40,19 @@ class MapScreen extends StatefulWidget {
 
 enum _SheetState { closed, preview, detail }
 
+class _MarkerCluster {
+  final Offset position;
+  final List<QuestModel> quests;
+
+  _MarkerCluster(this.position, this.quests);
+
+  bool get isCluster => quests.length > 1;
+}
+
 class _MapScreenState extends State<MapScreen> {
-  // 백엔드에서 받아올 동적 퀘스트 목록
-  List<QuestModel> _quests = [];
-  bool _isLoadingQuests = false;
+  List<QuestModel> get _quests => QuestRepository.all;
+
+  late final double _minLat, _maxLat, _minLng, _maxLng;
 
   KakaoMapController? _mapController;
   final TextEditingController _searchController = TextEditingController();
@@ -57,8 +70,14 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
-    // 시드 데이터 중심지(수원/서울) 초기 위치 설정
-    _initialCenter = QuestRepository.mockUserLatLng;
+    final lats = _quests.map((q) => q.latitude).toList();
+    final lngs = _quests.map((q) => q.longitude).toList();
+    _minLat = lats.reduce((a, b) => a < b ? a : b);
+    _maxLat = lats.reduce((a, b) => a > b ? a : b);
+    _minLng = lngs.reduce((a, b) => a < b ? a : b);
+    _maxLng = lngs.reduce((a, b) => a > b ? a : b);
+
+    _applyFocusRequest();
   }
 
   @override
@@ -69,18 +88,14 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  /// 홈 추천 목록에서 넘어온 퀘스트가 있으면 해당 시트를 바로 펼친다 (와이어프레임 2a → 3b).
   void _applyFocusRequest() {
     final id = widget.focusQuestId;
     if (id == null) return;
-
-    final questList = _quests.where((q) => q.id == id).toList();
-    if (questList.isEmpty) return;
-    
-    final quest = questList.first;
+    final quest = QuestRepository.findById(id);
+    if (quest == null) return;
     _selectedQuest = quest;
     _sheetState = _SheetState.preview;
-
-    _mapController?.setCenter(LatLng(quest.latitude, quest.longitude));
   }
 
   @override
@@ -94,100 +109,15 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // 백엔드 통신 및 데이터 로드 (포트 5001 API 호출)
+  // 투영 · 클러스터링 계산
   // ---------------------------------------------------------------------------
-  Future<void> _fetchQuestsFromBackend(double lat, double lng) async {
-    if (_isLoadingQuests) return;
-    setState(() => _isLoadingQuests = true);
-
-    try {
-      final fetchedQuests = await QuestRepository.fetchNearbyQuests(
-        lat: lat,
-        lng: lng,
-        radiusM: 50000, // 50km 반경 검색
-      );
-
-      if (mounted) {
-        setState(() {
-          _quests = fetchedQuests;
-        });
-        await _updateMarkers();
-        _applyFocusRequest();
-      }
-    } catch (e) {
-      debugPrint('퀘스트 데이터를 불러오는 중 오류 발생: $e');
-    } finally {
-      if (mounted) {
-        setState(() => _isLoadingQuests = false);
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // 마커 안전 업데이트
-  // ---------------------------------------------------------------------------
-  Future<void> _updateMarkers() async {
-    if (_mapController == null || !_isMapReady) return;
-
-    try {
-      final markers = _buildKakaoMarkers();
-      await _mapController!.clearMarker();
-
-      if (markers.isNotEmpty) {
-        await Future.delayed(const Duration(milliseconds: 100));
-        await _mapController!.addMarker(markers: markers);
-      }
-    } catch (e) {
-      debugPrint('마커 업데이트 예외 발생: $e');
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // GPS 위치 조회 및 백엔드 데이터 요청
-  // ---------------------------------------------------------------------------
-  Future<void> _initUserLocation({bool panToUser = true}) async {
-    if (_isFetchingLocation) return;
-    _isFetchingLocation = true;
-
-    try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return;
-      }
-      if (permission == LocationPermission.deniedForever) return;
-
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-
-      double lat = position.latitude;
-      double lng = position.longitude;
-
-      // 시뮬레이터/해외 좌표 처리 -> 시드 데이터가 존재하는 좌표로 대체
-      if (!_isKoreaLatLng(lat, lng)) {
-        lat = QuestRepository.mockUserLocation.latitude;
-        lng = QuestRepository.mockUserLocation.longitude;
-      }
-
-      final userLatLng = LatLng(lat, lng);
-      _userLocation = userLatLng;
-
-      // 🚀 위치 확보 후 백엔드 API 호출!
-      await _fetchQuestsFromBackend(lat, lng);
-
-      if (panToUser && _mapController != null && _isMapReady) {
-        await Future.delayed(const Duration(milliseconds: 100));
-        await _mapController?.panTo(userLatLng);
-      }
-    } catch (e) {
-      debugPrint('내 위치 가져오기 실패: $e');
-    } finally {
-      _isFetchingLocation = false;
-    }
+  Offset _project(QuestModel q, Size canvas) {
+    const pad = 0.16;
+    final latSpan = (_maxLat - _minLat).abs() < 1e-6 ? 1e-6 : (_maxLat - _minLat);
+    final lngSpan = (_maxLng - _minLng).abs() < 1e-6 ? 1e-6 : (_maxLng - _minLng);
+    final fx = pad + (1 - 2 * pad) * ((q.longitude - _minLng) / lngSpan);
+    final fy = pad + (1 - 2 * pad) * (1 - (q.latitude - _minLat) / latSpan);
+    return Offset(fx * canvas.width, fy * canvas.height);
   }
 
   // ---------------------------------------------------------------------------
@@ -256,6 +186,9 @@ class _MapScreenState extends State<MapScreen> {
 
   void _collapseSheet() => setState(() => _sheetState = _SheetState.preview);
 
+  void _unclusterMap() => setState(() => _clusterMode = false);
+
+  /// 3b·3c 시트의 수락 버튼 → 분기 D(4a 이동 화면)로 넘긴다.
   void _acceptQuest(QuestModel q) {
     _closeSheet();
     widget.onAcceptQuest(q);
@@ -285,31 +218,25 @@ class _MapScreenState extends State<MapScreen> {
               child: Stack(
                 children: [
                   Positioned.fill(
-                    child: KakaoMap(
-                      key: const ValueKey('stable_kakao_map_webview'),
-                      center: _initialCenter,
-                      markers: const [],
-                      onMapCreated: (controller) async {
-                        _mapController = controller;
-
-                        await Future.delayed(const Duration(milliseconds: 800));
-                        if (!mounted) return;
-
-                        _isMapReady = true;
-                        await _initUserLocation(panToUser: true);
-                      },
-                      onMarkerTap: (markerId, latLng, zoomLevel) {
-                        if (markerId == 'user_my_location_pin') return;
-
-                        final matched = _quests.where((q) => q.id == markerId);
-                        if (matched.isNotEmpty) {
-                          _selectQuest(matched.first);
-                        }
-                      },
-                      onMapTap: (latLng) {
-                        if (_selectedQuest != null) {
-                          _closeSheet();
-                        }
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final size = Size(constraints.maxWidth, constraints.maxHeight);
+                        final clusters = _buildClusters(size);
+                        return GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _selectedQuest != null ? _closeSheet : null,
+                          child: Stack(
+                            children: [
+                              const Positioned.fill(child: MapBackdrop()),
+                              Positioned(
+                                left: size.width * 0.5 - 9,
+                                top: size.height * 0.55 - 9,
+                                child: _buildUserDot(),
+                              ),
+                              for (final cluster in clusters) _buildMarker(cluster),
+                            ],
+                          ),
+                        );
                       },
                     ),
                   ),
@@ -346,26 +273,63 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _buildMyLocationButton() {
-    final double bottomPadding = _selectedQuest != null ? 220.0 : 20.0;
+  // ---------------------------------------------------------------------------
+  // 3a · 마커 · 사용자 위치 점
+  // ---------------------------------------------------------------------------
+  Widget _buildUserDot() {
+    return Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.bgCream,
+        border: Border.all(color: AppColors.primaryRed, width: 2),
+      ),
+    );
+  }
 
+  // 3d · 클러스터 또는 단일 마커
+  Widget _buildMarker(_MarkerCluster cluster) {
+    if (cluster.isCluster) {
+      final isBig = cluster.quests.length > 4;
+      final size = isBig ? 52.0 : 40.0;
+      return Positioned(
+        left: cluster.position.dx - size / 2,
+        top: cluster.position.dy - size / 2,
+        child: GestureDetector(
+          onTap: _unclusterMap,
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isBig ? AppColors.primaryRed : AppColors.bgCream,
+              border: Border.all(color: AppColors.darkBorder, width: 1.5),
+            ),
+            child: Center(
+              child: Text(
+                '+${cluster.quests.length}',
+                style: TextStyle(
+                  fontSize: isBig ? 14 : 13,
+                  fontWeight: FontWeight.bold,
+                  color: isBig ? Colors.white : AppColors.darkBorder,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final quest = cluster.quests.first;
+    final isHighlighted =
+        _selectedQuest?.id == quest.id || widget.activeQuestIds.contains(quest.id);
     return Positioned(
-      right: 14,
-      bottom: bottomPadding,
-      child: FloatingActionButton.small(
-        heroTag: 'my_location_btn',
-        backgroundColor: AppColors.bgCream,
-        elevation: 3,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: const BorderSide(color: AppColors.darkBorder, width: 1.5),
-        ),
-        onPressed: () => _initUserLocation(panToUser: true),
-        child: const Icon(
-          Icons.my_location_rounded,
-          color: AppColors.primaryRed,
-          size: 20,
-        ),
+      left: cluster.position.dx - 10,
+      top: cluster.position.dy - 20,
+      child: GestureDetector(
+        onTap: () => _selectQuest(quest),
+        child: QuestMarker(isActive: isHighlighted),
       ),
     );
   }
@@ -397,10 +361,7 @@ class _MapScreenState extends State<MapScreen> {
                   Expanded(
                     child: TextField(
                       controller: _searchController,
-                      onChanged: (v) {
-                        setState(() => _searchQuery = v);
-                        _updateMarkers();
-                      },
+                      onChanged: (v) => setState(() => _searchQuery = v),
                       style: const TextStyle(fontSize: 13, color: AppColors.darkBorder),
                       decoration: const InputDecoration(
                         hintText: '지역 · 퀘스트 검색',
@@ -439,10 +400,7 @@ class _MapScreenState extends State<MapScreen> {
         label: label,
         isSelected: _selectedKeywordFilter == label,
         fontSize: 12.5,
-        onTap: () {
-          setState(() => _selectedKeywordFilter = label);
-          _updateMarkers();
-        },
+        onTap: () => setState(() => _selectedKeywordFilter = label),
       ),
     );
   }
@@ -458,6 +416,29 @@ class _MapScreenState extends State<MapScreen> {
         child: const Text(
           '조건에 맞는 퀘스트가 없어요',
           style: TextStyle(fontSize: 12, color: AppColors.noteText),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildZoomButton() {
+    return Positioned(
+      right: 14,
+      bottom: 20,
+      child: GestureDetector(
+        onTap: () => setState(() => _clusterMode = !_clusterMode),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+          decoration: BoxDecoration(
+            color: AppColors.bgCream,
+            border: Border.all(color: AppColors.darkBorder, width: 1.5),
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Icon(
+            _clusterMode ? Icons.add : Icons.remove,
+            size: 16,
+            color: AppColors.darkBorder,
+          ),
         ),
       ),
     );
@@ -486,6 +467,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  /// 이미 수락한 퀘스트는 다시 수락하지 않고 4a 이동 화면으로 바로 들어간다.
   Widget _acceptButton(QuestModel quest) {
     final isActive = widget.activeQuestIds.contains(quest.id);
     return PrimaryButton(
@@ -532,16 +514,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Widget _buildDetailContent(QuestModel quest) {
-    final distance = Geo.formatDistance(
-      _userLocation != null
-          ? Geo.distanceBetween(
-              _userLocation!.latitude,
-              _userLocation!.longitude,
-              quest.latitude,
-              quest.longitude,
-            )
-          : 0.0,
-    );
+    final distance = Geo.formatDistance(QuestRepository.distanceFromUser(quest));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
