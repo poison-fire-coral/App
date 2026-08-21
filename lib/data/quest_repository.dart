@@ -1,6 +1,5 @@
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
+import '../models/api_exception.dart';
+import '../services/api_client.dart';
 import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 import '../models/quest_model.dart';
 import '../services/geo.dart';
@@ -103,15 +102,6 @@ class QuestRepository {
     return mockQuests.where((q) => !excludeIds.contains(q.id)).toList();
   }
 
-  /// .env 백엔드 설정에 맞춘 5001번 포트 Base URL
-  static String get baseUrl {
-    if (kIsWeb) return 'http://localhost:5001/api/v1';
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:5001/api/v1'; // 안드로이드 에뮬레이터
-    }
-    return 'http://localhost:5001/api/v1'; // iOS 시뮬레이터 및 기본
-  }
-
   /// 사용자 위치 기준 거리를 '350m', '1.2km' 형식 문자열로 반환
   static String distanceFromUser(
     dynamic target, [
@@ -136,23 +126,35 @@ class QuestRepository {
     if (target is QuestModel) {
       targetLat = target.latitude;
       targetLng = target.longitude;
-      if (p2 is GeoPoint) userPoint = p2;
-      else if (p2 is LatLng) userPoint = GeoPoint(p2.latitude, p2.longitude);
+      if (p2 is GeoPoint) {
+        userPoint = p2;
+      } else if (p2 is LatLng) {
+        userPoint = GeoPoint(p2.latitude, p2.longitude);
+      }
     } else if (target is GeoPoint) {
       targetLat = target.latitude;
       targetLng = target.longitude;
-      if (p2 is GeoPoint) userPoint = p2;
-      else if (p2 is LatLng) userPoint = GeoPoint(p2.latitude, p2.longitude);
+      if (p2 is GeoPoint) {
+        userPoint = p2;
+      } else if (p2 is LatLng) {
+        userPoint = GeoPoint(p2.latitude, p2.longitude);
+      }
     } else if (target is LatLng) {
       targetLat = target.latitude;
       targetLng = target.longitude;
-      if (p2 is GeoPoint) userPoint = p2;
-      else if (p2 is LatLng) userPoint = GeoPoint(p2.latitude, p2.longitude);
+      if (p2 is GeoPoint) {
+        userPoint = p2;
+      } else if (p2 is LatLng) {
+        userPoint = GeoPoint(p2.latitude, p2.longitude);
+      }
     } else if (target is num && p2 is num) {
       targetLat = target.toDouble();
       targetLng = p2.toDouble();
-      if (p3 is GeoPoint) userPoint = p3;
-      else if (p3 is LatLng) userPoint = GeoPoint(p3.latitude, p3.longitude);
+      if (p3 is GeoPoint) {
+        userPoint = p3;
+      } else if (p3 is LatLng) {
+        userPoint = GeoPoint(p3.latitude, p3.longitude);
+      }
     }
 
     return Geo.distanceBetween(
@@ -163,115 +165,103 @@ class QuestRepository {
     );
   }
 
-  /// 1. 내 위치 기반 근처 퀘스트 조회 (GET /api/v1/quests/nearby)
+  // ---------------------------------------------------------------------------
+  // 서버 호출 — 인증 헤더·에러 봉투는 ApiClient가 처리한다.
+  // 실패는 예외로 던진다. 조용히 목업으로 갈아치우면 "왜 다른 데이터가 뜨지"를 못 찾는다.
+  // ---------------------------------------------------------------------------
+
+  /// 내 위치 기준 근처 퀘스트.
+  ///
+  /// 온보딩 키워드(`#골목산책` …)와 서버 퀘스트 키워드(`산책`, `공원` …)는 어휘가
+  /// 완전히 달라서, 온보딩 값을 그대로 넘기면 결과가 항상 0건이다.
+  /// 매핑 테이블이 생기기 전까지 [keywords]는 지도 필터에서만 쓴다.
   static Future<List<QuestModel>> fetchNearbyQuests({
     required double lat,
     required double lng,
-    int radiusM = 50000,
+    int radiusM = 5000,
     List<String>? keywords,
-    String? authToken,
   }) async {
-    // API 호출 시 들어오는 실시간 사용자 GPS 좌표로 currentUserLocation 갱신
     updateUserLocation(lat, lng);
 
-    try {
-      final Map<String, String> queryParams = {
-        'lat': lat.toString(),
-        'lng': lng.toString(),
-        'radiusM': radiusM.toString(),
-      };
+    final data = await ApiClient.get(
+      '/quests/nearby',
+      query: {
+        'lat': lat,
+        'lng': lng,
+        'radiusM': radiusM,
+        if (keywords != null && keywords.isNotEmpty && !keywords.contains('전체'))
+          'keywords': keywords,
+      },
+      auth: false,
+    );
 
-      if (keywords != null && keywords.isNotEmpty && !keywords.contains('전체')) {
-        queryParams['keywords'] = keywords.join(',');
-      }
-
-      final uri = Uri.parse('$baseUrl/quests/nearby').replace(queryParameters: queryParams);
-
-      final headers = <String, String>{
-        'Content-Type': 'application/json',
-        if (authToken != null) 'Authorization': 'Bearer $authToken',
-      };
-
-      final response = await http.get(uri, headers: headers);
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> body = jsonDecode(response.body);
-        final List<dynamic> data = body['data'] ?? [];
-
-        return data.map((json) => QuestModel.fromJson(json)).toList();
-      } else {
-        debugPrint('퀘스트 API 오류: ${response.statusCode} - ${response.body}');
-        return mockQuests;
-      }
-    } catch (e) {
-      debugPrint('백엔드 통신 에러 (fetchNearbyQuests): $e');
-      return mockQuests;
-    }
+    if (data is! List) return const [];
+    return [
+      for (final entry in data)
+        QuestModel.fromJson(Map<String, dynamic>.from(entry as Map)),
+    ];
   }
 
-  /// 2. 퀘스트 수락 (POST /api/v1/quests/:id/accept)
-  static Future<bool> acceptQuest({
-    required String questId,
-    required String authToken,
+  /// 진행 중인 내 퀘스트. 앱을 다시 켰을 때 서버 기준으로 목록을 맞춘다.
+  static Future<List<Map<String, dynamic>>> fetchMyQuests({
+    String status = 'in_progress',
   }) async {
-    try {
-      final uri = Uri.parse('$baseUrl/quests/$questId/accept');
-      final response = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-      );
+    final data = await ApiClient.get('/quests/my', query: {'status': status});
+    if (data is! List) return const [];
+    return [
+      for (final entry in data) Map<String, dynamic>.from(entry as Map),
+    ];
+  }
 
-      return response.statusCode == 201 || response.statusCode == 200;
-    } catch (e) {
-      debugPrint('퀘스트 수락 통신 에러: $e');
-      return false;
+  /// 퀘스트 수락.
+  ///
+  /// 이미 수락한 퀘스트면 서버가 409 `QUEST_ALREADY_DONE`을 준다. 그건 오류가 아니라
+  /// "이어서 하기"이므로 여기서 삼킨다.
+  static Future<void> acceptQuest(String questId) async {
+    try {
+      await ApiClient.post('/quests/$questId/accept');
+    } on ApiException catch (e) {
+      if (e.isAlreadyAccepted) return;
+      rethrow;
     }
   }
 
-  /// 3. 퀘스트 도달 인증 (POST /api/v1/quests/:id/verify)
-  static Future<Map<String, dynamic>?> verifyQuest({
+  /// 수락 취소(포기).
+  static Future<void> abandonQuest(String questId) async {
+    try {
+      await ApiClient.delete('/quests/$questId/accept');
+    } on ApiException catch (e) {
+      // 서버에 기록이 없으면 이미 목적을 달성한 것이다.
+      if (e.code == 'QUEST_NOT_FOUND' || e.code == 'NOT_FOUND') return;
+      rethrow;
+    }
+  }
+
+  /// 도달 인증. 서버가 거리·정확도·어뷰징을 재검증하고 EXP까지 확정해 돌려준다.
+  ///
+  /// [requestId]는 재시도할 때 **같은 값**을 보내야 한다. 그래야 서버가
+  /// `{isAlreadyProcessed: true}`로 응답하며 EXP 이중 지급을 막는다.
+  static Future<Map<String, dynamic>> verifyQuest({
     required String questId,
     required String requestId,
     required double lat,
     required double lng,
     required double accuracyM,
     String? photoUrl,
+    String? photoVisibility,
     String? userText,
     String? emotionTag,
-    required String authToken,
   }) async {
-    try {
-      final uri = Uri.parse('$baseUrl/quests/$questId/verify');
-      final response = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-        body: jsonEncode({
-          'requestId': requestId,
-          'lat': lat,
-          'lng': lng,
-          'accuracyM': accuracyM,
-          'photoUrl': photoUrl,
-          'userText': userText,
-          'emotionTag': emotionTag,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final body = jsonDecode(response.body);
-        return body['data'];
-      } else {
-        debugPrint('인증 오류: ${response.body}');
-        return null;
-      }
-    } catch (e) {
-      debugPrint('퀘스트 인증 통신 에러: $e');
-      return null;
-    }
+    final data = await ApiClient.post('/quests/$questId/verify', body: {
+      'requestId': requestId,
+      'lat': lat,
+      'lng': lng,
+      'accuracyM': accuracyM,
+      'photoUrl': ?photoUrl,
+      'photoVisibility': ?photoVisibility,
+      'userText': ?userText,
+      'emotionTag': ?emotionTag,
+    });
+    return Map<String, dynamic>.from(data as Map);
   }
 }

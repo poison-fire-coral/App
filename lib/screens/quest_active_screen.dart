@@ -1,14 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 
 import '../data/quest_repository.dart';
+import '../dev/dev_quest_panel.dart'; // DEV-ONLY
 import '../models/active_quest.dart';
+import '../models/api_exception.dart';
 import '../models/quest_completion.dart';
 import '../models/quest_model.dart';
 import '../services/geo.dart';
 import '../services/location_service.dart';
 import '../theme/app_colors.dart';
+import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
 import 'level_up_screen.dart';
 import 'quest_reward_screen.dart';
@@ -26,7 +30,12 @@ class QuestActiveScreen extends StatefulWidget {
   final ValueChanged<ActiveQuest> onSpotVerified;
 
   /// 마지막 지점까지 인증했을 때. EXP·레벨·배지 정산은 상위에서 수행하고 결과를 돌려받는다.
-  final Future<QuestCompletionResult> Function(ActiveQuest completed) onQuestCompleted;
+  /// [serverResult]는 서버 `verify` 응답. 목업 퀘스트이거나 오프라인이면 null이고,
+  /// 그때만 로컬 EXP 계산으로 폴백한다.
+  final Future<QuestCompletionResult> Function(
+    ActiveQuest completed,
+    Map<String, dynamic>? serverResult,
+  ) onQuestCompleted;
 
   /// 퀘스트 포기
   final ValueChanged<ActiveQuest> onAbandon;
@@ -163,23 +172,96 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
 
     final advanced = _activeQuest.advanced();
 
+    // 중간 지점은 서버에 다중 지점 개념이 없으므로 로컬 진행도만 올린다.
     if (!advanced.isFinished) {
       widget.onSpotVerified(advanced);
       setState(() => _activeQuest = advanced);
       _startTracking();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('지점 ${advanced.verifiedSpotCount}곳 인증 완료! 다음 지점으로 이동해 주세요.')),
+        SnackBar(
+          content: Text(
+              '지점 ${advanced.verifiedSpotCount}곳 인증 완료! 다음 지점으로 이동해 주세요.'),
+        ),
       );
       return;
     }
 
-    await _settleQuest(advanced);
+    await _verifyOnServerAndSettle(advanced, sample, result);
   }
 
-  Future<void> _settleQuest(ActiveQuest completed) async {
+  /// 마지막 지점을 인증했다. 서버가 거리·정확도·어뷰징을 다시 재고 EXP까지 확정한다.
+  ///
+  /// 의뢰서 절대원칙 ②: "위치 인증은 서버가 재검증. 클라이언트가 보낸
+  /// '도착했다'를 그대로 믿지 않음."
+  Future<void> _verifyOnServerAndSettle(
+    ActiveQuest completed,
+    LocationSample sample,
+    QuestVerifyResult verifyResult,
+  ) async {
     setState(() => _isSettling = true);
 
-    final result = await widget.onQuestCompleted(completed);
+    Map<String, dynamic>? serverResult;
+    final questId = _activeQuest.quest.id;
+
+    // 목업 퀘스트는 서버에 존재하지 않는다(백엔드 Quest.id는 Int).
+    final isRemote = int.tryParse(questId) != null;
+
+    if (isRemote) {
+      // 재시도할 때 같은 값을 보내야 서버가 멱등 처리해 EXP를 두 번 주지 않는다.
+      final requestId = _activeQuest.pendingRequestId ?? const Uuid().v4();
+      if (_activeQuest.pendingRequestId == null) {
+        final withId = _activeQuest.copyWith(pendingRequestId: requestId);
+        widget.onSpotVerified(withId);
+        _activeQuest = withId;
+      }
+
+      try {
+        serverResult = await QuestRepository.verifyQuest(
+          questId: questId,
+          requestId: requestId,
+          lat: sample.point.latitude,
+          lng: sample.point.longitude,
+          accuracyM: sample.accuracyMeters,
+          photoUrl: verifyResult.photoUrl,
+          photoVisibility: verifyResult.isPhotoPublic ? 'PUBLIC' : 'PRIVATE',
+        );
+      } on ApiException catch (e) {
+        if (!mounted) return;
+        setState(() => _isSettling = false);
+        _showVerifyFailure(e);
+        return;
+      }
+    }
+
+    await _settleQuest(completed, serverResult);
+  }
+
+  /// 서버가 거절한 이유를 그대로 사용자 말로 옮긴다.
+  void _showVerifyFailure(ApiException e) {
+    final String message;
+    if (e.isOutOfRange) {
+      message = '아직 인증 반경 밖이에요. 조금 더 가까이 가주세요.';
+    } else if (e.isAccuracyTooLow) {
+      message = 'GPS 오차가 너무 커요. 하늘이 트인 곳에서 다시 시도해 주세요.';
+    } else if (e.isAlreadyAccepted) {
+      message = '이미 완료한 퀘스트예요.';
+    } else if (e.isNetwork) {
+      message = '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.';
+    } else {
+      message = e.displayMessage;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _settleQuest(
+    ActiveQuest completed,
+    Map<String, dynamic>? serverResult,
+  ) async {
+    if (!_isSettling) setState(() => _isSettling = true);
+
+    final result = await widget.onQuestCompleted(completed, serverResult);
     if (!mounted) return;
 
     await Navigator.of(context).pushReplacement(
@@ -206,20 +288,21 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     final shouldAbandon = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppColors.bgCream,
-        title: const Text('퀘스트를 포기할까요?', style: TextStyle(fontSize: 16, color: AppColors.darkBorder)),
+        backgroundColor: AppColors.surface,
+        shape: const RoundedRectangleBorder(borderRadius: AppRadius.panel),
+        title: const Text('퀘스트를 포기할까요?', style: TextStyle(fontSize: 16, color: AppColors.textPrimary)),
         content: const Text(
           '지금까지 인증한 지점 기록이 사라집니다.',
-          style: TextStyle(fontSize: 13, color: AppColors.noteText),
+          style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('계속하기', style: TextStyle(color: AppColors.darkBorder)),
+            child: const Text('계속하기', style: TextStyle(color: AppColors.textPrimary)),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('포기', style: TextStyle(color: AppColors.primaryRed)),
+            child: const Text('포기', style: TextStyle(color: AppColors.quest500)),
           ),
         ],
       ),
@@ -236,7 +319,7 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgCream,
+      backgroundColor: AppColors.surface,
       body: SafeArea(
         child: Stack(
           children: [
@@ -256,11 +339,11 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: AppColors.bgCream,
-          border: Border.all(color: AppColors.darkBorder, width: 1.5),
+          gradient: AppSurface.paper,
+          boxShadow: AppElevation.e1,
           borderRadius: BorderRadius.circular(18),
         ),
-        child: const Text('← 홈', style: TextStyle(fontSize: 12, color: AppColors.darkBorder)),
+        child: const Text('← 홈', style: TextStyle(fontSize: 12, color: AppColors.textPrimary)),
       ),
     );
   }
@@ -287,8 +370,8 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
                 height: circleSize,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: AppColors.primaryRed.withValues(alpha: 0.08),
-                  border: Border.all(color: AppColors.primaryRed, width: 1.5),
+                  color: AppColors.quest500.withValues(alpha: 0.08),
+                  border: Border.all(color: AppColors.quest500, width: 1.5),
                 ),
               ),
             ),
@@ -305,8 +388,8 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
                 height: 18,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: AppColors.bgCream,
-                  border: Border.all(color: AppColors.primaryRed, width: 2),
+                  color: AppColors.surface,
+                  border: Border.all(color: AppColors.quest500, width: 2),
                 ),
               ),
             ),
@@ -320,60 +403,74 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     final quest = _activeQuest.quest;
     final spot = _activeQuest.currentSpot;
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.bgCream,
-        border: Border.fromBorderSide(BorderSide(color: AppColors.darkBorder, width: 1.5)),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+    // 디자인 시스템 11: 목표에 닿으면 진행바가 quest → jade 로 넘어간다.
+    // "곧 도착"과 "도착"을 색으로 구분해야 인증 버튼이 왜 켜졌는지 읽힌다.
+    final reached = _isInRange;
+
+    // 바텀시트는 e4 — 위로 던지는 그림자로 지도 위에 확실히 얹는다 (03 깊이).
+    return AppSheetSurface(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Center(child: GrabHandle()),
+          const SizedBox(height: AppSpacing.sm),
           Row(
             children: [
               Expanded(
                 child: Text(
-                  '목적지까지 ${Geo.formatDistance(_remainingDistance)}',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
+                  reached
+                      ? '도착했어요'
+                      : '목적지까지 ${Geo.formatDistance(_remainingDistance)}',
+                  style: AppType.h1.copyWith(
+                    color: reached ? AppColors.jade700 : AppColors.textPrimary,
+                  ),
                 ),
               ),
-              TagChip(label: quest.starLabel, fontSize: 11),
+              TierBadge(
+                stars: quest.difficulty.stars,
+                hasHalfStar: quest.hasHalfStar,
+              ),
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.xs),
           Text(
             '${quest.title} · ${_activeQuest.currentSpotLabel}',
-            style: const TextStyle(fontSize: 12, color: AppColors.subText),
+            style: AppType.caption,
           ),
-          const SizedBox(height: 10),
-          ProgressBar(value: _approachProgress),
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpacing.md),
+          ProgressBar(
+            value: _approachProgress,
+            accent: reached ? AppColors.jade500 : null,
+          ),
+          const SizedBox(height: AppSpacing.md),
           NoteBox.text(_statusMessage(spot), fontSize: 12),
           if (_speedAbuseDetected) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             NoteBox.text(
               '이동 속도가 ${Geo.abuseSpeedKmh.round()}km/h를 넘은 구간이 있어 이번 도달은 EXP가 지급되지 않습니다.',
               fontSize: 12,
             ),
           ],
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpacing.md),
           PrimaryButton(
             label: _isSettling ? '보상 정산 중…' : '도착 인증하기',
             enabled: _canVerify,
             onTap: _openVerification,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Center(
             child: GestureDetector(
               onTap: _confirmAbandon,
-              child: const Text(
-                '퀘스트 포기',
-                style: TextStyle(fontSize: 12, color: AppColors.subText),
-              ),
+              child: Text('퀘스트 포기', style: AppType.caption),
             ),
+          ),
+          // DEV-ONLY
+          DevQuestPanel(
+            locationService: _location,
+            target: spot.point,
+            targetRadiusMeters: spot.radiusMeters,
+            onRunFullCycle: _canVerify ? _openVerification : null,
           ),
         ],
       ),
@@ -388,6 +485,7 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     if (_isInRange) {
       return '인증 반경 안에 있어요. 도착 인증을 진행해 주세요.';
     }
-    return '반경 ${spot.radiusMeters.round()}m 진입 시 인증 버튼 활성화 (GPS)';
+    final remaining = Geo.formatDistance(_remainingDistance);
+    return '$remaining 남았어요. ${spot.name}까지 이동해 주세요.';
   }
 }

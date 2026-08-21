@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../dev/dev_tools.dart'; // DEV-ONLY
+import '../services/permission_service.dart';
+
 import '../data/badge_repository.dart';
 import '../data/quest_repository.dart';
 import '../models/active_quest.dart';
@@ -8,6 +11,7 @@ import '../models/quest_model.dart';
 import '../models/user_model.dart';
 import '../services/geo.dart';
 import '../theme/app_colors.dart';
+import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
 
 // -----------------------------------------------------------------------------
@@ -62,18 +66,18 @@ class _HomeScreenState extends State<HomeScreen> {
 /// 백엔드 API를 호출하여 내 위치 기준 가장 가까운 퀘스트 3개를 로드합니다.
   Future<void> _loadNearbyQuests() async {
     try {
-      // 1. Geolocator로 현재 GPS 위치 가져오기 (권한 거부/에러 시 null 처리)
-      Position? pos;
-      try {
-        pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-        );
-      } catch (_) {
-        pos = null;
-      }
+      // 1. 권한을 확인하고 현재 위치를 얻는다(팝업은 온보딩에서 이미 거쳤다).
+      final pos = await PermissionService.currentPosition();
 
-      final lat = pos?.latitude ?? QuestRepository.mockUserLocation.latitude;
-      final lng = pos?.longitude ?? QuestRepository.mockUserLocation.longitude;
+      // DEV-ONLY: 위치 고정이 켜져 있으면 그 좌표를 쓴다.
+      final override = DevTools.locationOverride;
+
+      final lat = override?.latitude ??
+          pos?.latitude ??
+          QuestRepository.mockUserLocation.latitude;
+      final lng = override?.longitude ??
+          pos?.longitude ??
+          QuestRepository.mockUserLocation.longitude;
 
       // 2. 백엔드에서 거리순 정렬된 내 주변 퀘스트 수집
       final quests = await QuestRepository.fetchNearbyQuests(lat: lat, lng: lng);
@@ -139,7 +143,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final displayQuests = _nearbyQuests.isNotEmpty ? _nearbyQuests : widget.recommendedQuests.take(3).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.bgCream,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -147,12 +151,18 @@ class _HomeScreenState extends State<HomeScreen> {
               nickname: widget.user.nickname,
               level: widget.user.level,
               levelProgress: widget.user.levelProgress,
+              avatarId: widget.user.avatarId,
               onTapProfile: () => _notReady('프로필'),
               onTapSettings: () => widget.onOpenSettings?.call(context),
             ),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.gutter,
+                  AppSpacing.lg,
+                  AppSpacing.gutter,
+                  AppSpacing.xxl,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -160,24 +170,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       _buildEmptyQuestCard()
                     else
                       _buildActiveQuestCarousel(),
-                    const SizedBox(height: 18),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          '내 주변 추천 퀘스트',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            setState(() => _isLoadingNearby = true);
-                            _loadNearbyQuests();
-                          },
-                          child: const Icon(Icons.refresh_rounded, size: 18, color: AppColors.subText),
-                        ),
-                      ],
+                    const SizedBox(height: AppSpacing.xxl),
+                    SectionHeader(
+                      title: '내 주변 추천 퀘스트',
+                      trailingText: '새로고침',
+                      onTapTrailing: () {
+                        setState(() => _isLoadingNearby = true);
+                        _loadNearbyQuests();
+                      },
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppSpacing.md),
                     if (_isLoadingNearby)
                       const Center(
                         child: Padding(
@@ -185,7 +187,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryRed),
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: AppColors.quest500),
                           ),
                         ),
                       )
@@ -193,23 +196,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       NoteBox.text('주변에 추천할 퀘스트가 없어요. 지도를 움직여 다른 지역을 살펴보세요.', fontSize: 12)
                     else
                       for (final quest in displayQuests) _buildRecommendedRow(quest),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            '내 대표 배지',
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
-                          ),
-                        ),
-                        TagChip(
-                          label: '전체보기 ›',
-                          fontSize: 11,
-                          onTap: widget.onOpenBadges ?? () => _notReady('배지'),
-                        ),
-                      ],
+                    const SizedBox(height: AppSpacing.xxl),
+                    SectionHeader(
+                      title: '내 대표 배지',
+                      trailingText: '전체보기 ›',
+                      // 배지는 '완료'의 축이라 jade를 쓴다 (디자인 시스템 02 역할 색)
+                      accent: AppColors.jade500,
+                      onTapTrailing: widget.onOpenBadges ?? () => _notReady('배지'),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppSpacing.md),
                     if (earnedBadges.isEmpty)
                       NoteBox.text(
                         '아직 획득한 배지가 없어요. 첫 퀘스트를 완료하면 배지가 생겨요',
@@ -244,32 +239,25 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildActiveQuestCarousel() {
     final quests = widget.activeQuests;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.highlightBg,
-        border: Border.all(color: AppColors.darkBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(9),
-      ),
+    // 디자인 시스템 11: 홈에서 e3를 쓰는 곳은 여기 하나뿐이다.
+    // 전부 떠 있으면 아무것도 떠 있지 않다 (01 원칙 3).
+    return AppCard(
+      gradient: AppSurface.highlight,
+      shadow: AppElevation.e3,
+      accentEdge: AppColors.quest500,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Expanded(
-                child: Text(
-                  '진행 중 퀘스트',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
-                ),
-              ),
+              const Expanded(child: Text('진행 중 퀘스트', style: AppType.h3)),
               Text(
                 '${_carouselIndex + 1} / ${quests.length}',
-                style: const TextStyle(fontSize: 12, color: AppColors.subText),
+                style: AppType.numeric.copyWith(color: AppColors.textTertiary),
               ),
             ],
           ),
-          const SizedBox(height: 9),
+          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               _buildCarouselArrow('‹', () => _moveCarousel(-1), quests.length > 1),
@@ -300,7 +288,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       margin: const EdgeInsets.symmetric(horizontal: 2.5),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: i == _carouselIndex ? AppColors.primaryRed : AppColors.dotInactive,
+                        color: i == _carouselIndex ? AppColors.quest500 : AppColors.ink300,
                       ),
                     ),
                 ],
@@ -327,7 +315,7 @@ class _HomeScreenState extends State<HomeScreen> {
           glyph,
           style: TextStyle(
             fontSize: 20,
-            color: enabled ? AppColors.darkBorder : AppColors.dotInactive,
+            color: enabled ? AppColors.textPrimary : AppColors.ink300,
           ),
         ),
       ),
@@ -348,24 +336,26 @@ class _HomeScreenState extends State<HomeScreen> {
       distanceMeters = Geo.distanceMeters(QuestRepository.mockUserLocation, active.currentSpot.point);
     }
 
+    // 목표에 가까워질수록 진행바가 quest → jade 로 넘어간다 (디자인 시스템 11).
+    final isNear = active.progress >= 0.85;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // 대표사진 자리. 아직 이미지 소스가 없으므로 난이도 등급을 대신 세운다.
         Container(
           width: 76,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: AppColors.bgCream,
-            border: Border.all(color: AppColors.noteBorder, width: 1.5),
-            borderRadius: BorderRadius.circular(9),
+            gradient: AppSurface.sunken,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
           ),
-          child: const Text(
-            '퀘스트\n대표사진',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: AppColors.noteText, height: 1.3),
+          child: TierBadge(
+            stars: quest.difficulty.stars,
+            hasHalfStar: quest.hasHalfStar,
           ),
         ),
-        const SizedBox(width: 9),
+        const SizedBox(width: AppSpacing.md),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -375,26 +365,29 @@ class _HomeScreenState extends State<HomeScreen> {
                 quest.title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.darkBorder, height: 1.25),
+                style: AppType.h3,
               ),
-              const SizedBox(height: 5),
+              const SizedBox(height: AppSpacing.xs),
               Row(
                 children: [
-                  TagChip(label: quest.starLabel, fontSize: 11),
-                  const SizedBox(width: 5),
+                  RewardPill(exp: quest.displayExp),
+                  const SizedBox(width: AppSpacing.sm),
                   Text(
                     Geo.formatDistance(distanceMeters),
-                    style: const TextStyle(fontSize: 11, color: AppColors.subText),
+                    style: AppType.numeric.copyWith(
+                      fontSize: 11,
+                      color: AppColors.textTertiary,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 7),
-              ProgressBar(value: active.progress),
-              const SizedBox(height: 4),
-              Text(
-                active.progressLabel,
-                style: const TextStyle(fontSize: 11, color: AppColors.subText),
+              const SizedBox(height: AppSpacing.sm),
+              ProgressBar(
+                value: active.progress,
+                accent: isNear ? AppColors.jade500 : null,
               ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(active.progressLabel, style: AppType.micro),
             ],
           ),
         ),
@@ -406,34 +399,32 @@ class _HomeScreenState extends State<HomeScreen> {
   // 2b · 진행 중 퀘스트 빈 상태 카드
   // ---------------------------------------------------------------------------
   Widget _buildEmptyQuestCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.highlightBg,
-        border: Border.all(color: AppColors.darkBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(9),
-      ),
+    return AppCard(
+      gradient: AppSurface.highlight,
+      shadow: AppElevation.e3,
+      padding: const EdgeInsets.all(AppSpacing.xl),
       child: Column(
         children: [
           Container(
             width: 56,
             height: 56,
-            decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.bgCream),
-            child: const Icon(Icons.explore_outlined, color: AppColors.primaryRed, size: 26),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: AppSurface.paper,
+              boxShadow: AppElevation.e1,
+            ),
+            child: const Icon(Icons.explore_outlined,
+                color: AppColors.quest500, size: 26),
           ),
-          const SizedBox(height: 10),
-          const Text(
-            '진행 중인 퀘스트가 없어요',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            '아래 추천 목록이나 지도에서 퀘스트를 수락하면\n여기에 캐러셀 카드로 표시돼요',
+          const SizedBox(height: AppSpacing.md),
+          const Text('진행 중인 퀘스트가 없어요', style: AppType.h3),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            '아래 추천이나 지도에서 마음에 드는 걸 골라보세요.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: AppColors.subText, height: 1.4),
+            style: AppType.caption,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.lg),
           PrimaryButton(
             label: '지도에서 찾아보기',
             fontSize: 13,
@@ -459,21 +450,41 @@ class _HomeScreenState extends State<HomeScreen> {
       distanceStr = QuestRepository.distanceFromUser(quest);
     }
 
+    // 목록에서 반복되는 표면은 e2 (디자인 시스템 03 · 11).
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: GestureDetector(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: AppCard(
         onTap: () => widget.onSelectQuest(quest),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            border: Border.all(color: AppColors.darkBorder, width: 1.5),
-            borderRadius: BorderRadius.circular(7),
-          ),
-          child: Text(
-            '🎯 ${quest.title} · $distanceStr · ${quest.starLabel}',
-            style: const TextStyle(fontSize: 13, color: AppColors.darkBorder),
-          ),
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Row(
+          children: [
+            TierBadge(
+              stars: quest.difficulty.stars,
+              hasHalfStar: quest.hasHalfStar,
+              showLabel: false,
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    quest.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppType.h3,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${quest.spotName} · $distanceStr',
+                    style: AppType.caption,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            RewardPill(exp: quest.displayExp),
+          ],
         ),
       ),
     );
@@ -496,33 +507,46 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// 획득한 배지는 '완료'의 축이라 jade로 칠한다 (디자인 시스템 02).
   Widget _buildBadgeSlot(BadgeProgress badge) {
     return Container(
       alignment: Alignment.center,
-      padding: const EdgeInsets.all(6),
+      padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: AppColors.highlightBg,
-        border: Border.all(color: AppColors.darkBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(9),
+        color: AppColors.jade50,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        boxShadow: AppElevation.e1,
       ),
-      child: Text(
-        badge.rule.name,
-        textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 11, color: AppColors.darkBorder, height: 1.25),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.workspace_premium_outlined,
+              size: 22, color: AppColors.jade500),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            badge.rule.name,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: AppType.micro.copyWith(color: AppColors.jade700),
+          ),
+        ],
       ),
     );
   }
 
+  /// 빈 칸은 눌러 새긴 면으로 내려간다. 볼록(획득)과 오목(미획득)이 짝을 이룬다.
   Widget _buildEmptyBadgeSlot() {
-    return GestureDetector(
+    return PressableScale(
       onTap: widget.onOpenBadges ?? () => _notReady('배지'),
       child: Container(
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          border: Border.all(color: AppColors.noteBorder, width: 1.5),
-          borderRadius: BorderRadius.circular(9),
+          gradient: AppSurface.sunken,
+          borderRadius: BorderRadius.circular(AppRadius.md),
         ),
-        child: const Text('+', style: TextStyle(fontSize: 16, color: AppColors.noteText)),
+        child: const Icon(Icons.add_rounded,
+            size: 20, color: AppColors.textDisabled),
       ),
     );
   }

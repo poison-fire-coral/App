@@ -7,6 +7,7 @@ import '../models/quest_model.dart';
 import '../models/user_model.dart';
 import '../services/geo.dart';
 import '../theme/app_colors.dart';
+import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
 
 class MapScreen extends StatefulWidget {
@@ -104,7 +105,9 @@ class _MapScreenState extends State<MapScreen> {
       final fetchedQuests = await QuestRepository.fetchNearbyQuests(
         lat: lat,
         lng: lng,
-        radiusM: 50000, // 50km 반경 검색
+        // 이 API는 호출할 때마다 카카오 로컬 API를 4번 때리고 DB에 쓴다
+        // (quest.service.ts:278). 반경이 넓을수록 느려지고 DB가 계속 부푼다.
+        radiusM: 5000,
       );
 
       if (mounted) {
@@ -270,7 +273,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgCream,
+      backgroundColor: AppColors.surface,
       body: SafeArea(
         child: Column(
           children: [
@@ -278,6 +281,7 @@ class _MapScreenState extends State<MapScreen> {
               nickname: widget.user.nickname,
               level: widget.user.level,
               levelProgress: widget.user.levelProgress,
+              avatarId: widget.user.avatarId,
               onTapProfile: () => _notReady('프로필'),
               onTapSettings: () => widget.onOpenSettings?.call(context),
             ),
@@ -320,7 +324,9 @@ class _MapScreenState extends State<MapScreen> {
                       top: 80,
                       left: 0,
                       right: 0,
-                      child: Center(child: LinearProgressIndicator(color: AppColors.primaryRed)),
+                      child: Center(
+                          child: LinearProgressIndicator(
+                              color: AppColors.quest500)),
                     ),
                   if (!_isLoadingQuests && _visibleQuests.isEmpty) _buildEmptyResultNote(),
 
@@ -346,26 +352,17 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  /// 디자인 시스템 11: 현위치는 FloatingSurfaceButton(emphasized: false).
+  /// 주 행동이 아니므로 붉은 인장을 쓰지 않는다.
   Widget _buildMyLocationButton() {
-    final double bottomPadding = _selectedQuest != null ? 220.0 : 20.0;
+    final double bottomPadding = _selectedQuest != null ? 220.0 : AppSpacing.xl;
 
     return Positioned(
-      right: 14,
+      right: AppSpacing.gutter,
       bottom: bottomPadding,
-      child: FloatingActionButton.small(
-        heroTag: 'my_location_btn',
-        backgroundColor: AppColors.bgCream,
-        elevation: 3,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: const BorderSide(color: AppColors.darkBorder, width: 1.5),
-        ),
-        onPressed: () => _initUserLocation(panToUser: true),
-        child: const Icon(
-          Icons.my_location_rounded,
-          color: AppColors.primaryRed,
-          size: 20,
-        ),
+      child: FloatingSurfaceButton(
+        icon: Icons.my_location_rounded,
+        onTap: () => _initUserLocation(panToUser: true),
       ),
     );
   }
@@ -375,25 +372,25 @@ class _MapScreenState extends State<MapScreen> {
       left: 0,
       right: 0,
       top: 0,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 9),
-        decoration: const BoxDecoration(
-          color: AppColors.bgCream,
-          border: Border(bottom: BorderSide(color: AppColors.darkBorder, width: 1.5)),
+      // 지도 배경이 복잡해서 납작한 바는 묻힌다. 종이 카드로 띄운다 (11).
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.md,
+          0,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.darkBorder, width: 1.5),
-                borderRadius: BorderRadius.circular(7),
-              ),
+            AppCard(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              radius: BorderRadius.circular(AppRadius.pill),
               child: Row(
                 children: [
-                  const Icon(Icons.search, size: 15, color: AppColors.noteText),
-                  const SizedBox(width: 6),
+                  const Icon(Icons.search_rounded,
+                      size: 18, color: AppColors.textTertiary),
+                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: TextField(
                       controller: _searchController,
@@ -401,27 +398,31 @@ class _MapScreenState extends State<MapScreen> {
                         setState(() => _searchQuery = v);
                         _updateMarkers();
                       },
-                      style: const TextStyle(fontSize: 13, color: AppColors.darkBorder),
-                      decoration: const InputDecoration(
+                      style: AppType.body,
+                      decoration: InputDecoration(
                         hintText: '지역 · 퀘스트 검색',
+                        hintStyle: AppType.body
+                            .copyWith(color: AppColors.textDisabled),
                         isDense: true,
                         border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(vertical: 9),
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.md),
             SizedBox(
-              height: 26,
+              height: 34,
               child: ListView(
                 scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(vertical: 2),
                 children: [
                   _filterChip('전체'),
                   for (final k in _availableKeywords) ...[
-                    const SizedBox(width: 6),
+                    const SizedBox(width: AppSpacing.sm),
                     _filterChip(k),
                   ],
                 ],
@@ -457,7 +458,7 @@ class _MapScreenState extends State<MapScreen> {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: const Text(
           '조건에 맞는 퀘스트가 없어요',
-          style: TextStyle(fontSize: 12, color: AppColors.noteText),
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
       ),
     );
@@ -472,13 +473,8 @@ class _MapScreenState extends State<MapScreen> {
       right: 0,
       bottom: 0,
       top: isDetail ? 80 : null,
-      child: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.bgCream,
-          border: Border.fromBorderSide(BorderSide(color: AppColors.darkBorder, width: 1.5)),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+      // 바텀시트는 e4 — 상단 반경 24 + 위로 던지는 그림자 (디자인 시스템 10).
+      child: AppSheetSurface(
         child: isDetail
             ? SingleChildScrollView(child: _buildDetailContent(quest))
             : _buildPreviewContent(quest),
@@ -500,31 +496,43 @@ class _MapScreenState extends State<MapScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Center(child: GrabHandle(onTap: _expandSheet)),
+        const SizedBox(height: AppSpacing.sm),
         Row(
           children: [
-            Expanded(
-              child: Text(
-                quest.title,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
-              ),
+            Expanded(child: Text(quest.title, style: AppType.h1)),
+            TierBadge(
+              stars: quest.difficulty.stars,
+              hasHalfStar: quest.hasHalfStar,
             ),
-            TagChip(label: quest.starLabel, fontSize: 11),
           ],
         ),
-        const SizedBox(height: 8),
-        SolidBox.text('보상 : EXP ${quest.displayExp}'),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.md),
+        Row(
+          children: [
+            // 보상은 앰버로 떠오르고(볼록),
+            RewardPill(
+              exp: quest.displayExp,
+              multiplierNote: quest.crowdMultiplier != 1.0
+                  ? quest.crowdLabel
+                  : null,
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(
+              QuestRepository.distanceFromUser(quest),
+              style: AppType.numeric.copyWith(color: AppColors.textTertiary),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        // 설명은 종이에 눌러 새긴 면으로 내려간다(오목). 04 표면.
         NoteBox.text(quest.summary),
-        const SizedBox(height: 10),
+        const SizedBox(height: AppSpacing.lg),
         _acceptButton(quest),
-        const SizedBox(height: 6),
+        const SizedBox(height: AppSpacing.sm),
         GestureDetector(
           onTap: _expandSheet,
-          child: const Center(
-            child: Text(
-              '▲ 위로 드래그하면 관광지 정보',
-              style: TextStyle(fontSize: 12, color: AppColors.subText),
-            ),
+          child: Center(
+            child: Text('관광지 정보 보기', style: AppType.caption),
           ),
         ),
       ],
@@ -552,7 +560,7 @@ class _MapScreenState extends State<MapScreen> {
             Expanded(
               child: Text(
                 quest.title,
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
             ),
             TagChip(label: quest.starLabel, fontSize: 11),
@@ -568,7 +576,7 @@ class _MapScreenState extends State<MapScreen> {
         const Divider(color: AppColors.divider, height: 1),
         const SizedBox(height: 10),
         const Center(
-          child: Text('― 관광지 정보 ―', style: TextStyle(fontSize: 11, color: AppColors.subText)),
+          child: Text('― 관광지 정보 ―', style: TextStyle(fontSize: 11, color: AppColors.textTertiary)),
         ),
         const SizedBox(height: 8),
         Row(
@@ -579,13 +587,13 @@ class _MapScreenState extends State<MapScreen> {
               height: 62,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                border: Border.all(color: AppColors.noteBorder, width: 1.5),
+                gradient: AppSurface.sunken,
                 borderRadius: BorderRadius.circular(7),
               ),
               child: const Text(
                 '사진 1장',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11, color: AppColors.noteText),
+                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
               ),
             ),
             const SizedBox(width: 10),
@@ -595,7 +603,7 @@ class _MapScreenState extends State<MapScreen> {
                 children: [
                   Text(
                     quest.spotName,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                   ),
                   const SizedBox(height: 5),
                   Wrap(
@@ -606,7 +614,7 @@ class _MapScreenState extends State<MapScreen> {
                   const SizedBox(height: 5),
                   Text(
                     '${quest.regionLabel} · $distance',
-                    style: const TextStyle(fontSize: 12, color: AppColors.subText),
+                    style: const TextStyle(fontSize: 12, color: AppColors.textTertiary),
                   ),
                 ],
               ),

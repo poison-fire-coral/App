@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <!-- 06 시장·먹기 · 두건 (quest red + amber) -->
+  <defs>
+    <linearGradient id="a6bg" x1="48" y1="3" x2="48" y2="93" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F4EBE6"/>
+    </linearGradient>
+    <linearGradient id="a6skin" x1="48" y1="30" x2="48" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F7EDE8"/>
+    </linearGradient>
+    <linearGradient id="a6band" x1="48" y1="19" x2="48" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C55B45"/><stop offset="1" stop-color="#8A2419"/>
+    </linearGradient>
+    <linearGradient id="a6body" x1="48" y1="66" x2="48" y2="93" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FDF6E7"/><stop offset="1" stop-color="#F0DFC4"/>
+    </linearGradient>
+  </defs>
+  <circle cx="48" cy="48" r="46" fill="url(#a6bg)"/>
+  <ellipse cx="48" cy="84" rx="34" ry="12" fill="#2A1512" opacity=".05"/>
+  <path d="M20 93c0-15 12.5-25 28-25s28 10 28 25z" fill="url(#a6body)"/>
+  <circle cx="48" cy="49" r="18" fill="url(#a6skin)"/>
+  <circle cx="41.5" cy="48" r="2.4" fill="#4A342F"/>
+  <circle cx="54.5" cy="48" r="2.4" fill="#4A342F"/>
+  <path d="M43 56c2.9 3 7.1 3 10 0" fill="none" stroke="#4A342F" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M48 19c9.9 0 18 8.1 18 18v2H30v-2c0-9.9 8.1-18 18-18z" fill="url(#a6band)"/>
+  <path d="M48 19c9.9 0 18 8.1 18 18v.5c-4-8-10.5-12-18-12s-14 4-18 12V37c0-9.9 8.1-18 18-18z" fill="#FFFFFF" opacity=".16"/>
+  <path d="M66 33l9-4-2 9-7 2z" fill="#8A2419"/>
+  <path d="M66 39l10 3-8 5-3-4z" fill="#C55B45"/>
+  <circle cx="38" cy="30" r="2.6" fill="#E2B45F"/>
+  <circle cx="52" cy="27" r="2.2" fill="#E2B45F"/>
+  <circle cx="59" cy="32" r="1.8" fill="#E2B45F"/>
+  <circle cx="48" cy="48" r="46" fill="none" stroke="#2A1512" stroke-opacity=".14" stroke-width="1.6"/>
+</svg>

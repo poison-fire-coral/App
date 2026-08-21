@@ -4,6 +4,25 @@ import { CustomError } from "../utils/CustomError";
 import { calculateHaversineDistance, checkSpeedAbuse } from "../utils/geo.util";
 import { calculateRewardExp, processLevelUp } from "./exp-engine.service";
 
+
+/**
+ * Place.congestionScore(0~100 백분위)를 EXP 엔진이 기대하는 1/2/3 등급으로 옮긴다.
+ *
+ * 엔진(exp-engine.service.ts:19)은 1=한산(x1.4) · 2=보통(x1.0) · 3=혼잡(x0.7)만 안다.
+ * 그런데 DB에는 50, 80 같은 백분위가 들어 있어 어떤 값이든 "보통"으로 떨어졌고,
+ * 결과적으로 기획서 6b가 "오버투어리즘 완화의 핵심"이라고 한 혼잡도 배율이
+ * 한 번도 적용되지 않았다.
+ *
+ * 기준은 기획서 6b 그대로 — 방문자 하위 30%는 한산, 상위 10%는 혼잡.
+ */
+export function toCongestionTier(score: number | null | undefined): number {
+  if (score === null || score === undefined) return 2;
+  if (score <= 30) return 1; // 한산 x1.4
+  if (score >= 90) return 3; // 혼잡 x0.7
+  return 2; // 보통 x1.0
+}
+
+
 export interface VerifyQuestDto {
   userId: number;
   questId: number;
@@ -489,7 +508,7 @@ export class QuestService {
       {
         baseExp: quest.baseExp,
         halfStep: quest.halfStep,
-        congestionScore: quest.place.congestionScore,
+        congestionScore: toCongestionTier(quest.place.congestionScore),
         isNewArea: true,
         isOffPeak: false,
         streakDays: user.streakDays,
@@ -564,7 +583,14 @@ export class QuestService {
         completionId: completion.id,
         expAwarded: expResult.finalExp,
         breakdown: expResult.breakdown,
-        levelInfo: levelResult,
+        // 클라이언트가 진행 링을 그리려면 "다음 레벨까지 얼마"가 필요하다.
+        // 이 값을 안 주면 앱이 자체 하드코딩 테이블로 계산해 서버와 어긋난다.
+        levelInfo: {
+          ...levelResult,
+          nextRequiredExp:
+            levelTable.find((l) => l.level === levelResult.level + 1)
+              ?.requiredExp ?? null,
+        },
         isAbused,
       };
     });

@@ -67,6 +67,53 @@ class ExpBreakdown {
     this.isSpeedAbuse = false,
   });
 
+  /// 서버 `verify` 응답의 breakdown을 그대로 옮긴다.
+  ///
+  /// 의뢰서 절대원칙 ①이 "EXP 판정은 100% 서버 계산, 클라이언트는 결과만 표시"라
+  /// 못박고 있다. 로컬 계산은 수락 전 예상치·오프라인 폴백으로만 남긴다.
+  ///
+  /// 서버 모양: `{baseExp, mHalf, mCong, mArea, mTime, mStreak, mReattempt,
+  /// calculatedExp, singleCappedExp, finalExp}` 또는 어뷰징 시 `{abusePenalty: true}`.
+  factory ExpBreakdown.fromServer(
+    Map<String, dynamic> raw, {
+    bool isAbused = false,
+  }) {
+    if (isAbused || raw['abusePenalty'] == true) {
+      return const ExpBreakdown(
+        baseExp: 0,
+        multipliers: {},
+        calculated: 0,
+        singleCapped: 0,
+        finalExp: 0,
+        isSpeedAbuse: true,
+      );
+    }
+
+    const labels = <String, String>{
+      'mHalf': '반개',
+      'mCong': '혼잡도',
+      'mArea': '첫 지역',
+      'mTime': '비피크',
+      'mStreak': '스트릭',
+      'mReattempt': '재수행',
+    };
+
+    final multipliers = <String, double>{};
+    labels.forEach((key, label) {
+      final value = (raw[key] as num?)?.toDouble() ?? 1.0;
+      if ((value - 1.0).abs() > 1e-9) multipliers[label] = value;
+    });
+
+    final finalExp = (raw['finalExp'] as num?)?.toInt() ?? 0;
+    return ExpBreakdown(
+      baseExp: (raw['baseExp'] as num?)?.toInt() ?? 0,
+      multipliers: multipliers,
+      calculated: (raw['calculatedExp'] as num?)?.toInt() ?? finalExp,
+      singleCapped: (raw['singleCappedExp'] as num?)?.toInt() ?? finalExp,
+      finalExp: finalExp,
+    );
+  }
+
   bool get isSingleCapped => calculated > singleCapped;
 
   bool get isDailyCapped => singleCapped > finalExp;
@@ -102,21 +149,54 @@ class LevelUpResult {
   /// 이번에 새로 해금된 콘텐츠 (기획서 6d)
   final List<String> unlocks;
 
+  /// 서버가 알려준 "다음 레벨까지 필요한 EXP".
+  ///
+  /// 서버 `level_table`과 클라이언트 [LevelSystem] 테이블이 서로 다르므로,
+  /// 서버가 값을 주면 그걸 쓰고 없을 때만 로컬 테이블로 떨어진다.
+  final int? nextRequiredExp;
+
   const LevelUpResult({
     required this.previousLevel,
     required this.level,
     required this.exp,
     required this.gainedExp,
     this.unlocks = const [],
+    this.nextRequiredExp,
   });
+
+  /// 서버 `verify` 응답의 `levelInfo`를 옮긴다.
+  factory LevelUpResult.fromServer(
+    Map<String, dynamic> levelInfo, {
+    required int previousLevel,
+    required int gainedExp,
+  }) {
+    final level = (levelInfo['level'] as num?)?.toInt() ?? previousLevel;
+    return LevelUpResult(
+      previousLevel: previousLevel,
+      level: level,
+      exp: (levelInfo['expCurrent'] as num?)?.toInt() ?? 0,
+      gainedExp: gainedExp,
+      nextRequiredExp: (levelInfo['nextRequiredExp'] as num?)?.toInt(),
+      // 해금 안내 문구는 클라이언트 기획 데이터라 그대로 쓴다.
+      unlocks: [
+        for (var l = previousLevel + 1; l <= level; l++)
+          ...?ExpService.levelUnlocks[l],
+      ],
+    );
+  }
 
   bool get leveledUp => level > previousLevel;
 
-  int get requiredExp => LevelSystem.getRequiredExpForLevel(level);
+  int get requiredExp =>
+      nextRequiredExp ?? LevelSystem.getRequiredExpForLevel(level);
 
   int get expToNextLevel => (requiredExp - exp).clamp(0, requiredExp);
 
-  double get progress => LevelSystem.calculateProgressPercentage(level, exp);
+  double get progress {
+    final required = requiredExp;
+    if (required <= 0) return 1;
+    return (exp / required).clamp(0.0, 1.0);
+  }
 }
 
 /// 기획서 6a~6d의 보상·레벨 규칙을 담은 정산 엔진.

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <!-- 03 산·트레킹 · 비니 + 배낭끈 (jade) -->
+  <defs>
+    <linearGradient id="a3bg" x1="48" y1="3" x2="48" y2="93" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F4EBE6"/>
+    </linearGradient>
+    <linearGradient id="a3skin" x1="48" y1="30" x2="48" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F7EDE8"/>
+    </linearGradient>
+    <linearGradient id="a3cap" x1="48" y1="17" x2="48" y2="39" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3E9670"/><stop offset="1" stop-color="#1E5A40"/>
+    </linearGradient>
+    <linearGradient id="a3body" x1="48" y1="66" x2="48" y2="93" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFDFB"/><stop offset="1" stop-color="#EFE3DD"/>
+    </linearGradient>
+  </defs>
+  <circle cx="48" cy="48" r="46" fill="url(#a3bg)"/>
+  <ellipse cx="48" cy="84" rx="34" ry="12" fill="#2A1512" opacity=".05"/>
+  <path d="M20 93c0-15 12.5-25 28-25s28 10 28 25z" fill="url(#a3body)"/>
+  <path d="M38 70l-4.5 23M58 70l4.5 23" fill="none" stroke="#2E7D5B" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="48" cy="48" r="18" fill="url(#a3skin)"/>
+  <circle cx="41.5" cy="47" r="2.4" fill="#4A342F"/>
+  <circle cx="54.5" cy="47" r="2.4" fill="#4A342F"/>
+  <path d="M44 55.5c2.4 2.2 5.6 2.2 8 0" fill="none" stroke="#4A342F" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M48 18c9.4 0 17 7.6 17 17v3H31v-3c0-9.4 7.6-17 17-17z" fill="url(#a3cap)"/>
+  <path d="M29 37.5c0-1.4 1.1-2.5 2.5-2.5h33a2.5 2.5 0 0 1 0 5h-33a2.5 2.5 0 0 1-2.5-2.5z" fill="#2E7D5B"/>
+  <path d="M29 37.5c0-1.4 1.1-2.5 2.5-2.5h33a2.5 2.5 0 0 1 1.8.8H29.2c-.1.5-.2 1.1-.2 1.7z" fill="#FFFFFF" opacity=".22"/>
+  <circle cx="48" cy="14.5" r="5" fill="#E2B45F"/>
+  <circle cx="48" cy="48" r="46" fill="none" stroke="#2A1512" stroke-opacity=".14" stroke-width="1.6"/>
+</svg>

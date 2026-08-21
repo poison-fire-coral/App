@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <!-- 05 역사·박물관 · 둥근 안경 + 책 (lapis / ink) -->
+  <defs>
+    <linearGradient id="a5bg" x1="48" y1="3" x2="48" y2="93" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F4EBE6"/>
+    </linearGradient>
+    <linearGradient id="a5skin" x1="48" y1="26" x2="48" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F7EDE8"/>
+    </linearGradient>
+    <linearGradient id="a5hair" x1="48" y1="20" x2="48" y2="42" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6D5A55"/><stop offset="1" stop-color="#4A342F"/>
+    </linearGradient>
+    <linearGradient id="a5book" x1="48" y1="70" x2="48" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E8DCD6"/>
+    </linearGradient>
+    <linearGradient id="a5body" x1="48" y1="62" x2="48" y2="93" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFDFB"/><stop offset="1" stop-color="#EFE3DD"/>
+    </linearGradient>
+  </defs>
+  <circle cx="48" cy="48" r="46" fill="url(#a5bg)"/>
+  <ellipse cx="48" cy="84" rx="34" ry="12" fill="#2A1512" opacity=".05"/>
+  <path d="M20 93c0-15 12.5-25 28-25s28 10 28 25z" fill="url(#a5body)"/>
+  <path d="M30 42c0-11.6 8-19.5 18-19.5S66 30.4 66 42c-7-3.5-10-7-10-7s-6 6-26 7z" fill="url(#a5hair)"/>
+  <circle cx="48" cy="44" r="17" fill="url(#a5skin)"/>
+  <path d="M46 44h4" fill="none" stroke="#2F5D8C" stroke-width="2.4" stroke-linecap="round"/>
+  <circle cx="40" cy="44" r="7" fill="#EDF2F8" fill-opacity=".8" stroke="#2F5D8C" stroke-width="2.4"/>
+  <circle cx="56" cy="44" r="7" fill="#EDF2F8" fill-opacity=".8" stroke="#2F5D8C" stroke-width="2.4"/>
+  <circle cx="40" cy="44" r="2.1" fill="#4A342F"/>
+  <circle cx="56" cy="44" r="2.1" fill="#4A342F"/>
+  <path d="M44.5 55h7" fill="none" stroke="#4A342F" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M27 72h20v18H31a4 4 0 0 1-4-4z" fill="url(#a5book)"/>
+  <path d="M69 72H49v18h16a4 4 0 0 0 4-4z" fill="url(#a5book)"/>
+  <path d="M27 72h20v3.5H27zM49 72h20v3.5H49z" fill="#2F5D8C" opacity=".22"/>
+  <path d="M48 71v20" fill="none" stroke="#8E7A74" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M33 80h9M54 80h9" fill="none" stroke="#B6A49E" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="48" cy="48" r="46" fill="none" stroke="#2A1512" stroke-opacity=".14" stroke-width="1.6"/>
+</svg>

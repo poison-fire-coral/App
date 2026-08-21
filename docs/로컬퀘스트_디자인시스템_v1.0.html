@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parchment &amp; Seal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+/* ==========================================================================
+   문서 자체의 토큰 — 앱 토큰과는 별개다.
+   앱 화면은 항상 라이트(종이) 한 세계로 고정이지만, 이 문서는 읽는 사람의
+   테마를 따른다. 그래서 데모(.stage) 안쪽만 라이트 값을 고정으로 박아 둔다.
+   ========================================================================== */
+:root{
+  --ground:#F6F1ED;
+  --surface:#FFFDFB;
+  --surface-2:#FBF5F1;
+  --text:#2A1512;
+  --text-2:#6D5A55;
+  --text-3:#8E7A74;
+  --hairline:rgba(42,21,18,.10);
+  --hairline-2:rgba(42,21,18,.18);
+  --accent:#9E2B1E;
+  --accent-soft:rgba(158,43,30,.10);
+  --amber:#8A5C15;
+  --jade:#1E5A40;
+  --lapis:#1E3F62;
+  --rail:rgba(42,21,18,.06);
+  --doc-shadow:0 1px 2px rgba(42,21,18,.05), 0 8px 24px rgba(42,21,18,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#171010;
+    --surface:#211615;
+    --surface-2:#2A1D1B;
+    --text:#F3E7E2;
+    --text-2:#C0A9A2;
+    --text-3:#9A817A;
+    --hairline:rgba(255,240,235,.10);
+    --hairline-2:rgba(255,240,235,.18);
+    --accent:#E1917F;
+    --accent-soft:rgba(225,145,127,.12);
+    --amber:#E2B45F;
+    --jade:#6FC49C;
+    --lapis:#8FB6DC;
+    --rail:rgba(255,240,235,.06);
+    --doc-shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 28px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#171010;
+  --surface:#211615;
+  --surface-2:#2A1D1B;
+  --text:#F3E7E2;
+  --text-2:#C0A9A2;
+  --text-3:#9A817A;
+  --hairline:rgba(255,240,235,.10);
+  --hairline-2:rgba(255,240,235,.18);
+  --accent:#E1917F;
+  --accent-soft:rgba(225,145,127,.12);
+  --amber:#E2B45F;
+  --jade:#6FC49C;
+  --lapis:#8FB6DC;
+  --rail:rgba(255,240,235,.06);
+  --doc-shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 28px rgba(0,0,0,.35);
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--text);
+  font-family:'IBM Plex Sans KR','Pretendard',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  font-size:15px;
+  line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px;}
+
+/* ---------- 레이아웃 ---------- */
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 96px;}
+.layout{display:grid;grid-template-columns:1fr;gap:40px;}
+@media (min-width:1000px){
+  .layout{grid-template-columns:196px minmax(0,1fr);gap:56px;align-items:start;}
+  .rail{position:sticky;top:28px;}
+}
+
+/* ---------- 머리말 ---------- */
+.masthead{padding:64px 0 40px;border-bottom:1px solid var(--hairline);margin-bottom:44px;}
+.eyebrow{
+  font-family:'IBM Plex Mono',ui-monospace,monospace;
+  font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--text-3);margin:0 0 18px;
+}
+.masthead h1{
+  font-size:clamp(34px,6vw,54px);font-weight:600;line-height:1.06;
+  letter-spacing:-.03em;margin:0 0 6px;text-wrap:balance;
+}
+.masthead .ko{font-size:clamp(15px,2vw,18px);font-weight:500;color:var(--text-2);margin:0 0 24px;}
+.lede{max-width:62ch;font-size:16px;color:var(--text-2);margin:0;}
+.lede strong{color:var(--text);font-weight:600;}
+.meta{
+  display:flex;flex-wrap:wrap;gap:8px 28px;margin-top:28px;
+  font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11.5px;color:var(--text-3);
+}
+.meta b{color:var(--text-2);font-weight:500;}
+
+/* ---------- 사이드 내비 ---------- */
+.rail nav{display:flex;flex-direction:column;gap:1px;}
+.rail a{
+  display:block;text-decoration:none;color:var(--text-3);
+  font-size:13px;padding:5px 10px;border-radius:6px;border-left:2px solid transparent;
+}
+.rail a:hover{color:var(--text);background:var(--rail);}
+.rail .rail-title{
+  font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10.5px;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--text-3);
+  padding:0 10px;margin:0 0 12px;
+}
+
+/* ---------- 섹션 ---------- */
+section{margin-bottom:76px;scroll-margin-top:24px;}
+h2{
+  font-size:24px;font-weight:600;letter-spacing:-.02em;margin:0 0 6px;
+  display:flex;align-items:baseline;gap:12px;
+}
+h2 .id{
+  font-family:'IBM Plex Mono',ui-monospace,monospace;
+  font-size:11px;letter-spacing:.1em;color:var(--accent);font-weight:500;
+}
+h3{font-size:15px;font-weight:600;margin:36px 0 12px;letter-spacing:-.01em;}
+.note{color:var(--text-2);font-size:14px;max-width:66ch;margin:0 0 24px;}
+.note code, p code, li code, td code{
+  font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.86em;
+  background:var(--rail);padding:1px 5px;border-radius:4px;color:var(--text);
+}
+ul.rules{margin:0 0 24px;padding:0;list-style:none;max-width:70ch;}
+ul.rules li{
+  position:relative;padding-left:26px;margin-bottom:10px;color:var(--text-2);font-size:14px;
+}
+ul.rules li::before{
+  content:"";position:absolute;left:6px;top:11px;width:6px;height:6px;
+  border-radius:50%;background:var(--accent);
+}
+ul.rules li b{color:var(--text);font-weight:600;}
+
+/* ---------- 표 ---------- */
+.tbl-scroll{overflow-x:auto;margin-bottom:24px;}
+table{border-collapse:collapse;width:100%;min-width:520px;font-size:13.5px;}
+th{
+  text-align:left;font-family:'IBM Plex Mono',ui-monospace,monospace;
+  font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-3);
+  font-weight:500;padding:0 14px 8px 0;border-bottom:1px solid var(--hairline-2);
+}
+td{padding:11px 14px 11px 0;border-bottom:1px solid var(--hairline);color:var(--text-2);vertical-align:top;}
+td:first-child{color:var(--text);font-weight:500;white-space:nowrap;}
+td.mono,th.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;font-variant-numeric:tabular-nums;}
+
+/* ---------- 스와치 ---------- */
+.ramp{display:grid;grid-template-columns:repeat(auto-fit,minmax(84px,1fr));gap:2px;margin-bottom:12px;
+  border-radius:10px;overflow:hidden;border:1px solid var(--hairline);}
+.ramp .stop{padding:14px 10px 12px;min-height:78px;display:flex;flex-direction:column;justify-content:flex-end;}
+.ramp .stop .n{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10.5px;letter-spacing:.06em;opacity:.9;}
+.ramp .stop .h{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10px;opacity:.62;}
+.role-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:8px;}
+.role{border:1px solid var(--hairline);border-radius:12px;padding:16px;background:var(--surface);}
+.role .dot{width:26px;height:26px;border-radius:8px;margin-bottom:12px;}
+.role h4{margin:0 0 4px;font-size:14px;font-weight:600;}
+.role p{margin:0;font-size:12.5px;color:var(--text-2);line-height:1.55;}
+.role .tok{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10.5px;color:var(--text-3);margin-top:8px;display:block;}
+
+/* ==========================================================================
+   .stage — 앱 화면을 그대로 재현하는 구역.
+   여기 안쪽 색은 문서 테마를 따르지 않고 앱의 라이트 팔레트로 고정한다.
+   ========================================================================== */
+.stage{
+  --ink0:#FFFDFB; --ink50:#FBF6F3; --ink100:#F4EBE6; --ink200:#E8DCD6;
+  --ink300:#D6C8C2; --ink400:#B6A49E; --ink500:#8E7A74; --ink600:#6D5A55;
+  --ink700:#4A342F; --ink900:#2A1512;
+  --q50:#FDF4F1; --q100:#F9E0D9; --q300:#E1917F; --q400:#C55B45;
+  --q500:#9E2B1E; --q600:#8A2419; --q700:#6F1C13;
+  --am50:#FDF6E7; --am100:#F8E7BE; --am300:#E2B45F; --am500:#C08428; --am700:#8A5C15;
+  --jd50:#ECF5F0; --jd500:#2E7D5B; --jd700:#1E5A40;
+  --lp50:#EDF2F8; --lp500:#2F5D8C; --lp700:#1E3F62;
+  --hair:rgba(42,21,18,.08);
+  --hair2:rgba(42,21,18,.14);
+  --e1:0 1px 2px rgba(42,21,18,.05), 0 2px 4px rgba(42,21,18,.04);
+  --e2:0 1px 3px rgba(42,21,18,.06), 0 4px 10px rgba(42,21,18,.05);
+  --e3:0 2px 6px rgba(42,21,18,.07), 0 10px 22px rgba(42,21,18,.07);
+  --e4:0 -2px 14px rgba(42,21,18,.09), 0 16px 40px rgba(42,21,18,.10);
+  --e5:0 8px 24px rgba(42,21,18,.14), 0 28px 64px rgba(42,21,18,.12);
+  --e-brand:0 6px 14px rgba(90,42,26,.28);
+  --e-marker:0 4px 8px rgba(42,21,18,.22), 0 10px 18px rgba(42,21,18,.10);
+
+  background:
+    radial-gradient(120% 100% at 50% 0%, #FFFFFF 0%, var(--ink50) 62%, #F1E8E2 100%);
+  border:1px solid var(--hairline);
+  border-radius:16px;
+  padding:28px 24px;
+  color:var(--ink900);
+  overflow-x:auto;
+}
+.stage .cap{
+  font-family:'IBM Plex Mono',ui-monospace,monospace;
+  font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink500);margin:0 0 14px;
+}
+
+/* 비교 그리드 (v0 → v1) */
+.compare{display:grid;grid-template-columns:1fr;gap:18px;margin-bottom:16px;}
+@media (min-width:760px){.compare{grid-template-columns:1fr 1fr;gap:20px;}}
+.compare .col{min-width:0;}
+.badge-v{
+  display:inline-flex;align-items:center;gap:7px;
+  font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10px;
+  letter-spacing:.12em;text-transform:uppercase;
+  padding:3px 9px;border-radius:999px;margin-bottom:12px;
+}
+.badge-v.old{color:var(--text-3);border:1px solid var(--hairline-2);}
+.badge-v.new{color:#FFF6F3;background:var(--accent);}
+:root[data-theme="dark"] .badge-v.new{color:#241715;}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .badge-v.new{color:#241715;}}
+
+/* ---------- v0 : 현재 화면(플랫 와이어프레임) 재현 ---------- */
+.v0{background:#FFFDFB;border:1.5px solid #2A1512;border-radius:9px;padding:11px;
+  color:#2A1512;font-size:13px;line-height:1.35;}
+.v0 + .v0{margin-top:10px;}
+.v0-btn{display:block;width:100%;text-align:center;background:#9E2B1E;color:#fff;
+  border:1.5px solid #2A1512;border-radius:22px;padding:11px;font-weight:700;font-size:15px;
+  font-family:inherit;cursor:default;}
+.v0-chip{display:inline-block;border:1.2px solid #2A1512;border-radius:13px;padding:3px 10px;font-size:12px;}
+.v0-chip.on{background:#9E2B1E;border-color:#9E2B1E;color:#fff;font-weight:700;}
+.v0-track{height:6px;background:#E8DCD6;border-radius:3px;overflow:hidden;}
+.v0-track i{display:block;height:100%;width:62%;background:#9E2B1E;}
+.v0-nav{display:flex;background:#FAF5F2;border:1.5px solid #2A1512;border-radius:0;overflow:hidden;}
+.v0-nav span{flex:1;text-align:center;padding:12px 0;font-size:13px;border-right:1px solid #D8CCC6;}
+.v0-nav span:last-child{border-right:0;}
+.v0-nav span.on{background:#9E2B1E;color:#fff;font-weight:700;}
+
+/* ---------- v1 : Parchment & Seal ---------- */
+.stage .card{
+  background:linear-gradient(180deg,#FFFFFF 0%,var(--ink0) 100%);
+  border:1px solid var(--hair);border-radius:14px;box-shadow:var(--e2);
+  padding:14px 16px;position:relative;overflow:hidden;
+}
+.stage .card + .card{margin-top:12px;}
+.stage .card.lift{box-shadow:var(--e3);}
+.stage .card .edge{position:absolute;left:0;top:0;bottom:0;width:3px;}
+.stage .note-box{
+  background:var(--ink100);border-radius:10px;padding:12px 14px;
+  border-top:1.5px solid var(--ink200);
+  border-left:1px solid var(--hair);border-right:1px solid var(--hair);
+  border-bottom:1px solid rgba(255,255,255,.85);
+  color:var(--ink600);font-size:13.5px;line-height:1.55;
+}
+.stage .btn{
+  display:block;width:100%;border:0;border-radius:999px;padding:14px;
+  background:linear-gradient(180deg,#B03526 0%,var(--q600) 100%);
+  color:#FFF6F3;font-family:inherit;font-weight:700;font-size:15px;letter-spacing:-.01em;
+  box-shadow:0 3px 0 var(--q700), var(--e-brand);
+  cursor:pointer;transition:transform .14s cubic-bezier(.2,0,0,1), box-shadow .14s cubic-bezier(.2,0,0,1);
+}
+.stage .btn:active{transform:translateY(3px);box-shadow:0 0 0 var(--q700);}
+.stage .btn.ghost{
+  background:linear-gradient(180deg,#FFFFFF,var(--ink0));color:var(--ink900);
+  box-shadow:0 2px 0 var(--ink200), var(--e1);border:1px solid var(--hair2);
+}
+.stage .btn.ghost:active{transform:translateY(2px);box-shadow:0 0 0 var(--ink200);}
+.stage .btn[disabled]{background:var(--ink200);color:var(--ink400);box-shadow:0 3px 0 var(--ink300);cursor:not-allowed;}
+.stage .chip{
+  display:inline-block;border-radius:999px;padding:5px 11px;font-size:12px;font-weight:500;
+  background:linear-gradient(180deg,#FFFFFF,var(--ink0));color:var(--ink600);
+  border:1px solid var(--hair2);box-shadow:var(--e1);
+}
+.stage .chip.on{
+  background:linear-gradient(180deg,#B03526,var(--q600));color:#FFF6F3;font-weight:700;
+  border-color:transparent;box-shadow:0 3px 8px rgba(158,43,30,.28);
+}
+.stage .track{height:8px;border-radius:999px;background:linear-gradient(180deg,var(--ink200),var(--ink100));overflow:hidden;}
+.stage .track i{
+  display:block;height:100%;width:62%;border-radius:999px;
+  background:linear-gradient(180deg,#C05A4B,var(--q500));
+  box-shadow:0 1px 6px rgba(158,43,30,.35);
+}
+.stage .nav{
+  display:flex;gap:8px;background:linear-gradient(180deg,#FFFFFF,var(--ink0));
+  border-radius:16px;padding:8px 10px;box-shadow:0 -6px 20px rgba(42,21,18,.08);
+}
+.stage .nav span{
+  flex:1;text-align:center;padding:8px 0 7px;border-radius:14px;
+  font-size:11px;font-weight:500;color:var(--ink500);line-height:1.5;
+}
+.stage .nav span em{display:block;font-style:normal;font-size:17px;line-height:1.2;}
+.stage .nav span.on{
+  background:linear-gradient(180deg,#B03526,var(--q600));color:#FFF6F3;font-weight:700;
+  box-shadow:var(--e-brand);
+}
+.stage .tier{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:6px;
+  font-size:11px;font-weight:700;letter-spacing:.02em;
+}
+.stage .tier .st{font-size:10px;letter-spacing:-.5px;font-weight:400;}
+.stage .reward{
+  display:inline-flex;align-items:center;gap:5px;padding:8px 12px;border-radius:10px;
+  background:linear-gradient(135deg,var(--am50),var(--am100));
+  border:1px solid rgba(226,180,95,.45);box-shadow:0 3px 8px rgba(138,92,21,.12);
+  color:var(--am700);font-weight:600;font-variant-numeric:tabular-nums;font-size:14px;
+}
+.stage .reward small{font-size:10.5px;letter-spacing:.06em;font-weight:600;}
+.stage .ring{
+  width:44px;height:44px;border-radius:50%;display:grid;place-items:center;
+  background:conic-gradient(from -90deg,var(--q400) 0turn,var(--q600) .62turn,var(--ink200) .62turn 1turn);
+  box-shadow:var(--e1);
+}
+.stage .ring i{
+  width:37px;height:37px;border-radius:50%;display:grid;place-items:center;
+  background:linear-gradient(180deg,#FFF,var(--ink0));box-shadow:0 1px 4px rgba(42,21,18,.10);
+  font-style:normal;font-size:9px;color:var(--ink500);font-weight:600;
+}
+.stage .lv{
+  display:inline-block;padding:2px 7px;border-radius:6px;font-size:11px;font-weight:700;
+  background:linear-gradient(180deg,#B03526,var(--q600));color:#FFF6F3;
+  box-shadow:0 2px 5px rgba(90,42,26,.22);
+}
+
+/* 깊이 사다리 */
+.ladder{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:16px;}
+.ladder .tile{
+  background:linear-gradient(180deg,#FFFFFF,var(--ink0));border:1px solid var(--hair);
+  border-radius:14px;padding:16px 14px;min-height:104px;display:flex;flex-direction:column;justify-content:space-between;
+}
+.ladder .tile b{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;color:var(--ink900);}
+.ladder .tile span{font-size:11px;color:var(--ink600);line-height:1.45;}
+
+/* 지도 데모 */
+.mapdemo{
+  position:relative;height:250px;border-radius:14px;overflow:hidden;border:1px solid var(--hair);
+  background:
+    radial-gradient(120% 90% at 50% 40%, rgba(255,255,255,0) 55%, rgba(42,21,18,.10) 100%),
+    repeating-linear-gradient(0deg,#FBF7F4 0 7px,transparent 7px 58px),
+    repeating-linear-gradient(90deg,#FBF7F4 0 7px,transparent 7px 58px),
+    repeating-conic-gradient(from 0deg at 50% 50%,#E6DCD5 0% 25%,#EDE4DE 0% 50%) 0 0/58px 58px,
+    linear-gradient(180deg,#F7F2EE,#EDE5DF);
+}
+.pin{position:absolute;transform:translate(-50%,-100%);}
+.pin svg{display:block;filter:drop-shadow(0 4px 6px rgba(42,21,18,.28));}
+.pin::after{
+  content:"";position:absolute;left:50%;bottom:-5px;transform:translateX(-50%);
+  width:16px;height:6px;border-radius:50%;background:rgba(42,21,18,.20);filter:blur(2.5px);
+}
+.cluster{
+  position:absolute;transform:translate(-50%,-50%);
+  display:grid;place-items:center;width:46px;height:46px;border-radius:50%;
+  background:linear-gradient(180deg,#B03526,#8A2419);color:#FFF6F3;
+  border:2px solid rgba(255,255,255,.65);box-shadow:var(--e-marker);
+  font-weight:700;font-size:13px;font-variant-numeric:tabular-nums;
+}
+.sheetdemo{
+  position:absolute;left:0;right:0;bottom:0;
+  background:linear-gradient(180deg,#FFFFFF,#FFFDFB);
+  border-radius:24px 24px 0 0;box-shadow:var(--e4);padding:10px 16px 16px;
+}
+.sheetdemo .grab{width:40px;height:4px;border-radius:2px;background:var(--ink300);margin:0 auto 12px;}
+
+/* 모션 데모 */
+.curves{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;}
+.curve{border:1px solid var(--hairline);border-radius:12px;padding:14px;background:var(--surface);}
+.curve b{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11.5px;display:block;margin-bottom:2px;}
+.curve span{font-size:12px;color:var(--text-2);}
+.curve .rail-anim{height:6px;border-radius:3px;background:var(--rail);margin-top:12px;overflow:hidden;}
+.curve .rail-anim i{display:block;height:100%;width:34%;border-radius:3px;background:var(--accent);}
+@media (prefers-reduced-motion:no-preference){
+  .curve:hover .rail-anim i{width:100%;}
+  .curve .rail-anim i{transition:width .34s cubic-bezier(.2,.8,.2,1);}
+}
+
+/* 타이포 표본 */
+.typespec{display:grid;gap:2px;}
+.typespec .row{
+  display:grid;grid-template-columns:1fr;gap:2px;
+  padding:14px 0;border-bottom:1px solid var(--hairline);
+}
+@media (min-width:720px){.typespec .row{grid-template-columns:150px minmax(0,1fr);gap:20px;align-items:baseline;}}
+.typespec .tok{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11px;color:var(--text-3);letter-spacing:.06em;}
+.typespec .sample{color:var(--text);}
+
+.footer{border-top:1px solid var(--hairline);padding-top:24px;color:var(--text-3);font-size:12.5px;}
+.footer code{background:var(--rail);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">로컬 퀘스트 · 모바일 디자인 시스템 v1.0</p>
+    <h1>Parchment&nbsp;&amp;&nbsp;Seal</h1>
+    <p class="ko">양피지와 인장 — 모험가의 수첩 위에 붉은 낙관이 찍힌 화면</p>
+    <p class="lede">
+      기존 화면은 와이어프레임의 CSS를 그대로 옮긴 결과라 <strong>모든 요소가 같은 평면에 놓여 있었다</strong>.
+      1.5px 검정 실선이 전부를 똑같은 무게로 감싸고, 채움은 단색이며, 강조는 오직 빨강 하나뿐이었다.
+      v1.0은 그 세 가지를 각각 <strong>그림자 위계 · 빛을 받는 표면 · 역할별 색</strong>으로 바꾼다.
+      정체성(크림 종이 + 딥 레드)은 그대로 두고, 깊이와 리듬만 더한다.
+    </p>
+    <div class="meta">
+      <span><b>대상</b> Flutter · iOS/Android</span>
+      <span><b>구현</b> lib/theme · lib/widgets</span>
+      <span><b>테마</b> 라이트 단일</span>
+      <span><b>기준일</b> 2026.08</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="rail">
+      <nav aria-label="목차">
+        <p class="rail-title">목차</p>
+        <a href="#principles">입체감 5원칙</a>
+        <a href="#color">컬러</a>
+        <a href="#depth">깊이</a>
+        <a href="#surface">표면</a>
+        <a href="#type">타이포</a>
+        <a href="#space">간격 · 반경</a>
+        <a href="#motion">모션</a>
+        <a href="#tier">난이도 등급</a>
+        <a href="#components">컴포넌트</a>
+        <a href="#map">지도</a>
+        <a href="#apply">화면 적용</a>
+        <a href="#code">코드 매핑</a>
+      </nav>
+    </aside>
+
+    <main>
+
+    <!-- ================= 원칙 ================= -->
+    <section id="principles">
+      <h2><span class="id">01</span>입체감 5원칙</h2>
+      <p class="note">
+        그림자를 아무 데나 붙이면 화면은 입체가 아니라 지저분해진다.
+        아래 다섯 줄이 이 시스템에서 깊이를 만들 때의 유일한 근거다.
+      </p>
+      <ul class="rules">
+        <li><b>빛은 항상 위에서 온다.</b> 표면의 윗변은 밝고, 그림자는 아래로 떨어진다. 예외 없음.</li>
+        <li><b>그림자는 회색이 아니다.</b> 모든 그림자는 잉크색 <code>#2A1512</code>의 알파 변형이다. 크림 배경 위의 중립 회색 그림자는 즉시 싸구려로 읽힌다. 붉은 표면 아래에는 <code>#5A2A1A</code>를 쓴다.</li>
+        <li><b>화면당 e3 이상은 하나.</b> 전부 떠 있으면 아무것도 떠 있지 않다. 초점은 하나여야 깊이가 읽힌다.</li>
+        <li><b>1.5px 검정 테두리를 없앤다.</b> 그 역할은 <em>표면 밝기 차 + 그림자</em>가 대신한다. 테두리는 진짜 강조가 필요할 때만 남긴다.</li>
+        <li><b>누름은 색이 아니라 깊이로 말한다.</b> 눌리면 그림자가 줄고 <code>scale 0.97</code>로 내려앉는다. 색만 바뀌는 버튼은 눌린 느낌이 나지 않는다.</li>
+      </ul>
+    </section>
+
+    <!-- ================= 컬러 ================= -->
+    <section id="color">
+      <h2><span class="id">02</span>컬러</h2>
+
+      <h3>Ink — 따뜻한 뉴트럴</h3>
+      <p class="note">
+        차가운 회색이 아니라 갈색이 섞인 잉크 계열. 종이에 인쇄된 것처럼 보이게 하는 바탕이며,
+        배경 · 본문 · 구분선 · 오목한 면을 전부 여기서 가져온다.
+      </p>
+      <div class="ramp">
+        <div class="stop" style="background:#FFFDFB;color:#2A1512"><span class="n">ink0</span><span class="h">FFFDFB</span></div>
+        <div class="stop" style="background:#FBF6F3;color:#2A1512"><span class="n">ink50</span><span class="h">FBF6F3</span></div>
+        <div class="stop" style="background:#F4EBE6;color:#2A1512"><span class="n">ink100</span><span class="h">F4EBE6</span></div>
+        <div class="stop" style="background:#E8DCD6;color:#2A1512"><span class="n">ink200</span><span class="h">E8DCD6</span></div>
+        <div class="stop" style="background:#D6C8C2;color:#2A1512"><span class="n">ink300</span><span class="h">D6C8C2</span></div>
+        <div class="stop" style="background:#B6A49E;color:#2A1512"><span class="n">ink400</span><span class="h">B6A49E</span></div>
+        <div class="stop" style="background:#8E7A74;color:#FFFDFB"><span class="n">ink500</span><span class="h">8E7A74</span></div>
+        <div class="stop" style="background:#6D5A55;color:#FFFDFB"><span class="n">ink600</span><span class="h">6D5A55</span></div>
+        <div class="stop" style="background:#4A342F;color:#FFFDFB"><span class="n">ink700</span><span class="h">4A342F</span></div>
+        <div class="stop" style="background:#2A1512;color:#FFFDFB"><span class="n">ink900</span><span class="h">2A1512</span></div>
+      </div>
+
+      <h3>Quest Red — 브랜드 인장</h3>
+      <p class="note">
+        주 CTA · 활성 마커 · 선택 상태 <b>에만</b> 쓴다. 낙관은 문서에 한 번 찍히기 때문에 무게가 있다.
+        <code>quest700</code>은 색으로 쓰지 않고 <b>버튼의 물리적 옆면(두께)</b>으로만 쓴다.
+      </p>
+      <div class="ramp">
+        <div class="stop" style="background:#FDF4F1;color:#2A1512"><span class="n">q50</span><span class="h">FDF4F1</span></div>
+        <div class="stop" style="background:#F9E0D9;color:#2A1512"><span class="n">q100</span><span class="h">F9E0D9</span></div>
+        <div class="stop" style="background:#F0BCAF;color:#2A1512"><span class="n">q200</span><span class="h">F0BCAF</span></div>
+        <div class="stop" style="background:#E1917F;color:#2A1512"><span class="n">q300</span><span class="h">E1917F</span></div>
+        <div class="stop" style="background:#C55B45;color:#FFF6F3"><span class="n">q400</span><span class="h">C55B45</span></div>
+        <div class="stop" style="background:#9E2B1E;color:#FFF6F3"><span class="n">q500</span><span class="h">9E2B1E</span></div>
+        <div class="stop" style="background:#8A2419;color:#FFF6F3"><span class="n">q600</span><span class="h">8A2419</span></div>
+        <div class="stop" style="background:#6F1C13;color:#FFF6F3"><span class="n">q700</span><span class="h">6F1C13</span></div>
+        <div class="stop" style="background:#53150E;color:#FFF6F3"><span class="n">q800</span><span class="h">53150E</span></div>
+        <div class="stop" style="background:#380E09;color:#FFF6F3"><span class="n">q900</span><span class="h">380E09</span></div>
+      </div>
+
+      <h3>역할 색 — 단조로움을 깨는 축</h3>
+      <p class="note">
+        "모든 게 빨강"이던 문제의 원인은 채도가 아니라 <b>의미가 하나뿐</b>이었다는 데 있다.
+        보상 · 완료 · 정보를 각자의 색으로 분리하면 같은 레이아웃에서도 화면이 살아난다.
+      </p>
+      <div class="role-grid">
+        <div class="role">
+          <div class="dot" style="background:linear-gradient(135deg,#9E2B1E,#6F1C13)"></div>
+          <h4>Quest Red · 행동</h4>
+          <p>수락 · 진행 · 활성 마커. 사용자가 지금 눌러야 하는 단 하나.</p>
+          <span class="tok">quest500 / quest600 / quest700</span>
+        </div>
+        <div class="role">
+          <div class="dot" style="background:linear-gradient(135deg,#E2B45F,#8A5C15)"></div>
+          <h4>Amber · 보상</h4>
+          <p>EXP · 배지 획득 · 배율. 금색이라 "얻는 것"이라는 신호가 즉시 읽힌다.</p>
+          <span class="tok">amber50 / amber300 / amber500 / amber700</span>
+        </div>
+        <div class="role">
+          <div class="dot" style="background:linear-gradient(135deg,#2E7D5B,#1E5A40)"></div>
+          <h4>Jade · 완료</h4>
+          <p>위치 인증 성공 · 지점 도달 · 완료 처리. 빨강과 충돌하지 않는 성공색.</p>
+          <span class="tok">jade50 / jade500 / jade700</span>
+        </div>
+        <div class="role">
+          <div class="dot" style="background:linear-gradient(135deg,#2F5D8C,#1E3F62)"></div>
+          <h4>Lapis · 정보</h4>
+          <p>관광지 데이터 · 거리 · 혼잡도 같은 참고 정보. 행동을 요구하지 않는다.</p>
+          <span class="tok">lapis50 / lapis500 / lapis700</span>
+        </div>
+      </div>
+      <p class="note" style="margin-top:20px">
+        역할 색은 <b>면적을 크게 쓰지 않는다.</b> 배지 · 칩 · 아이콘 · 얇은 띠까지가 상한이고,
+        큰 표면은 언제나 종이(ink0)다. 색이 넓어지는 순간 인장의 무게가 사라진다.
+      </p>
+    </section>
+
+    <!-- ================= 깊이 ================= -->
+    <section id="depth">
+      <h2><span class="id">03</span>깊이 — Elevation</h2>
+      <p class="note">
+        여섯 단계가 화면의 z축 전부다. 중간값을 새로 만들지 말 것.
+        단계를 늘리는 대신, 무엇이 e3이어야 하는지를 다시 생각한다.
+      </p>
+      <div class="stage">
+        <p class="cap">Elevation ladder</p>
+        <div class="ladder">
+          <div class="tile" style="box-shadow:none"><b>e0</b><span>종이에 인쇄됨 · 구분선, 배경 위 텍스트</span></div>
+          <div class="tile" style="box-shadow:var(--e1)"><b>e1</b><span>칩 · 아이콘 버튼 · 인라인 요소</span></div>
+          <div class="tile" style="box-shadow:var(--e2)"><b>e2</b><span>기본 카드 · 목록에서 반복되는 표면</span></div>
+          <div class="tile" style="box-shadow:var(--e3)"><b>e3</b><span>진행 중 퀘스트 · 선택 항목 <em>화면당 1개</em></span></div>
+          <div class="tile" style="box-shadow:var(--e4)"><b>e4</b><span>바텀시트 · 모달</span></div>
+          <div class="tile" style="box-shadow:var(--e5)"><b>e5</b><span>레벨업 연출 · 마커 팝오버</span></div>
+        </div>
+      </div>
+
+      <h3>특수 그림자</h3>
+      <div class="tbl-scroll">
+        <table>
+          <thead><tr><th>토큰</th><th class="mono">값</th><th>쓰는 곳</th></tr></thead>
+          <tbody>
+            <tr><td>brand</td><td class="mono">0 6px 14px rgba(90,42,26,.28)</td><td>주 버튼 · 활성 하단탭 · 레벨 배지. 붉은 표면 아래는 붉은 그림자.</td></tr>
+            <tr><td>marker</td><td class="mono">0 4px 8px .22 · 0 10px 18px .10</td><td>지도 마커. 배경(타일)이 복잡하므로 더 또렷하게.</td></tr>
+            <tr><td>focusRing</td><td class="mono">spread 3px .16 + 0 6px 16px .26</td><td>선택된 요소. 테두리 대신 빛 번짐으로 표시.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ================= 표면 ================= -->
+    <section id="surface">
+      <h2><span class="id">04</span>표면</h2>
+      <p class="note">
+        단색 채움을 금지한다. 모든 면은 <b>위가 밝고 아래가 어두운</b> 미세 그라데이션을 갖는다.
+        차이는 2~4% 수준이라 눈에 띄지 않지만, 없으면 화면이 즉시 종이 인쇄물처럼 납작해진다.
+      </p>
+      <div class="stage">
+        <p class="cap">Surface tokens</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px">
+          <div>
+            <div style="height:70px;border-radius:12px;background:linear-gradient(180deg,#FFFFFF,#FFFDFB);box-shadow:var(--e2);border:1px solid var(--hair)"></div>
+            <p style="font-size:11.5px;color:var(--ink600);margin:8px 0 0"><b style="color:var(--ink900)">paper</b> · 기본 카드</p>
+          </div>
+          <div>
+            <div style="height:70px;border-radius:12px;background:linear-gradient(135deg,#FFF8F5,#FDF4F1);box-shadow:var(--e3);border:1px solid var(--hair)"></div>
+            <p style="font-size:11.5px;color:var(--ink600);margin:8px 0 0"><b style="color:var(--ink900)">highlight</b> · 진행 중 퀘스트</p>
+          </div>
+          <div>
+            <div style="height:70px;border-radius:12px;background:linear-gradient(180deg,#B03526,#8A2419);box-shadow:var(--e-brand)"></div>
+            <p style="font-size:11.5px;color:var(--ink600);margin:8px 0 0"><b style="color:var(--ink900)">brandFill</b> · 주 버튼</p>
+          </div>
+          <div>
+            <div style="height:70px;border-radius:12px;background:linear-gradient(135deg,#FDF6E7,#F8E7BE);border:1px solid rgba(226,180,95,.45)"></div>
+            <p style="font-size:11.5px;color:var(--ink600);margin:8px 0 0"><b style="color:var(--ink900)">rewardFill</b> · EXP</p>
+          </div>
+          <div>
+            <div style="height:70px;border-radius:12px;background:linear-gradient(180deg,#E8DCD6,#F4EBE6);border-top:1.5px solid #E0D2CB"></div>
+            <p style="font-size:11.5px;color:var(--ink600);margin:8px 0 0"><b style="color:var(--ink900)">sunken</b> · 오목한 면</p>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="margin-top:20px">
+        <b>볼록과 오목을 짝으로 쓴다.</b> 떠 있는 카드(paper + e2)와 눌러 새긴 면(sunken)이 한 화면에 같이 있을 때
+        층이 가장 잘 읽힌다. 그래서 보조 설명 박스는 카드가 아니라 <b>오목한 면</b>으로 내려간다.
+      </p>
+    </section>
+
+    <!-- ================= 타이포 ================= -->
+    <section id="type">
+      <h2><span class="id">05</span>타이포</h2>
+      <p class="note">
+        Pretendard 한 벌. 수치는 <code>tabular figures</code>로 고정해 거리·EXP가 갱신될 때 자릿수가 흔들리지 않게 한다.
+        굵기는 400 / 500 / 600 / 700 네 단만 쓴다.
+      </p>
+      <div class="typespec">
+        <div class="row"><span class="tok">display · 28/700</span><span class="sample" style="font-size:28px;font-weight:700;letter-spacing:-.03em;line-height:1.15">+340 EXP</span></div>
+        <div class="row"><span class="tok">h1 · 20/700</span><span class="sample" style="font-size:20px;font-weight:700;letter-spacing:-.02em">남부시장 야시장 방문</span></div>
+        <div class="row"><span class="tok">h2 · 17/700</span><span class="sample" style="font-size:17px;font-weight:700;letter-spacing:-.01em">모험가한글</span></div>
+        <div class="row"><span class="tok">h3 · 15/600</span><span class="sample" style="font-size:15px;font-weight:600">진행 중인 퀘스트</span></div>
+        <div class="row"><span class="tok">body · 13.5/400</span><span class="sample" style="font-size:13.5px;line-height:1.55">야시장 입구에서 안쪽까지 걸어 들어가 가장 오래된 점포를 찾아보세요.</span></div>
+        <div class="row"><span class="tok">caption · 12/400</span><span class="sample" style="font-size:12px;color:var(--text-2)">전주시 완산구 · 320m</span></div>
+        <div class="row"><span class="tok">micro · 11/600</span><span class="sample" style="font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--text-3)">달성 기준 · 반경 50m</span></div>
+        <div class="row"><span class="tok">numeric · 13.5/600</span><span class="sample" style="font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums">110 · 320m · 1.4×</span></div>
+      </div>
+      <p class="note" style="margin-top:24px">
+        <b>주의 —</b> 현재 <code>pubspec.yaml</code>에 Pretendard 폰트 자산이 선언되어 있지 않아,
+        <code>fontFamily: 'Pretendard'</code>가 조용히 시스템 기본 폰트로 대체되고 있다.
+        <code>assets/fonts/</code>에 400·500·600·700 네 굵기를 넣고 <code>flutter:</code> 아래 <code>fonts:</code> 항목을 선언해야
+        이 스케일이 의도대로 나온다.
+      </p>
+    </section>
+
+    <!-- ================= 간격 ================= -->
+    <section id="space">
+      <h2><span class="id">06</span>간격 · 반경</h2>
+      <div class="tbl-scroll">
+        <table>
+          <thead><tr><th>토큰</th><th class="mono">값</th><th>쓰는 곳</th></tr></thead>
+          <tbody>
+            <tr><td>xs / sm</td><td class="mono">4 / 8</td><td>아이콘과 라벨 사이, 칩 사이</td></tr>
+            <tr><td>md</td><td class="mono">12</td><td>카드 안쪽 요소 간격</td></tr>
+            <tr><td>lg</td><td class="mono">16</td><td>카드 패딩, 화면 좌우 여백(gutter)</td></tr>
+            <tr><td>xl / xxl</td><td class="mono">20 / 24</td><td>섹션 사이</td></tr>
+            <tr><td>xxxl</td><td class="mono">32</td><td>화면 블록 분리</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">
+        반경은 <b>요소가 클수록 커진다</b>(광학적 일관성). 작은 칩에 큰 반경을 주면 알약처럼 뭉개지고,
+        큰 시트에 작은 반경을 주면 딱딱해진다.
+      </p>
+      <div class="tbl-scroll">
+        <table>
+          <thead><tr><th>토큰</th><th class="mono">값</th><th>쓰는 곳</th></tr></thead>
+          <tbody>
+            <tr><td>xs</td><td class="mono">6</td><td>등급 배지 · 레벨 배지</td></tr>
+            <tr><td>sm</td><td class="mono">10</td><td>입력창 · 오목한 설명 박스</td></tr>
+            <tr><td>md</td><td class="mono">14</td><td>기본 카드 · 하단탭 활성 알약</td></tr>
+            <tr><td>lg</td><td class="mono">18</td><td>강조 패널</td></tr>
+            <tr><td>xl</td><td class="mono">24</td><td>바텀시트 상단 · 모달</td></tr>
+            <tr><td>pill</td><td class="mono">999</td><td>버튼 · 키워드 칩</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ================= 모션 ================= -->
+    <section id="motion">
+      <h2><span class="id">07</span>모션</h2>
+      <p class="note">깊이는 시간축에도 있다. 누르면 내려가고, 떼면 되돌아온다. 카드 위에 마우스를 올려 곡선을 확인할 수 있다.</p>
+      <div class="curves">
+        <div class="curve"><b>fast · 140ms</b><span>누름 반응 · 칩 토글</span><div class="rail-anim"><i></i></div></div>
+        <div class="curve"><b>base · 220ms</b><span>상태 전환 · 탭 이동</span><div class="rail-anim"><i></i></div></div>
+        <div class="curve"><b>slow · 340ms</b><span>카드 등장 · 진행바 증가</span><div class="rail-anim"><i></i></div></div>
+        <div class="curve"><b>sheet · 400ms</b><span>바텀시트 펼침 · 접힘</span><div class="rail-anim"><i></i></div></div>
+      </div>
+      <div class="tbl-scroll" style="margin-top:24px">
+        <table>
+          <thead><tr><th>곡선</th><th class="mono">cubic-bezier</th><th>성격</th></tr></thead>
+          <tbody>
+            <tr><td>standard</td><td class="mono">.2, 0, 0, 1</td><td>대부분의 상태 전환</td></tr>
+            <tr><td>emphasized</td><td class="mono">.2, .8, .2, 1</td><td>등장 · 확장. 빠르게 나와 부드럽게 멎는다</td></tr>
+            <tr><td>spring</td><td class="mono">easeOutBack</td><td>누름 해제 · 보상 연출. 살짝 튀어 오른다</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ================= 등급 ================= -->
+    <section id="tier">
+      <h2><span class="id">08</span>난이도 등급</h2>
+      <p class="note">
+        기존 목록은 모든 퀘스트가 같은 카드에 같은 빨간 별만 붙어 있어 스캔이 불가능했다.
+        ★1~★5를 <b>색 + 깊이 + 광택</b> 세 축으로 나눈다. 등급이 오를수록 카드가 실제로 더 떠오른다.
+      </p>
+      <div class="stage">
+        <p class="cap">Tier badges</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+          <span class="tier" style="background:var(--ink100);color:var(--ink700);border:1px solid rgba(142,122,116,.24)"><span class="st" style="color:var(--ink500)">★</span>산책</span>
+          <span class="tier" style="background:var(--jd50);color:var(--jd700);border:1px solid rgba(46,125,91,.24)"><span class="st" style="color:var(--jd500)">★★</span>기본</span>
+          <span class="tier" style="background:var(--lp50);color:var(--lp700);border:1px solid rgba(47,93,140,.24)"><span class="st" style="color:var(--lp500)">★★★</span>탐험</span>
+          <span class="tier" style="background:var(--am50);color:var(--am700);border:1px solid rgba(192,132,40,.24);box-shadow:0 2px 8px rgba(192,132,40,.20)"><span class="st" style="color:var(--am500)">★★★★</span>원정</span>
+          <span class="tier" style="background:var(--q50);color:var(--q700);border:1px solid rgba(158,43,30,.24);box-shadow:0 2px 8px rgba(158,43,30,.22)"><span class="st" style="color:var(--q500)">★★★★★</span>전설</span>
+        </div>
+
+        <div class="card">
+          <div class="edge" style="background:var(--ink500)"></div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <strong style="font-size:15px;font-weight:600">한옥마을 골목 산책</strong>
+            <span class="tier" style="background:var(--ink100);color:var(--ink700);border:1px solid rgba(142,122,116,.24)"><span class="st" style="color:var(--ink500)">★</span>산책</span>
+          </div>
+          <div style="color:var(--ink600);font-size:13px">전주시 완산구 · 320m · e2</div>
+        </div>
+
+        <div class="card lift">
+          <div class="edge" style="background:var(--am500)"></div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <strong style="font-size:15px;font-weight:600">덕진공원 야간 원정</strong>
+            <span class="tier" style="background:var(--am50);color:var(--am700);border:1px solid rgba(192,132,40,.24);box-shadow:0 2px 8px rgba(192,132,40,.20)"><span class="st" style="color:var(--am500)">★★★★</span>원정</span>
+          </div>
+          <div style="color:var(--ink600);font-size:13px">전주시 덕진구 · 2.4km · e3</div>
+        </div>
+
+        <div class="card lift" style="box-shadow:var(--e3),0 10px 24px rgba(158,43,30,.18);background:linear-gradient(135deg,#FFF8F5,#FDF4F1)">
+          <div class="edge" style="background:var(--q500)"></div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <strong style="font-size:15px;font-weight:600">전주 8경 완주</strong>
+            <span class="tier" style="background:var(--q50);color:var(--q700);border:1px solid rgba(158,43,30,.24);box-shadow:0 2px 8px rgba(158,43,30,.22)"><span class="st" style="color:var(--q500)">★★★★★</span>전설</span>
+          </div>
+          <div style="color:var(--ink600);font-size:13px">8개 지점 · e3 + 붉은 발광</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 컴포넌트 ================= -->
+    <section id="components">
+      <h2><span class="id">09</span>컴포넌트 · 지금 → v1.0</h2>
+      <p class="note">
+        왼쪽은 현재 화면(와이어프레임 이식본), 오른쪽은 같은 컴포넌트의 v1.0이다.
+        오른쪽 버튼은 실제로 눌러 볼 수 있다.
+      </p>
+
+      <h3>주 버튼 — 물리적인 키</h3>
+      <div class="compare">
+        <div class="col">
+          <span class="badge-v old">현재</span>
+          <div class="stage" style="padding:22px">
+            <button class="v0-btn" type="button">퀘스트 수락</button>
+            <p style="font-size:12px;color:#6D5A55;margin:14px 0 0">단색 채움 + 1.5px 검정 테두리. 눌러도 아무 일이 없다.</p>
+          </div>
+        </div>
+        <div class="col">
+          <span class="badge-v new">v1.0</span>
+          <div class="stage" style="padding:22px">
+            <button class="btn" type="button">퀘스트 수락</button>
+            <p style="font-size:12px;color:#6D5A55;margin:14px 0 0">아래에 <code style="background:rgba(42,21,18,.06)">quest700</code> 옆면 3px가 깔려 두께가 생기고, 누르면 그만큼 내려앉는다.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage" style="margin-bottom:8px">
+        <p class="cap">Button variants</p>
+        <div style="display:grid;gap:12px;max-width:340px">
+          <button class="btn" type="button">퀘스트 수락</button>
+          <button class="btn ghost" type="button">다시 찍기</button>
+          <button class="btn" type="button" disabled>도착해야 인증할 수 있어요</button>
+        </div>
+      </div>
+
+      <h3>정보 박스 — 볼록과 오목</h3>
+      <div class="compare">
+        <div class="col">
+          <span class="badge-v old">현재</span>
+          <div class="stage" style="padding:22px">
+            <div class="v0">보상 : EXP 110</div>
+            <div class="v0" style="border-color:#A2908A;color:#6D5A55">퀘스트 내용 — 야시장 입구에서 안쪽까지 걸어 들어가 가장 오래된 점포를 찾아보세요.</div>
+            <p style="font-size:12px;color:#6D5A55;margin:14px 0 0">테두리 색만 다를 뿐 둘 다 같은 평면에 있다.</p>
+          </div>
+        </div>
+        <div class="col">
+          <span class="badge-v new">v1.0</span>
+          <div class="stage" style="padding:22px">
+            <div style="margin-bottom:12px"><span class="reward">⚡ 110 <small>EXP</small></span></div>
+            <div class="note-box">퀘스트 내용 — 야시장 입구에서 안쪽까지 걸어 들어가 가장 오래된 점포를 찾아보세요.</div>
+            <p style="font-size:12px;color:#6D5A55;margin:14px 0 0">보상은 앰버로 <b>떠오르고</b>, 설명은 종이에 <b>눌러 새긴 면</b>으로 내려간다.</p>
+          </div>
+        </div>
+      </div>
+
+      <h3>칩 · 진행바</h3>
+      <div class="compare">
+        <div class="col">
+          <span class="badge-v old">현재</span>
+          <div class="stage" style="padding:22px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px">
+              <span class="v0-chip on">전체</span><span class="v0-chip">#골목산책</span><span class="v0-chip">#전통시장</span><span class="v0-chip">#야경</span>
+            </div>
+            <div class="v0-track"><i></i></div>
+          </div>
+        </div>
+        <div class="col">
+          <span class="badge-v new">v1.0</span>
+          <div class="stage" style="padding:22px">
+            <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px">
+              <span class="chip on">전체</span><span class="chip">#골목산책</span><span class="chip">#전통시장</span><span class="chip">#야경</span>
+            </div>
+            <div class="track"><i></i></div>
+          </div>
+        </div>
+      </div>
+
+      <h3>상단 바 · 하단 내비게이션</h3>
+      <div class="compare">
+        <div class="col">
+          <span class="badge-v old">현재</span>
+          <div class="stage" style="padding:22px">
+            <div style="border-bottom:1.5px solid #2A1512;padding-bottom:10px;margin-bottom:18px;display:flex;align-items:center;gap:10px">
+              <div style="width:38px;height:38px;border-radius:50%;border:1px solid #2A1512;background:#fff;display:grid;place-items:center;font-size:8px;color:#6D5A55">프로필</div>
+              <div><div style="font-size:16px;font-weight:700">모험가한글</div><div style="font-size:12px;color:#6D5A55">Lv.7 · 62%</div></div>
+            </div>
+            <div class="v0-nav"><span>배지</span><span>홈</span><span class="on">지도</span></div>
+          </div>
+        </div>
+        <div class="col">
+          <span class="badge-v new">v1.0</span>
+          <div class="stage" style="padding:22px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:14px;box-shadow:0 4px 12px rgba(42,21,18,.06)">
+              <div class="ring"><i>프로필</i></div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:17px;font-weight:700;letter-spacing:-.01em">모험가한글</div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+                  <span class="lv">Lv.7</span>
+                  <span class="track" style="flex:1;height:5px"><i style="width:62%"></i></span>
+                  <span style="font-size:11px;color:#8E7A74;font-variant-numeric:tabular-nums">62%</span>
+                </div>
+              </div>
+            </div>
+            <div class="nav">
+              <span><em>🏅</em>배지</span><span><em>🧭</em>홈</span><span class="on"><em>🗺️</em>지도</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="margin-top:18px">
+        하단 탭에서 활성 탭을 <b>바 전체를 채우는 빨간 블록</b>에서 <b>떠 있는 알약</b>으로 바꾼 것이 이 화면에서 체감 차이가 가장 크다.
+        빨강 면적이 1/3로 줄면서 오히려 인장의 무게가 살아난다.
+      </p>
+    </section>
+
+    <!-- ================= 지도 ================= -->
+    <section id="map">
+      <h2><span class="id">10</span>지도</h2>
+      <p class="note">
+        지도는 배경이 복잡해서 플랫한 마커가 가장 먼저 묻힌다.
+        마커에는 <b>드롭 섀도우 + 접지 그림자(ground shadow)</b>를 함께 준다 — 이 둘이 같이 있어야
+        "지면 위에 꽂혀 있다"로 읽힌다.
+      </p>
+      <div class="stage" style="padding:20px">
+        <p class="cap">Map · markers · sheet</p>
+        <div class="mapdemo">
+          <div class="pin" style="left:26%;top:34%">
+            <svg width="26" height="34" viewBox="0 0 26 34" aria-hidden="true">
+              <path d="M13 33 C9 25 1 21 1 13 A12 12 0 0 1 25 13 C25 21 17 25 13 33 Z" fill="#FFFDFB" stroke="#D6C8C2" stroke-width="1.2"/>
+              <circle cx="13" cy="13" r="4.4" fill="#9E2B1E"/>
+            </svg>
+          </div>
+          <div class="pin" style="left:52%;top:52%">
+            <svg width="30" height="39" viewBox="0 0 26 34" aria-hidden="true">
+              <defs><linearGradient id="pinG" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#BC4433"/><stop offset="1" stop-color="#8A2419"/>
+              </linearGradient></defs>
+              <path d="M13 33 C9 25 1 21 1 13 A12 12 0 0 1 25 13 C25 21 17 25 13 33 Z" fill="url(#pinG)" stroke="rgba(255,255,255,.55)" stroke-width="1.2"/>
+              <circle cx="13" cy="13" r="4.4" fill="#fff" opacity=".95"/>
+            </svg>
+          </div>
+          <div class="pin" style="left:74%;top:30%">
+            <svg width="26" height="34" viewBox="0 0 26 34" aria-hidden="true">
+              <path d="M13 33 C9 25 1 21 1 13 A12 12 0 0 1 25 13 C25 21 17 25 13 33 Z" fill="#FFFDFB" stroke="#D6C8C2" stroke-width="1.2"/>
+              <circle cx="13" cy="13" r="4.4" fill="#9E2B1E"/>
+            </svg>
+          </div>
+          <div class="cluster" style="left:36%;top:18%">+12</div>
+
+          <div class="sheetdemo">
+            <div class="grab"></div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+              <strong style="font-size:17px;font-weight:700;letter-spacing:-.01em">남부시장 야시장 방문</strong>
+              <span class="tier" style="background:#ECF5F0;color:#1E5A40;border:1px solid rgba(46,125,91,.24)"><span class="st" style="color:#2E7D5B">★★</span>기본</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="reward">⚡ 110 <small>EXP</small></span>
+              <span style="font-size:12px;color:#6D5A55">전주시 완산구 · 320m</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="tbl-scroll" style="margin-top:24px">
+        <table>
+          <thead><tr><th>요소</th><th>처리</th></tr></thead>
+          <tbody>
+            <tr><td>비활성 마커</td><td>종이색 채움 + <code>ink300</code> 1.2px 경계 + 안쪽 붉은 점. 경계가 없으면 밝은 타일 위에서 사라진다.</td></tr>
+            <tr><td>활성 마커</td><td>brandFill 그라데이션 + 흰 반투명 테두리 + 안쪽 흰 점. 크기도 15% 크다.</td></tr>
+            <tr><td>접지 그림자</td><td>핀 끝 아래 타원 <code>rgba(42,21,18,.22)</code> blur 3. 마커가 지면에 닿는 지점을 만든다.</td></tr>
+            <tr><td>클러스터</td><td>brandFill 원 + 흰 2px 링 + marker 그림자. 개수에 따라 지름이 커진다.</td></tr>
+            <tr><td>바텀시트</td><td>상단 반경 24 + e4(위로 던지는 그림자). 지도 위에 확실히 얹힌다.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ================= 적용 ================= -->
+    <section id="apply">
+      <h2><span class="id">11</span>화면별 적용</h2>
+      <div class="tbl-scroll">
+        <table>
+          <thead><tr><th>화면</th><th>바꾸는 것</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>홈</td>
+              <td>진행 중 퀘스트 캐러셀만 <b>e3 + highlight 표면</b>, 추천 목록은 e2. 화면의 초점이 하나로 정해진다.
+                  배지 진행률은 jade, EXP는 amber로 분리.</td>
+            </tr>
+            <tr>
+              <td>지도</td>
+              <td>검색바를 종이 카드(e2)로 띄우고, 키워드 칩은 가로 스크롤 + e1.
+                  현위치 버튼은 <code>FloatingSurfaceButton(emphasized: false)</code>, 바텀시트는 e4.</td>
+            </tr>
+            <tr>
+              <td>퀘스트 수행</td>
+              <td>거리 진행바는 목표 근접 시 <b>quest → jade</b>로 전환. 도달하면 인증 버튼이 비활성에서
+                  활성으로 바뀌며 brand 그림자가 켜진다.</td>
+            </tr>
+            <tr>
+              <td>보상 · 레벨업</td>
+              <td>유일하게 e5를 쓰는 화면. EXP 수치는 display 스케일 + amber, 진행바는 slow/emphasized로 채워 올린다.</td>
+            </tr>
+            <tr>
+              <td>온보딩 · 로그인</td>
+              <td>키워드 선택 칩에 선택 시 떠오르는 처리(그림자 + scale). 다음 버튼은 조건 미충족 시 비활성 두께 유지.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ================= 코드 ================= -->
+    <section id="code">
+      <h2><span class="id">12</span>코드 매핑</h2>
+      <div class="tbl-scroll">
+        <table>
+          <thead><tr><th>파일</th><th>담는 것</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">lib/theme/app_colors.dart</td><td>Ink · Quest · 역할 색 · 그림자 원색 · 시맨틱 별칭. 구 이름은 별칭으로 남겨 두어 기존 화면이 그대로 컴파일된다.</td></tr>
+            <tr><td class="mono">lib/theme/design_tokens.dart</td><td><code>AppSpacing</code> · <code>AppRadius</code> · <code>AppElevation</code> · <code>AppSurface</code> · <code>AppMotion</code> · <code>AppType</code> · <code>QuestTierStyle</code></td></tr>
+            <tr><td class="mono">lib/theme/app_theme.dart</td><td><code>AppTheme.light</code> — MaterialApp에 물리는 전역 테마. 머티리얼 기본 회색 그림자를 잉크색으로 교체.</td></tr>
+            <tr><td class="mono">lib/widgets/app_widgets.dart</td><td><code>PressableScale</code> · <code>AppCard</code> · <code>AppSheetSurface</code> · <code>PrimaryButton</code> · <code>TierBadge</code> · <code>RewardPill</code> · <code>SectionHeader</code> · <code>QuestMarker</code> · <code>MarkerCluster</code> · <code>FloatingSurfaceButton</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">
+        기존 컴포넌트(<code>SolidBox</code> · <code>NoteBox</code> · <code>PrimaryButton</code> · <code>TagChip</code> ·
+        <code>ProgressBar</code> · <code>AppTopBar</code> · <code>AppBottomNav</code> · <code>QuestMarker</code>)는
+        <b>생성자 시그니처를 그대로 유지</b>한다. 화면 코드를 한 줄도 고치지 않아도 겉모습만 v1.0으로 바뀐다.
+        새로 추가된 컴포넌트는 화면을 다듬을 때 점진적으로 도입한다.
+      </p>
+    </section>
+
+    <footer class="footer">
+      <p>
+        <b>v1.0 · 2026.08</b> — 와이어프레임 이식본(플랫)에서 Parchment &amp; Seal로 전면 개편.
+        입체감 5원칙 · Elevation 6단 · 표면 그라데이션 5종 · 역할 색 3축(amber/jade/lapis) ·
+        난이도 등급 시각화 · 모션 토큰 · 물리적 버튼 도입.
+      </p>
+      <p style="margin-bottom:0">
+        다음 후보 — 다크 모드(야간 퀘스트용) · 배지 화면 컴포넌트 · 스켈레톤 로딩 · 햅틱 매핑.
+      </p>
+    </footer>
+
+    </main>
+  </div>
+</div>
+</body>
+</html>

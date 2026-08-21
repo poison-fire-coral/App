@@ -1,73 +1,81 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
-// -----------------------------------------------------------------------------
-// 1a. 스플래시 화면
-// 버전 체크·토큰 유효성 검사 후 분기하는 로직은 추후 연결 예정 (현재는 정적 UI만 구현)
-// -----------------------------------------------------------------------------
+import '../theme/app_assets.dart';
+import '../theme/app_colors.dart';
+import '../theme/design_tokens.dart';
+
+/// 1a — 스플래시.
+///
+/// 예전에는 1.5초를 무조건 기다렸다. 지금은 `main.dart`가 그 사이에
+/// 토큰을 읽고 `GET /users/me`로 세션을 복원한다. 이 화면은 그동안 보이는 얼굴이다.
 class SplashScreen extends StatelessWidget {
-  const SplashScreen({super.key});
+  /// 세션 복원 진행률(0~1). 실제 단계 수에 맞춰 올라간다.
+  final double progress;
 
-  static const Color primaryRed = Color(0xFF9E2B1E);
-  static const Color darkBorder = Color(0xFF2A1512);
-  static const Color bgCream = Color(0xFFFFFDFB);
-  static const Color subTextColor = Color(0x8C2A1512);
-  static const Color progressBg = Color(0xFFE8DCD6);
+  const SplashScreen({super.key, this.progress = 0.35});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bgCream,
+      backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
-          child: Column(
-            children: [
-              const Spacer(flex: 3),
-
-              // 로고 placeholder
-              Container(
-                width: 96,
-                height: 96,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: darkBorder, width: 1.5),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Center(
-                  child: Text(
-                    '로고\nplaceholder',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11, color: subTextColor, fontWeight: FontWeight.bold),
-                  ),
-                ),
+        child: Column(
+          children: [
+            const Spacer(flex: 3),
+            SvgPicture.asset(AppAssets.logo, width: 132),
+            const SizedBox(height: AppSpacing.xxl),
+            Text(
+              '로컬 퀘스트',
+              style: AppType.display.copyWith(
+                color: AppColors.quest500,
+                fontSize: 28,
               ),
-              const SizedBox(height: 24),
-
-              const Text(
-                '로컬 퀘스트지상주의',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: darkBorder),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text('아는 길 전체가 하나의 퀘스트 맵', style: AppType.bodyMuted),
+            const SizedBox(height: AppSpacing.xxxl),
+            SizedBox(
+              width: 132,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: progress.clamp(0.0, 1.0)),
+                duration: AppMotion.slow,
+                curve: AppMotion.emphasized,
+                builder: (_, value, _) => _Track(value: value),
               ),
-              const SizedBox(height: 8),
-              const Text('소도시 전체가 하나의 퀘스트 맵', style: TextStyle(fontSize: 12, color: subTextColor)),
+            ),
+            const Spacer(flex: 4),
+            Text(
+              'team 붉은사슴뿔버섯',
+              style: AppType.micro.copyWith(color: AppColors.textDisabled),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-              const Spacer(flex: 4),
+class _Track extends StatelessWidget {
+  final double value;
+  const _Track({required this.value});
 
-              ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: SizedBox(
-                  height: 5,
-                  width: double.infinity,
-                  child: LinearProgressIndicator(
-                    value: 0.35,
-                    backgroundColor: progressBg,
-                    valueColor: const AlwaysStoppedAnimation<Color>(primaryRed),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              const Text('team 붉은사슴불버섯', style: TextStyle(fontSize: 11, color: subTextColor)),
-            ],
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 6,
+      decoration: BoxDecoration(
+        gradient: AppSurface.sunken,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: FractionallySizedBox(
+        alignment: Alignment.centerLeft,
+        widthFactor: value,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: AppSurface.brandFill,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
           ),
         ),
       ),

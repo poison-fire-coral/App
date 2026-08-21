@@ -113,6 +113,38 @@ class QuestModel {
     return requiresPhoto ? '$spotPart · 사진 1장' : spotPart;
   }
 
+  /// 진행 중 퀘스트를 로컬에 통째로 저장하기 위한 직렬화.
+  ///
+  /// [fromJson]이 읽는 백엔드 형식과 **같은 모양**으로 쓴다. 그래야 복원 경로가
+  /// 서버 응답이든 로컬 스냅샷이든 하나로 유지된다.
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'story': description,
+        'summary': summary,
+        'difficulty': difficulty.stars,
+        'halfStep': hasHalfStar,
+        'radiusM': validRadiusMeters,
+        'keywords': keywords,
+        'requiresPhoto': requiresPhoto,
+        'crowdMultiplier': crowdMultiplier,
+        'spots': [
+          for (final spot in spots)
+            {
+              'name': spot.name,
+              'lat': spot.latitude,
+              'lng': spot.longitude,
+              'radiusM': spot.radiusMeters,
+            },
+        ],
+        'place': {
+          'name': spotName,
+          'address': regionLabel,
+          'lat': latitude,
+          'lng': longitude,
+        },
+      };
+
   /// 백엔드 Prisma JSON (Quest + Place) -> Flutter QuestModel 변환 팩토리
   factory QuestModel.fromJson(Map<String, dynamic> json) {
     final place = json['place'] as Map<String, dynamic>? ?? {};
@@ -159,6 +191,18 @@ class QuestModel {
       regionLabel: place['address'] ?? place['regionCode'] ?? json['regionLabel'] ?? '',
       keywords: List<String>.from(json['keywords'] ?? []),
       crowdMultiplier: crowdMult,
+      requiresPhoto: json['requiresPhoto'] as bool?,
+      // 서버 스키마에는 지점 테이블이 없다. 로컬 스냅샷에서 복원할 때만 채워진다.
+      spots: [
+        if (json['spots'] is List)
+          for (final raw in (json['spots'] as List))
+            QuestSpot(
+              name: '${(raw as Map)['name'] ?? ''}',
+              latitude: (raw['lat'] as num?)?.toDouble() ?? lat,
+              longitude: (raw['lng'] as num?)?.toDouble() ?? lng,
+              radiusMeters: (raw['radiusM'] as num?)?.toDouble() ?? 50,
+            ),
+      ],
     );
   }
 }

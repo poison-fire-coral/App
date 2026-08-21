@@ -10,19 +10,46 @@ async function main() {
   await prisma.place.deleteMany();
   await prisma.levelTable.deleteMany();
 
-  // 1. 레벨 테이블 데이터 생성
+  // 1. 레벨 테이블 (기획서 6c)
+  //
+  //  주의: 서버는 `row(N).requiredExp`를 "레벨 N-1 → N 승급 비용"으로 읽는다
+  //  (exp-engine.service.ts:67). 그래서 클라이언트 LevelSystem 테이블을
+  //  한 칸 밀어 넣어야 양쪽 레벨이 정확히 일치한다.
+  //
+  //  Lv15까지는 기획서에 명시된 값을 그대로 쓰고, Lv16~30은 2,000 고정이다.
+  //  (이전 시드는 값이 기획서와 달랐고 Lv10에서 끊겨 그 위로 레벨업이 멈췄다)
   await prisma.levelTable.createMany({
     data: [
       { level: 1, requiredExp: 0 },
       { level: 2, requiredExp: 100 },
-      { level: 3, requiredExp: 250 },
-      { level: 4, requiredExp: 450 },
-      { level: 5, requiredExp: 700 },
-      { level: 6, requiredExp: 1000 },
-      { level: 7, requiredExp: 1400 },
-      { level: 8, requiredExp: 1900 },
-      { level: 9, requiredExp: 2500 },
-      { level: 10, requiredExp: 3200 },
+      { level: 3, requiredExp: 150 },
+      { level: 4, requiredExp: 220 },
+      { level: 5, requiredExp: 300 },
+      { level: 6, requiredExp: 400 },
+      { level: 7, requiredExp: 500 },
+      { level: 8, requiredExp: 620 },
+      { level: 9, requiredExp: 770 },
+      { level: 10, requiredExp: 950 },
+      { level: 11, requiredExp: 1150 },
+      { level: 12, requiredExp: 1350 },
+      { level: 13, requiredExp: 1550 },
+      { level: 14, requiredExp: 1750 },
+      { level: 15, requiredExp: 2150 },
+      { level: 16, requiredExp: 2000 },
+      { level: 17, requiredExp: 2000 },
+      { level: 18, requiredExp: 2000 },
+      { level: 19, requiredExp: 2000 },
+      { level: 20, requiredExp: 2000 },
+      { level: 21, requiredExp: 2000 },
+      { level: 22, requiredExp: 2000 },
+      { level: 23, requiredExp: 2000 },
+      { level: 24, requiredExp: 2000 },
+      { level: 25, requiredExp: 2000 },
+      { level: 26, requiredExp: 2000 },
+      { level: 27, requiredExp: 2000 },
+      { level: 28, requiredExp: 2000 },
+      { level: 29, requiredExp: 2000 },
+      { level: 30, requiredExp: 2000 },
     ],
   });
 

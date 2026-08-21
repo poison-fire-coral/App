@@ -1,17 +1,54 @@
 import 'package:flutter/material.dart';
-import '../models/user_model.dart'; // UserModel 경로에 맞게 확인해 주세요.
+import 'package:flutter_svg/flutter_svg.dart';
 
-// -----------------------------------------------------------------------------
-// 온보딩 메인 화면 (PageView 기반 1d -> 1e -> 1f 스텝 이동)
-// -----------------------------------------------------------------------------
+import '../data/auth_repository.dart';
+import '../data/region_options.dart';
+import '../models/api_exception.dart';
+import '../models/auth_models.dart';
+import '../models/user_model.dart';
+import '../services/permission_service.dart';
+import '../theme/app_assets.dart';
+import '../theme/app_colors.dart';
+import '../theme/design_tokens.dart';
+import '../utils/nickname_validator.dart';
+import '../widgets/app_widgets.dart';
+import '../widgets/avatar_widgets.dart';
+
+/// 온보딩이 어떤 목적으로 열렸는지.
+enum OnboardingMode {
+  /// 신규 가입 — 마지막에 `POST /auth/signup`으로 계정을 만든다.
+  signup,
+
+  /// 이미 가입한 사용자의 취향 재설정 — `PATCH /users/me`.
+  editProfile,
+}
+
+/// 닉네임 중복확인 상태. `idle`이면 **아무 메시지도 띄우지 않는다**.
+enum _NicknameCheck { idle, checking, available, taken, failed }
+
+/// 1d 프로필 → 1e 키워드 → 1f 위치 권한
 class OnboardingScreen extends StatefulWidget {
+  final OnboardingMode mode;
+
+  /// 신규 가입일 때 `/auth/login`이 돌려준 provider·providerUid.
+  final PendingSignup? pending;
+
+  /// 취향 재설정일 때 채워 넣을 기존 값.
   final UserModel? initialData;
+
+  /// 가입/수정이 끝났을 때. 서버가 확정한 프로필이 올라온다.
   final ValueChanged<UserModel> onComplete;
+
+  /// 1단계에서 뒤로 갔을 때. 가입 방법 재선택 화면으로 돌아간다.
+  final VoidCallback? onBack;
 
   const OnboardingScreen({
     super.key,
-    this.initialData,
+    required this.mode,
     required this.onComplete,
+    this.pending,
+    this.initialData,
+    this.onBack,
   });
 
   @override
@@ -19,24 +56,32 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  final PageController _pageController = PageController();
-  int _currentStep = 0; // 0: 1d 프로필, 1: 1e 키워드, 2: 1f 위치 권한
+  static const int _stepCount = 3;
+  static const int _minKeywords = 3;
 
-  // 유저 입력 데이터 상태
-  int _selectedAvatarIndex = 0;
-  late TextEditingController _nicknameController;
-  late TextEditingController _regionController;
-  Set<String> _selectedKeywords = {'#로컬맛집', '#전통시장', '#카페투어', '#골목산책', '#사진스팟'};
+  final PageController _pageController = PageController();
+  int _currentStep = 0;
+
+  // --- 1d 프로필 ---------------------------------------------------------------
+  late final TextEditingController _nicknameController;
+  String _selectedAvatarId = AppAssets.defaultAvatarId;
+  RegionOption? _selectedRegion;
+  String? _nicknameError;
+  _NicknameCheck _nicknameCheck = _NicknameCheck.idle;
+
+  /// 중복확인을 통과한 바로 그 문자열. 이후 한 글자라도 바뀌면 확인이 무효가 된다.
+  String _checkedNickname = '';
+
+  // --- 1e 키워드 ---------------------------------------------------------------
+  /// 신규 가입은 **아무것도 선택되지 않은 상태**로 시작한다.
+  final Set<String> _selectedKeywords = <String>{};
   String _selectedIntensity = '보통';
 
-  // 테마 색상 정의 (디자인 도큐먼트 스펙 기준)
-  static const Color primaryRed = Color(0xFF9E2B1E);
-  static const Color darkBorder = Color(0xFF2A1512);
-  static const Color bgCream = Color(0xFFFFFDFB);
-  static const Color subTextColor = Color(0x8C2A1512);
+  // --- 1f 권한 / 제출 ----------------------------------------------------------
+  bool _isSubmitting = false;
 
-  // 카테고리별 키워드 (퀘스트 태그 · 지도 필터 칩 · 배지 분류축으로 재사용됨)
-  final Map<String, List<String>> _keywordCategories = const {
+  /// 퀘스트 태그 · 지도 필터 칩 · 배지 분류축으로 그대로 재사용되는 어휘.
+  static const Map<String, List<String>> _keywordCategories = {
     '먹기': ['#로컬맛집', '#전통시장', '#카페투어', '#노포·백년가게', '#야시장', '#술한잔'],
     '걷기': ['#골목산책', '#바다·해안', '#산·트레킹', '#강·호수', '#들판·논밭', '#숲길·섬'],
     '배우기': ['#역사유적', '#한옥·고택', '#박물관', '#미술관', '#근대건축', '#폐공간', '#종교건축'],
@@ -44,79 +89,273 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     '사람': ['#주민이야기', '#로컬브랜드', '#드라마촬영지', '#전설·설화'],
   };
 
+  static const List<String> _intensities = ['가볍게', '보통', '많이 걷기'];
+
   @override
   void initState() {
     super.initState();
-    // 기존에 넘겨받은 initialData가 있다면 기본값 설정
-    _nicknameController = TextEditingController(text: widget.initialData?.nickname ?? '');
-    _regionController = TextEditingController();
+    final initial = widget.initialData;
+    _nicknameController = TextEditingController(text: initial?.nickname ?? '');
 
-    if (widget.initialData != null && widget.initialData!.travelStyles.isNotEmpty) {
-      _selectedKeywords = widget.initialData!.travelStyles.toSet();
-    }
-    if (widget.initialData != null && widget.initialData!.transport.isNotEmpty) {
-      _selectedIntensity = widget.initialData!.transport;
+    // 취향 재설정 경로에서만 기존 값을 되살린다. 신규 가입은 빈 상태로 시작해야 한다.
+    if (widget.mode == OnboardingMode.editProfile && initial != null) {
+      _selectedAvatarId = initial.avatarId;
+      _selectedRegion = regionOptionForCode(initial.homeRegion);
+      _selectedKeywords.addAll(initial.travelStyles.map(_withHash));
+      if (initial.activityLevel.isNotEmpty) {
+        _selectedIntensity = initial.activityLevel;
+      }
+      // 자기 닉네임은 이미 자기 것이므로 확인된 것으로 본다.
+      if (initial.nickname.isNotEmpty) {
+        _nicknameCheck = _NicknameCheck.available;
+        _checkedNickname = initial.nickname;
+      }
     }
   }
 
   @override
   void dispose() {
     _nicknameController.dispose();
-    _regionController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
-  void _nextPage() {
-    if (_currentStep < 2) {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    } else {
-      // 1f 위치 권한 단계까지 완료 시 UserModel 객체 생성 후 main.dart로 전달
-      final newUser = UserModel(
-        nickname: _nicknameController.text.trim().isEmpty ? '모험가' : _nicknameController.text.trim(),
-        travelStyles: _selectedKeywords.toList(),
-        transport: _selectedIntensity,
-        level: widget.initialData?.level ?? 1, // 기존 레벨 유지 또는 1
-        exp: widget.initialData?.exp ?? 0,     // 기존 경험치 유지 또는 0
-      );
+  // ---------------------------------------------------------------------------
+  // 키워드 표기 변환
+  //   화면에는 '#골목산책', 서버에는 '골목산책'으로 저장한다.
+  // ---------------------------------------------------------------------------
+  static String _withHash(String v) => v.startsWith('#') ? v : '#$v';
+  static String _withoutHash(String v) =>
+      v.startsWith('#') ? v.substring(1) : v;
 
-      widget.onComplete(newUser);
+  // ---------------------------------------------------------------------------
+  // 단계 이동
+  // ---------------------------------------------------------------------------
+  bool get _canLeaveProfileStep =>
+      _nicknameError == null &&
+      _nicknameCheck == _NicknameCheck.available &&
+      _checkedNickname == _nicknameController.text.trim();
+
+  bool get _canLeaveKeywordStep => _selectedKeywords.length >= _minKeywords;
+
+  void _goNext() {
+    if (_currentStep >= _stepCount - 1) return;
+    _pageController.nextPage(
+      duration: AppMotion.base,
+      curve: AppMotion.emphasized,
+    );
+  }
+
+  void _goBack() {
+    if (_currentStep == 0) {
+      // 1단계에서 뒤로 = 가입 방법 재선택
+      widget.onBack?.call();
+      return;
+    }
+    _pageController.previousPage(
+      duration: AppMotion.base,
+      curve: AppMotion.emphasized,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 닉네임
+  // ---------------------------------------------------------------------------
+  void _onNicknameChanged(String value) {
+    setState(() {
+      _nicknameError = NicknameValidator.validate(value, whileTyping: true);
+      // 한 글자라도 달라지면 직전 중복확인은 무효다.
+      if (value.trim() != _checkedNickname) {
+        _nicknameCheck = _NicknameCheck.idle;
+      }
+    });
+  }
+
+  Future<void> _checkNickname() async {
+    final nickname = _nicknameController.text.trim();
+    final formatError = NicknameValidator.validate(nickname);
+    if (formatError != null) {
+      setState(() {
+        _nicknameError = formatError;
+        _nicknameCheck = _NicknameCheck.idle;
+      });
+      return;
+    }
+
+    setState(() {
+      _nicknameError = null;
+      _nicknameCheck = _NicknameCheck.checking;
+    });
+
+    try {
+      final available = await AuthRepository.isNicknameAvailable(nickname);
+      if (!mounted) return;
+      setState(() {
+        _nicknameCheck =
+            available ? _NicknameCheck.available : _NicknameCheck.taken;
+        _checkedNickname = available ? nickname : '';
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _nicknameCheck = _NicknameCheck.failed);
+      _toast(e.displayMessage);
     }
   }
 
-  void _previousPage() {
-    if (_currentStep > 0) {
-      _pageController.previousPage(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+  // ---------------------------------------------------------------------------
+  // 1f — 권한을 실제로 받고 계정을 만든다
+  // ---------------------------------------------------------------------------
+  Future<void> _requestPermissionAndFinish() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+
+    try {
+      final result = await PermissionService.ensureLocationAccess();
+      if (!mounted) return;
+
+      switch (result) {
+        case LocationAccess.granted:
+          await _submitProfile();
+          return;
+        case LocationAccess.serviceDisabled:
+          _showBlockingDialog(
+            title: '위치 서비스가 꺼져 있어요',
+            body: '기기의 위치 기능을 켜야 퀘스트를 찾을 수 있어요.',
+            actionLabel: '위치 설정 열기',
+            onAction: PermissionService.openLocationSettings,
+          );
+        case LocationAccess.deniedForever:
+          _showBlockingDialog(
+            title: '위치 권한이 차단돼 있어요',
+            body: '앱 설정에서 위치 권한을 허용해 주세요. '
+                '퀘스트 탐색과 도달 인증이 GPS로만 가능합니다.',
+            actionLabel: '앱 설정 열기',
+            onAction: PermissionService.openAppSettings,
+          );
+        case LocationAccess.denied:
+          _toast('위치 권한을 허용해야 모험을 시작할 수 있어요.');
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
+  Future<void> _submitProfile() async {
+    final nickname = _nicknameController.text.trim();
+    final keywords = _selectedKeywords.map(_withoutHash).toList();
+
+    try {
+      final UserModel user;
+      if (widget.mode == OnboardingMode.signup) {
+        final pending = widget.pending;
+        if (pending == null) {
+          _toast('가입 정보를 잃어버렸어요. 처음부터 다시 시도해 주세요.');
+          widget.onBack?.call();
+          return;
+        }
+        final session = await AuthRepository.signup(SignupRequest(
+          pending: pending,
+          nickname: nickname,
+          avatarId: _selectedAvatarId,
+          homeRegion: _selectedRegion?.code,
+          activityLevel: _selectedIntensity,
+          keywords: keywords,
+          termsVersion: AuthRepository.termsVersion,
+        ));
+        user = session.user;
+      } else {
+        user = await AuthRepository.updateProfile(
+          nickname: nickname,
+          avatarId: _selectedAvatarId,
+          homeRegion: _selectedRegion?.code,
+          activityLevel: _selectedIntensity,
+          keywords: keywords,
+        );
+      }
+
+      if (!mounted) return;
+      widget.onComplete(user);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+
+      // 중복확인과 가입 사이에 다른 사람이 채갔을 수 있다. 1단계로 되돌린다.
+      if (e.isDuplicateNickname) {
+        setState(() {
+          _nicknameCheck = _NicknameCheck.taken;
+          _checkedNickname = '';
+        });
+        _pageController.animateToPage(
+          0,
+          duration: AppMotion.base,
+          curve: AppMotion.emphasized,
+        );
+        _toast('그 사이 다른 분이 쓰기 시작했어요. 다른 이름을 골라 주세요.');
+        return;
+      }
+      _toast(e.displayMessage);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 보조 UI
+  // ---------------------------------------------------------------------------
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _showBlockingDialog({
+    required String title,
+    required String body,
+    required String actionLabel,
+    required Future<void> Function() onAction,
+  }) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: const RoundedRectangleBorder(borderRadius: AppRadius.panel),
+        title: Text(title, style: AppType.h2),
+        content: Text(body, style: AppType.bodyMuted),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('닫기'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              onAction();
+            },
+            child: Text(actionLabel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // build
+  // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bgCream,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
-            // 상단 진행바 및 뒤로가기 헤더 (1f 단계에서는 숨김)
-            if (_currentStep < 2) _buildHeader(),
-
-            // 온보딩 컨텐츠 영역
+            _buildHeader(),
             Expanded(
               child: PageView(
                 controller: _pageController,
-                physics: const NeverScrollableScrollPhysics(), // 버튼 클릭으로만 이동
-                onPageChanged: (index) {
-                  setState(() => _currentStep = index);
-                },
+                physics: const NeverScrollableScrollPhysics(),
+                onPageChanged: (index) => setState(() => _currentStep = index),
                 children: [
-                  _buildProfileStep(),  // 1d 프로필 설정
-                  _buildKeywordStep(),  // 1e 키워드 선택
-                  _buildPermissionStep(), // 1f 위치 권한 설정
+                  _buildProfileStep(),
+                  _buildKeywordStep(),
+                  _buildPermissionStep(),
                 ],
               ),
             ),
@@ -126,378 +365,326 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Header Widget (뒤로가기 + 프로그레스 바 + 스텝 표시)
-  // ---------------------------------------------------------------------------
+  /// 진행바 + 뒤로가기. **모든 단계에서** 보인다 —
+  /// 1단계에서 뒤로 누르면 가입 방법을 다시 고를 수 있어야 하기 때문이다.
   Widget _buildHeader() {
-    double progress = (_currentStep + 1) / 3.0;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: darkBorder, width: 1.5)),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.sm,
+        AppSpacing.gutter,
+        AppSpacing.md,
       ),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: _previousPage,
-            child: Text(
-              _currentStep > 0 ? '← 뒤로' : '',
-              style: const TextStyle(fontSize: 12, color: darkBorder, fontWeight: FontWeight.bold),
-            ),
+          IconButton(
+            onPressed: _isSubmitting ? null : _goBack,
+            icon: const Icon(Icons.arrow_back_rounded),
+            color: AppColors.textSecondary,
+            tooltip: _currentStep == 0 ? '가입 방법 다시 고르기' : '이전 단계',
           ),
-          const SizedBox(width: 12),
           Expanded(
-            child: Container(
-              height: 6,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE8DCD6),
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor: progress,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: primaryRed,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                ),
-              ),
-            ),
+            child: ProgressBar(value: (_currentStep + 1) / _stepCount),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppSpacing.md),
           Text(
-            '${_currentStep + 1} / 3',
-            style: const TextStyle(fontSize: 12, color: darkBorder, fontWeight: FontWeight.bold),
+            '${_currentStep + 1} / $_stepCount',
+            style: AppType.numeric.copyWith(color: AppColors.textTertiary),
           ),
         ],
       ),
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // 1d. 온보딩 1 - 프로필 설정
-  // ---------------------------------------------------------------------------
+  // ---- 1d 프로필 --------------------------------------------------------------
   Widget _buildProfileStep() {
-    return Padding(
-      padding: const EdgeInsets.all(20.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('모험가 이름을 정해주세요', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: darkBorder)),
-          const SizedBox(height: 16),
+    return _StepScaffold(
+      title: '모험가 이름을 정해주세요',
+      subtitle: '아바타와 이름은 나중에 설정에서 바꿀 수 있어요.',
+      footer: PrimaryButton(
+        label: '다음',
+        enabled: _canLeaveProfileStep,
+        onTap: _goNext,
+      ),
+      children: [
+        // 아바타 6종
+        Center(child: AppAvatar(avatarId: _selectedAvatarId, size: 96)),
+        const SizedBox(height: AppSpacing.md),
+        AvatarPickerRow(
+          selectedId: _selectedAvatarId,
+          onSelected: (id) => setState(() => _selectedAvatarId = id),
+        ),
+        const SizedBox(height: AppSpacing.xl),
 
-          // 아바타 선택 영역
-          Center(
-            child: Column(
-              children: [
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedAvatarIndex = (_selectedAvatarIndex + 1) % 6;
-                    });
-                  },
-                  child: Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: darkBorder, width: 1.5),
-                      color: Colors.white,
-                    ),
-                    child: const Center(
-                      child: Text(
-                        '아바타\n선택',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 10, color: subTextColor, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
+        // 닉네임
+        const SectionHeader(title: '닉네임'),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _buildNicknameField()),
+            const SizedBox(width: AppSpacing.sm),
+            _buildCheckButton(),
+          ],
+        ),
+        SizedBox(height: AppSpacing.sm, child: null),
+        _buildNicknameFeedback(),
+        const SizedBox(height: AppSpacing.xl),
+
+        // 홈 지역
+        const SectionHeader(title: '홈 지역', trailingText: '선택'),
+        const SizedBox(height: AppSpacing.sm),
+        _buildRegionDropdown(),
+      ],
+    );
+  }
+
+  Widget _buildNicknameField() {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: AppSurface.sunken,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(
+          color: _nicknameError != null
+              ? AppColors.quest300
+              : AppColors.hairlineStrong,
+        ),
+      ),
+      child: TextField(
+        controller: _nicknameController,
+        onChanged: _onNicknameChanged,
+        style: AppType.body.copyWith(color: AppColors.textPrimary),
+        decoration: const InputDecoration(
+          hintText: '2~10자 · 한글, 영문, 숫자',
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCheckButton() {
+    final canCheck = NicknameValidator.canCheckDuplicate(
+          _nicknameController.text,
+        ) &&
+        _nicknameCheck != _NicknameCheck.checking;
+
+    return SizedBox(
+      width: 92,
+      child: PrimaryButton(
+        label: _nicknameCheck == _NicknameCheck.checking ? '확인 중' : '중복확인',
+        fontSize: 13,
+        padding: const EdgeInsets.symmetric(vertical: 15),
+        enabled: canCheck,
+        onTap: _checkNickname,
+      ),
+    );
+  }
+
+  /// 중복확인을 누르기 전에는 아무 문구도 띄우지 않는다.
+  Widget _buildNicknameFeedback() {
+    final (String text, Color color)? feedback = switch (true) {
+      _ when _nicknameError != null => (_nicknameError!, AppColors.quest500),
+      _ when _nicknameCheck == _NicknameCheck.available => (
+          '사용할 수 있는 이름이에요',
+          AppColors.jade500
+        ),
+      _ when _nicknameCheck == _NicknameCheck.taken => (
+          '이미 누군가 쓰고 있어요',
+          AppColors.quest500
+        ),
+      _ when _nicknameCheck == _NicknameCheck.failed => (
+          '확인하지 못했어요. 다시 눌러 주세요',
+          AppColors.textTertiary
+        ),
+      _ => null,
+    };
+
+    return AnimatedSwitcher(
+      duration: AppMotion.fast,
+      child: feedback == null
+          ? const SizedBox(height: 18, width: double.infinity)
+          : SizedBox(
+              height: 18,
+              width: double.infinity,
+              child: Text(
+                feedback.$1,
+                style: AppType.caption.copyWith(color: feedback.$2),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildRegionDropdown() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      decoration: BoxDecoration(
+        gradient: AppSurface.sunken,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: AppColors.hairlineStrong),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<RegionOption>(
+          value: _selectedRegion,
+          isExpanded: true,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          dropdownColor: AppColors.surface,
+          hint: Text(
+            '주로 활동하는 지역',
+            style: AppType.body.copyWith(color: AppColors.textDisabled),
+          ),
+          icon: const Icon(Icons.expand_more_rounded,
+              color: AppColors.textTertiary),
+          items: [
+            for (final region in kRegionOptions)
+              DropdownMenuItem(
+                value: region,
+                child: Text(region.label, style: AppType.body),
+              ),
+          ],
+          onChanged: (region) => setState(() => _selectedRegion = region),
+        ),
+      ),
+    );
+  }
+
+  // ---- 1e 키워드 --------------------------------------------------------------
+  Widget _buildKeywordStep() {
+    final count = _selectedKeywords.length;
+    final remaining = _minKeywords - count;
+
+    return _StepScaffold(
+      title: '관심 키워드를 골라주세요',
+      subtitle: remaining > 0
+          ? '$_minKeywords개 이상 골라 주세요 · $remaining개 남음'
+          : '$count개 선택됨 · 더 고르셔도 좋아요',
+      footer: PrimaryButton(
+        label: '다음',
+        enabled: _canLeaveKeywordStep,
+        onTap: _goNext,
+      ),
+      children: [
+        for (final entry in _keywordCategories.entries) ...[
+          SectionHeader(title: entry.key),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: [
+              for (final keyword in entry.value)
+                TagChip(
+                  label: keyword,
+                  isSelected: _selectedKeywords.contains(keyword),
+                  onTap: () => setState(() {
+                    if (!_selectedKeywords.remove(keyword)) {
+                      _selectedKeywords.add(keyword);
+                    }
+                  }),
                 ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xl),
+        ],
+        const SectionHeader(title: '활동 강도'),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          children: [
+            for (final level in _intensities) ...[
+              TagChip(
+                label: level,
+                isSelected: _selectedIntensity == level,
+                onTap: () => setState(() => _selectedIntensity = level),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ---- 1f 위치 권한 -----------------------------------------------------------
+  Widget _buildPermissionStep() {
+    return _StepScaffold(
+      title: '위치 권한이 필요해요',
+      subtitle: '퀘스트 탐색과 도달 인증이 GPS로만 가능합니다.',
+      footer: PrimaryButton(
+        label: _isSubmitting ? '준비 중…' : '권한 허용하고 시작하기',
+        enabled: !_isSubmitting,
+        onTap: _requestPermissionAndFinish,
+      ),
+      children: [
+        Center(
+          child: SvgPicture.asset(
+            AppAssets.locationPermission,
+            width: 240,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xxl),
+        NoteBox(
+          child: Text(
+            '내 위치는 퀘스트를 찾고 도착을 확인하는 데에만 씁니다.\n'
+            '이동 경로를 따로 저장하거나 공유하지 않아요.',
+            style: AppType.bodyMuted,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 세 단계가 공유하는 뼈대 — 제목 · 부제 · 스크롤 본문 · 바닥 버튼.
+///
+/// 버튼을 스크롤 밖에 고정해 두면 키보드가 올라와도 "다음"이 사라지지 않는다.
+class _StepScaffold extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final List<Widget> children;
+  final Widget footer;
+
+  const _StepScaffold({
+    required this.title,
+    required this.children,
+    required this.footer,
+    this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(title, style: AppType.h1),
+                if (subtitle != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(subtitle!, style: AppType.bodyMuted),
+                ],
+                const SizedBox(height: AppSpacing.xl),
+                ...children,
+                const SizedBox(height: AppSpacing.xxxl),
               ],
             ),
           ),
-          const SizedBox(height: 20),
-
-          // 닉네임 입력 박스
-          _buildCustomTextBox(
-            child: TextField(
-              controller: _nicknameController,
-              style: const TextStyle(fontSize: 13, color: darkBorder),
-              decoration: const InputDecoration(
-                hintText: '닉네임 입력 (2~10자)',
-                isDense: true,
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              const Expanded(
-                child: Text('사용 가능한 이름입니다', style: TextStyle(fontSize: 11, color: subTextColor)),
-              ),
-              _buildChip('중복확인', isSelected: false, onTap: () {}),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // 아바타 설명 박스
-          _buildDashedBox('아바타 = 기본 프리셋 6종 중 선택 (사진 업로드는 추후 지원)'),
-          const SizedBox(height: 12),
-
-          // 홈 지역 입력 박스
-          _buildCustomTextBox(
-            child: TextField(
-              controller: _regionController,
-              style: const TextStyle(fontSize: 13, color: darkBorder),
-              decoration: const InputDecoration(
-                hintText: '홈 지역 (선택 · 미입력 시 현재 위치)',
-                isDense: true,
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-          ),
-
-          const Spacer(),
-          _buildPrimaryButton('다음', onTap: _nextPage),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // 1e. 온보딩 2 - 키워드 & 활동 강도 선택
-  // ---------------------------------------------------------------------------
-  Widget _buildKeywordStep() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('관심 키워드를 골라주세요', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: darkBorder)),
-          const SizedBox(height: 4),
-          Text(
-            '복수 선택 · 3개 이상 · ${_selectedKeywords.length}개 선택됨',
-            style: const TextStyle(fontSize: 11, color: subTextColor),
-          ),
-          const SizedBox(height: 14),
-
-          // 카테고리별 키워드 칩 (세로 스크롤)
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (final category in _keywordCategories.entries) ...[
-                    Text(
-                      category.key,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: primaryRed),
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 8,
-                      children: category.value.map((keyword) {
-                        final isSelected = _selectedKeywords.contains(keyword);
-                        return _buildChip(
-                          keyword,
-                          isSelected: isSelected,
-                          onTap: () {
-                            setState(() {
-                              if (isSelected) {
-                                _selectedKeywords.remove(keyword);
-                              } else {
-                                _selectedKeywords.add(keyword);
-                              }
-                            });
-                          },
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-
-                  // 활동 강도 설정 박스
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: darkBorder, width: 1.5),
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('활동 강도', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: darkBorder)),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: ['가볍게', '보통', '많이 걷기'].map((intensity) {
-                            final isSelected = _selectedIntensity == intensity;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: _buildChip(
-                                intensity,
-                                isSelected: isSelected,
-                                onTap: () {
-                                  setState(() => _selectedIntensity = intensity);
-                                },
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-          _buildPrimaryButton('다음', onTap: _nextPage),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // 1f. 위치 권한 안내 (필수 게이트)
-  // ---------------------------------------------------------------------------
-  Widget _buildPermissionStep() {
-    return Padding(
-      padding: const EdgeInsets.all(20.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const Spacer(),
-          // 위치 일러스트 Placeholder
-          _buildDashedBox(
-            '위치 일러스트\nplaceholder',
-            height: 120,
-            alignment: Alignment.center,
-          ),
-          const SizedBox(height: 20),
-
-          const Text('위치 권한이 반드시 필요해요', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: darkBorder)),
-          const SizedBox(height: 10),
-          const Text(
-            '퀘스트 탐색과 도달 인증이 GPS로만 가능합니다.\n허용하지 않으면 서비스를 이용할 수 없습니다.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: subTextColor, height: 1.4),
-          ),
-          const SizedBox(height: 24),
-
-          _buildPrimaryButton('권한 허용하기', onTap: _nextPage),
-          const SizedBox(height: 8),
-
-          // 나중에 버튼 (점선 외곽선)
-          GestureDetector(
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('위치 권한에 동의해야 모험을 시작할 수 있습니다.')),
-              );
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFB6A49E), width: 1.5, style: BorderStyle.solid),
-                borderRadius: BorderRadius.circular(18),
-                color: const Color(0xFFF6EFEC),
-              ),
-              child: const Center(
-                child: Text('나중에 (진행 불가)', style: TextStyle(fontSize: 14, color: Color(0xFFA2908A))),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          _buildDashedBox('거부 시 : 안내 모달 → 이 화면 유지 · 앱 설정 바로가기 제공', fontSize: 11),
-          const Spacer(),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // 공통 UI 컴포넌트 헬퍼 (디자인 스펙 규격 준수)
-  // ---------------------------------------------------------------------------
-  Widget _buildCustomTextBox({required Widget child}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: darkBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: child,
-    );
-  }
-
-  Widget _buildDashedBox(String text, {double? height, Alignment alignment = Alignment.centerLeft, double fontSize = 12}) {
-    return Container(
-      height: height,
-      width: double.infinity,
-      padding: const EdgeInsets.all(10),
-      alignment: alignment,
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFA2908A), width: 1.5),
-        borderRadius: BorderRadius.circular(7),
-        color: const Color(0xFFFFFDFB),
-      ),
-      child: Text(
-        text,
-        textAlign: alignment == Alignment.center ? TextAlign.center : TextAlign.left,
-        style: TextStyle(fontSize: fontSize, color: const Color(0xFF6D5A55), height: 1.3),
-      ),
-    );
-  }
-
-  Widget _buildChip(String label, {required bool isSelected, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: isSelected ? primaryRed : bgCream,
-          border: Border.all(color: isSelected ? primaryRed : darkBorder, width: 1.2),
-          borderRadius: BorderRadius.circular(11),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            color: isSelected ? Colors.white : darkBorder,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.gutter,
+            AppSpacing.sm,
+            AppSpacing.gutter,
+            AppSpacing.lg,
           ),
+          child: footer,
         ),
-      ),
-    );
-  }
-
-  Widget _buildPrimaryButton(String label, {required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: primaryRed,
-          border: Border.all(color: darkBorder, width: 1.5),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
-        ),
-      ),
+      ],
     );
   }
 }

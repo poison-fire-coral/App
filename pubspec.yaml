@@ -19,6 +19,10 @@ dependencies:
   kakao_map_plugin: ^0.3.0
   geolocator: ^12.0.0
   http: ^1.6.0
+  flutter_svg: ^2.3.0
+  flutter_secure_storage: ^11.0.0
+  uuid: ^4.6.0
+  image_picker: ^1.2.3
 
 dev_dependencies:
   flutter_test:
@@ -27,3 +31,21 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/avatars/
+    - assets/illustrations/
+    - assets/brand/
+
+  # 디자인 시스템 v1.0 (Parchment & Seal) 05 타이포 — Pretendard 400/500/600/700
+  fonts:
+    - family: Pretendard
+      fonts:
+        - asset: assets/fonts/Pretendard-Regular.otf
+          weight: 400
+        - asset: assets/fonts/Pretendard-Medium.otf
+          weight: 500
+        - asset: assets/fonts/Pretendard-SemiBold.otf
+          weight: 600
+        - asset: assets/fonts/Pretendard-Bold.otf
+          weight: 700

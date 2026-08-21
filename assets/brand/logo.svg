@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <!-- 로컬 퀘스트 로고 · 양피지 위 인장(낙관) + 방위 마커 -->
+  <defs>
+    <linearGradient id="lgSeal" x1="60" y1="18" x2="60" y2="102" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B03526"/><stop offset="1" stop-color="#8A2419"/>
+    </linearGradient>
+    <linearGradient id="lgPaper" x1="60" y1="6" x2="60" y2="114" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F4EBE6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 양피지 -->
+  <rect x="6" y="6" width="108" height="108" rx="30" fill="url(#lgPaper)"/>
+  <rect x="6" y="6" width="108" height="108" rx="30" fill="none" stroke="#2A1512" stroke-opacity=".1" stroke-width="1.6"/>
+
+  <!-- 인장 접지 그림자 -->
+  <ellipse cx="60" cy="96" rx="26" ry="7" fill="#5A2A1A" opacity=".16"/>
+
+  <!-- 인장 -->
+  <path d="M60 20c-16.6 0-30 13.4-30 30 0 21.6 30 48 30 48s30-26.4 30-48c0-16.6-13.4-30-30-30z" fill="url(#lgSeal)"/>
+  <path d="M60 20c-16.6 0-30 13.4-30 30 0 3.2.5 6.3 1.5 9.2C34.6 42.6 46 32 60 32s25.4 10.6 28.5 27.2c1-2.9 1.5-6 1.5-9.2 0-16.6-13.4-30-30-30z" fill="#FFFFFF" opacity=".18"/>
+
+  <!-- 안쪽 나침반 -->
+  <circle cx="60" cy="50" r="15" fill="#FFF6F3"/>
+  <path d="M60 40.5l4.2 8.4 8.3 1.1-6.3 5.6 1.8 8.4L60 59.8l-8 4.2 1.8-8.4-6.3-5.6 8.3-1.1z" fill="#9E2B1E"/>
+</svg>

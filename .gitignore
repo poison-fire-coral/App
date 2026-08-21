@@ -31,6 +31,8 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+# 루트 build.gradle.kts가 빌드 산출물을 옮기면서 android/build/ 도 생긴다
+build/
 /coverage/
 
 # Symbolication related

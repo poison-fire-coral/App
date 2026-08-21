@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../services/exp_service.dart';
 import '../theme/app_colors.dart';
+import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
 
 /// 4d · 레벨업
 ///
 /// 레벨은 랭킹이 아니라 콘텐츠 해금 게이트다 (기획서 6d).
+/// 보상 화면과 함께 e5를 쓰는 두 화면 중 하나 (디자인 시스템 11).
 class LevelUpScreen extends StatelessWidget {
   final LevelUpResult result;
 
@@ -17,40 +19,51 @@ class LevelUpScreen extends StatelessWidget {
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: AppColors.bgCream,
+        backgroundColor: AppColors.background,
         body: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+            padding: const EdgeInsets.all(AppSpacing.xl),
             child: Column(
               children: [
                 const Spacer(),
-                const Text(
+                Text(
                   'LEVEL UP',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primaryRed,
+                  style: AppType.display.copyWith(
+                    color: AppColors.quest500,
                     letterSpacing: 1.5,
                   ),
                 ),
-                const SizedBox(height: 18),
-                _buildLevelTransition(),
-                const SizedBox(height: 18),
+                const SizedBox(height: AppSpacing.xxl),
+                _LevelTransition(
+                  from: result.previousLevel,
+                  to: result.level,
+                ),
+                const SizedBox(height: AppSpacing.xxl),
                 SizedBox(
                   width: 230,
-                  child: ProgressBar(value: result.progress),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: result.progress),
+                    duration: AppMotion.slow,
+                    curve: AppMotion.emphasized,
+                    builder: (_, value, _) => ProgressBar(value: value),
+                  ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.sm),
                 Text(
                   '다음 레벨까지 ${result.expToNextLevel} EXP',
-                  style: const TextStyle(fontSize: 13, color: AppColors.subText),
+                  style: AppType.numeric.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
-                const SizedBox(height: 20),
-                if (result.unlocks.isNotEmpty) _buildUnlockCard(),
+                if (result.unlocks.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xxl),
+                  _UnlockCard(unlocks: result.unlocks),
+                ],
                 const Spacer(),
                 PrimaryButton(
                   label: '계속하기',
-                  onTap: () => Navigator.of(context).popUntil((route) => route.isFirst),
+                  onTap: () =>
+                      Navigator.of(context).popUntil((route) => route.isFirst),
                 ),
               ],
             ),
@@ -59,64 +72,94 @@ class LevelUpScreen extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _buildLevelTransition() {
+/// 지난 레벨은 눌러 새긴 면, 새 레벨은 인장처럼 떠오른다.
+/// 볼록과 오목을 짝으로 써야 층이 읽힌다 (디자인 시스템 04).
+class _LevelTransition extends StatelessWidget {
+  final int from;
+  final int to;
+  const _LevelTransition({required this.from, required this.to});
+
+  @override
+  Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Container(
-          width: 62,
-          padding: const EdgeInsets.symmetric(vertical: 9),
+          width: 68,
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.darkBorder, width: 1.5),
-            borderRadius: BorderRadius.circular(9),
+            gradient: AppSurface.sunken,
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           child: Text(
-            'Lv.${result.previousLevel}',
-            style: const TextStyle(fontSize: 14, color: AppColors.darkBorder),
+            'Lv.$from',
+            style: AppType.numeric.copyWith(color: AppColors.textTertiary),
           ),
         ),
         const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12),
-          child: Text('→', style: TextStyle(fontSize: 16, color: AppColors.darkBorder)),
+          padding: EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: Icon(Icons.arrow_forward_rounded,
+              size: 20, color: AppColors.textDisabled),
         ),
-        Container(
-          width: 62,
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: AppColors.primaryRed,
-            border: Border.all(color: AppColors.darkBorder, width: 1.5),
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Text(
-            'Lv.${result.level}',
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+        TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.8, end: 1),
+          duration: AppMotion.slow,
+          curve: AppMotion.spring,
+          builder: (_, scale, child) =>
+              Transform.scale(scale: scale, child: child),
+          child: Container(
+            width: 76,
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              gradient: AppSurface.brandFill,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              boxShadow: AppElevation.brand,
+            ),
+            child: Text(
+              'Lv.$to',
+              style: AppType.h2.copyWith(color: AppColors.textOnDark),
+            ),
           ),
         ),
       ],
     );
   }
+}
 
-  Widget _buildUnlockCard() {
+class _UnlockCard extends StatelessWidget {
+  final List<String> unlocks;
+  const _UnlockCard({required this.unlocks});
+
+  @override
+  Widget build(BuildContext context) {
     return SizedBox(
-      width: 240,
-      child: SolidBox(
+      width: 260,
+      child: AppCard(
+        color: AppColors.amber50,
+        shadow: AppElevation.e2,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '해금됨',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.darkBorder),
+            Row(
+              children: [
+                const Icon(Icons.lock_open_rounded,
+                    size: 18, color: AppColors.amber700),
+                const SizedBox(width: AppSpacing.sm),
+                Text('해금됨',
+                    style: AppType.h3.copyWith(color: AppColors.amber700)),
+              ],
             ),
-            const SizedBox(height: 6),
-            for (final unlock in result.unlocks)
+            const SizedBox(height: AppSpacing.sm),
+            for (final unlock in unlocks)
               Padding(
                 padding: const EdgeInsets.only(bottom: 3),
                 child: Text(
                   '· $unlock',
-                  style: const TextStyle(fontSize: 13, color: AppColors.darkBorder, height: 1.35),
+                  style: AppType.body.copyWith(color: AppColors.amber700),
                 ),
               ),
           ],

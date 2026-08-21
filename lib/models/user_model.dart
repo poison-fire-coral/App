@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../theme/app_assets.dart';
+
 /// 레벨 테이블 및 경험치 연산 시스템 (기획서 6c 기준)
 ///
 /// 공식은 Lv1–4 `100·1.45^(L-1)` · Lv5–14 `400·1.2^(L-5)` · Lv15+ `2000`이지만
@@ -36,13 +38,23 @@ class LevelSystem {
 
 /// 유저 프로필 데이터 모델 (기획서 1d, 2a, 5c 기준)
 class UserModel {
+  /// 서버 DB(users.id)의 정수 PK. 로컬에서만 만든 프로필이면 null.
+  final int? serverId;
+
   final String nickname;
-  final String avatarPresetUrl;            // 기본 아바타 (6종 중 선택)
+
+  /// 아바타 프리셋 id ('avatar_01' ~ 'avatar_06').
+  /// 경로가 아니라 id를 저장한다 — 에셋 구조가 바뀌어도 DB를 안 건드리게.
+  final String avatarId;
+
   final String? homeRegion;                 // 관심/홈 지역 (선택)
   final int level;
   final int exp;                            // 현재 레벨 구간에서 쌓은 경험치
   final List<String> travelStyles;          // 여행 키워드 / 스타일
-  final String transport;                    // 주요 이동수단
+
+  /// 활동 강도 ('가볍게' | '보통' | '많이 걷기').
+  /// 예전 이름은 `transport`였는데 실제로 담기는 값과 뜻이 달라 바로잡았다.
+  final String activityLevel;
   final List<String> representativeBadgeIds; // 홈 화면 장착 대표 배지 (최대 3개)
 
   /// 연속 접속 스트릭. 보상 배율 ×(1 + 0.05·일수), 상한 ×1.5 (기획서 6b)
@@ -62,12 +74,13 @@ class UserModel {
 
   UserModel({
     required this.nickname,
-    this.avatarPresetUrl = 'assets/avatars/avatar_1.png',
+    this.serverId,
+    this.avatarId = AppAssets.defaultAvatarId,
     this.homeRegion,
     this.level = 1,
     this.exp = 0,
     required this.travelStyles,
-    required this.transport,
+    required this.activityLevel,
     this.representativeBadgeIds = const [],
     this.streakDays = 0,
     this.dailyExpEarned = 0,
@@ -115,12 +128,13 @@ class UserModel {
 
   UserModel copyWith({
     String? nickname,
-    String? avatarPresetUrl,
+    int? serverId,
+    String? avatarId,
     String? homeRegion,
     int? level,
     int? exp,
     List<String>? travelStyles,
-    String? transport,
+    String? activityLevel,
     List<String>? representativeBadgeIds,
     int? streakDays,
     int? dailyExpEarned,
@@ -130,12 +144,13 @@ class UserModel {
   }) {
     return UserModel(
       nickname: nickname ?? this.nickname,
-      avatarPresetUrl: avatarPresetUrl ?? this.avatarPresetUrl,
+      serverId: serverId ?? this.serverId,
+      avatarId: avatarId ?? this.avatarId,
       homeRegion: homeRegion ?? this.homeRegion,
       level: level ?? this.level,
       exp: exp ?? this.exp,
       travelStyles: travelStyles ?? this.travelStyles,
-      transport: transport ?? this.transport,
+      activityLevel: activityLevel ?? this.activityLevel,
       representativeBadgeIds: representativeBadgeIds ?? this.representativeBadgeIds,
       streakDays: streakDays ?? this.streakDays,
       dailyExpEarned: dailyExpEarned ?? this.dailyExpEarned,
@@ -146,13 +161,14 @@ class UserModel {
   }
 
   Map<String, dynamic> toJson() => {
+        'serverId': serverId,
         'nickname': nickname,
-        'avatarPresetUrl': avatarPresetUrl,
+        'avatarId': avatarId,
         'homeRegion': homeRegion,
         'level': level,
         'exp': exp,
         'travelStyles': travelStyles,
-        'transport': transport,
+        'activityLevel': activityLevel,
         'representativeBadgeIds': representativeBadgeIds,
         'streakDays': streakDays,
         'dailyExpEarned': dailyExpEarned,
@@ -163,12 +179,17 @@ class UserModel {
 
   factory UserModel.fromJson(Map<String, dynamic> json) => UserModel(
         nickname: json['nickname'] ?? '',
-        avatarPresetUrl: json['avatarPresetUrl'] ?? 'assets/avatars/avatar_1.png',
+        serverId: json['serverId'] as int?,
+        // 구버전 캐시에는 'assets/avatars/avatar_1.png' 같은 경로가 들어 있다.
+        // normalizeAvatarId가 알 수 없는 값을 기본 프리셋으로 떨어뜨린다.
+        avatarId: AppAssets.normalizeAvatarId(
+          json['avatarId'] as String? ?? json['avatarPresetUrl'] as String?,
+        ),
         homeRegion: json['homeRegion'],
         level: json['level'] ?? 1,
         exp: json['exp'] ?? 0,
         travelStyles: List<String>.from(json['travelStyles'] ?? []),
-        transport: json['transport'] ?? '',
+        activityLevel: json['activityLevel'] ?? json['transport'] ?? '보통',
         representativeBadgeIds: List<String>.from(json['representativeBadgeIds'] ?? []),
         streakDays: json['streakDays'] ?? 0,
         dailyExpEarned: json['dailyExpEarned'] ?? 0,
@@ -178,6 +199,42 @@ class UserModel {
         visitedRegions: List<String>.from(json['visitedRegions'] ?? []),
         completedQuestIds: List<String>.from(json['completedQuestIds'] ?? []),
       );
+
+  /// Prisma `User` 레코드(+keywords)를 앱 모델로 옮긴다.
+  ///
+  /// 서버 스키마와 이름이 다른 곳:
+  ///  - `expCurrent`  → [exp]        (현재 레벨 구간의 누적치)
+  ///  - `keywords`    → [travelStyles] (`[{userId, keywordId}]` 형태로 온다)
+  ///  - `avatarId`    → 그대로. 단 알 수 없는 값은 기본 프리셋으로 떨어뜨린다.
+  factory UserModel.fromServer(Map<String, dynamic> json) {
+    final rawKeywords = json['keywords'];
+    final keywords = <String>[];
+    if (rawKeywords is List) {
+      for (final k in rawKeywords) {
+        if (k is Map && k['keywordId'] != null) {
+          keywords.add('${k['keywordId']}');
+        } else if (k is String) {
+          keywords.add(k);
+        }
+      }
+    }
+
+    return UserModel(
+      serverId: json['id'] as int?,
+      nickname: json['nickname'] as String? ?? '',
+      avatarId: AppAssets.normalizeAvatarId(json['avatarId'] as String?),
+      homeRegion: json['homeRegion'] as String?,
+      level: json['level'] as int? ?? 1,
+      exp: json['expCurrent'] as int? ?? 0,
+      travelStyles: keywords,
+      activityLevel: json['activityLevel'] as String? ?? '보통',
+      streakDays: json['streakDays'] as int? ?? 0,
+      dailyExpEarned: json['dailyExpEarned'] as int? ?? 0,
+      lastExpEarnedAt: json['lastExpResetAt'] != null
+          ? DateTime.tryParse('${json['lastExpResetAt']}')
+          : null,
+    );
+  }
 
   String toRawJson() => json.encode(toJson());
   factory UserModel.fromRawJson(String str) => UserModel.fromJson(json.decode(str));

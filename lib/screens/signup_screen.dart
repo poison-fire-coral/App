@@ -1,218 +1,123 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
-// -----------------------------------------------------------------------------
-// 1c. 회원가입 화면 (가입 방법 선택 + 약관 동의)
-// -----------------------------------------------------------------------------
-class SignupScreen extends StatefulWidget {
-  final VoidCallback onSignupSuccess;
+import '../theme/app_assets.dart';
+import '../theme/app_colors.dart';
+import '../theme/design_tokens.dart';
+import '../widgets/app_widgets.dart';
+
+/// 1c — 가입 방법 선택.
+///
+/// 약관 체크박스는 제거했다. 실제 약관 문서가 아직 없는데 동의 UI만 두면
+/// 형식만 갖춘 가짜 절차가 된다. 대신 소셜 버튼 아래에 고지 한 줄을 남기고,
+/// 서버에는 `AuthRepository.termsVersion`(= `...-implicit-v1`)을 보내
+/// "묵시적 동의 구간"임을 DB에 기록해 둔다.
+class SignupScreen extends StatelessWidget {
+  /// 소셜 SDK 로그인을 실제로 수행하고 결과를 위로 올린다.
+  final ValueChanged<String> onPickProvider;
+
+  /// 개발용 GUEST 계정으로 바로 진행. 개발자 모드가 켜져 있을 때만 채워진다.
+  final VoidCallback? onGuest;
+
+  final VoidCallback onBack;
+  final bool isBusy;
 
   const SignupScreen({
     super.key,
-    required this.onSignupSuccess,
+    required this.onPickProvider,
+    required this.onBack,
+    this.onGuest,
+    this.isBusy = false,
   });
-
-  @override
-  State<SignupScreen> createState() => _SignupScreenState();
-}
-
-class _SignupScreenState extends State<SignupScreen> {
-  static const Color primaryRed = Color(0xFF9E2B1E);
-  static const Color darkBorder = Color(0xFF2A1512);
-  static const Color bgCream = Color(0xFFFFFDFB);
-  static const Color subTextColor = Color(0x8C2A1512);
-  static const Color noteBorder = Color(0xFFA2908A);
-  static const Color noteText = Color(0xFF6D5A55);
-
-  String? _selectedMethod;
-  bool _agreeService = true;
-  bool _agreeLocation = true;
-  bool _agreeMarketing = false;
-
-  bool get _canContinue =>
-      _selectedMethod != null && _agreeService && _agreeLocation;
-
-  void _handleContinue() {
-    if (!_canContinue) return;
-    widget.onSignupSuccess();
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bgCream,
+      backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            _buildHeader(),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '가입 방법 선택',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: darkBorder),
+            Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(
+                    left: AppSpacing.sm,
+                    top: AppSpacing.sm,
+                  ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      onPressed: isBusy ? null : onBack,
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      color: AppColors.textSecondary,
+                      tooltip: '로그인으로',
                     ),
-                    const SizedBox(height: 16),
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.gutter,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: AppSpacing.md),
+                        Center(
+                          child: SvgPicture.asset(AppAssets.logo, width: 84),
+                        ),
+                        const SizedBox(height: AppSpacing.xl),
+                        Text('모험을 시작할까요?',
+                            style: AppType.h1, textAlign: TextAlign.center),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          '가입 방법을 고르면 이름과 취향을 물어볼게요.',
+                          style: AppType.bodyMuted,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: AppSpacing.xxxl),
 
-                    _buildMethodButton('Google로 가입'),
-                    const SizedBox(height: 10),
-                    _buildMethodButton('카카오로 가입'),
-                    const SizedBox(height: 10),
-                    _buildMethodButton('이메일로 가입'),
-                    const SizedBox(height: 20),
+                        PrimaryButton(
+                          label: '카카오로 가입',
+                          enabled: !isBusy,
+                          onTap: () => onPickProvider('KAKAO'),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        SecondaryButton(
+                          label: 'Google로 가입',
+                          onTap: isBusy ? null : () => onPickProvider('GOOGLE'),
+                        ),
 
-                    // 약관 동의 박스
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: darkBorder, width: 1.5),
-                        borderRadius: BorderRadius.circular(7),
-                      ),
-                      child: Column(
-                        children: [
-                          _buildCheckRow(
-                            '서비스 이용약관 (필수)',
-                            value: _agreeService,
-                            onChanged: (v) => setState(() => _agreeService = v),
-                          ),
-                          _buildCheckRow(
-                            '위치정보 이용약관 (필수)',
-                            value: _agreeLocation,
-                            onChanged: (v) => setState(() => _agreeLocation = v),
-                          ),
-                          _buildCheckRow(
-                            '마케팅 수신 (선택)',
-                            value: _agreeMarketing,
-                            onChanged: (v) => setState(() => _agreeMarketing = v),
+                        if (onGuest != null) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          SecondaryButton(
+                            label: '개발용 계정으로 진행',
+                            icon: Icons.bug_report_outlined,
+                            onTap: isBusy ? null : onGuest,
                           ),
                         ],
-                      ),
-                    ),
 
-                    const SizedBox(height: 32),
-                    _buildPrimaryButton('동의하고 계속', onTap: _handleContinue, enabled: _canContinue),
-                    const SizedBox(height: 12),
-
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: _buildDashedNote(
-                        '이미 가입된 계정 → "이미 가입됨, 로그인해 주세요" 후 로그인 화면으로 이동',
-                      ),
+                        const SizedBox(height: AppSpacing.xl),
+                        Text(
+                          '계속하면 서비스 이용약관 및 위치정보 이용약관에\n동의한 것으로 봅니다.',
+                          style: AppType.micro
+                              .copyWith(color: AppColors.textTertiary),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: AppSpacing.xxxl),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
+            if (isBusy)
+              const ColoredBox(
+                color: Color(0x66FFFDFB),
+                child: Center(child: CircularProgressIndicator()),
+              ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: darkBorder, width: 1.5)),
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: const Text(
-              '← 회원가입',
-              style: TextStyle(fontSize: 14, color: darkBorder, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMethodButton(String label) {
-    final bool isSelected = _selectedMethod == label;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedMethod = label),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 13),
-        decoration: BoxDecoration(
-          color: isSelected ? primaryRed.withAlpha(20) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: isSelected ? primaryRed : darkBorder, width: isSelected ? 2 : 1.5),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: isSelected ? primaryRed : darkBorder),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCheckRow(String label, {required bool value, required ValueChanged<bool> onChanged}) {
-    return GestureDetector(
-      onTap: () => onChanged(!value),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            Container(
-              width: 18,
-              height: 18,
-              decoration: BoxDecoration(
-                color: value ? primaryRed : Colors.white,
-                border: Border.all(color: darkBorder, width: 1.5),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: value ? const Icon(Icons.check, size: 13, color: Colors.white) : null,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(label, style: const TextStyle(fontSize: 12, color: darkBorder)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPrimaryButton(String label, {required VoidCallback onTap, required bool enabled}) {
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: enabled ? primaryRed : subTextColor,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: darkBorder, width: 1.5),
-        ),
-        child: Center(
-          child: Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDashedNote(String text) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        border: Border.all(color: noteBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(7),
-        color: bgCream,
-      ),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 11, color: noteText, height: 1.3, decoration: TextDecoration.underline),
       ),
     );
   }
