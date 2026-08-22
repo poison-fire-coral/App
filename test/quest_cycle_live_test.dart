@@ -268,6 +268,53 @@ void main() {
     await QuestRepository.acceptQuest(quest.id);
   });
 
+  test('완료한 퀘스트는 다시 수락할 수도, 다시 클리어할 수도 없다', () async {
+    requireBackend();
+    await signUpFresh('r');
+
+    final quest = await firstNearbyQuest();
+    await QuestRepository.acceptQuest(quest.id);
+
+    final first = await QuestRepository.verifyQuest(
+      questId: quest.id,
+      requestId: const Uuid().v4(),
+      lat: quest.latitude,
+      lng: quest.longitude,
+      accuracyM: 8,
+    );
+    expect(first['expAwarded'], greaterThan(0));
+    final afterClear = await AuthRepository.me();
+
+    // 1. 재수락. "이어서 하기"(QUEST_ALREADY_ACCEPTED)로 삼켜지면 안 된다.
+    try {
+      await QuestRepository.acceptQuest(quest.id);
+      fail('완료한 퀘스트가 다시 수락됐다');
+    } on ApiException catch (e) {
+      expect(e.isAlreadyCompleted, isTrue,
+          reason: '실제로 온 코드: ${e.code} (HTTP ${e.statusCode})');
+    }
+
+    // 2. 새 requestId로 재인증 — 멱등 경로를 우회한 재클리어 시도다.
+    try {
+      await QuestRepository.verifyQuest(
+        questId: quest.id,
+        requestId: const Uuid().v4(),
+        lat: quest.latitude,
+        lng: quest.longitude,
+        accuracyM: 8,
+      );
+      fail('완료한 퀘스트가 다시 클리어됐다');
+    } on ApiException catch (e) {
+      expect(e.isAlreadyCompleted, isTrue,
+          reason: '실제로 온 코드: ${e.code} (HTTP ${e.statusCode})');
+    }
+
+    // 3. EXP는 1도 늘지 않는다. 예전엔 여기서 ×0.3 재수행 보상이 들어갔다.
+    final afterRetry = await AuthRepository.me();
+    expect(afterRetry.exp, afterClear.exp);
+    expect(afterRetry.level, afterClear.level);
+  });
+
   test('수락을 취소하면 서버 기록도 지워진다', () async {
     requireBackend();
     await signUpFresh('b');

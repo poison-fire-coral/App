@@ -90,8 +90,12 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _userLat = lat;
           _userLng = lng;
-          // 가장 가까운 퀘스트 최대 3개만 추출
-          _nearbyQuests = quests.take(3).toList();
+          // 가장 가까운 퀘스트 최대 3개만 추출.
+          // 이미 완료한 퀘스트는 다시 수락할 수 없으므로 추천에서도 뺀다.
+          _nearbyQuests = quests
+              .where((q) => !widget.user.hasCompleted(q.id))
+              .take(3)
+              .toList();
           _isLoadingNearby = false;
         });
       }

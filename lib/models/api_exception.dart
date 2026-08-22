@@ -37,7 +37,11 @@ class ApiException implements Exception {
   bool get isNotRegistered => code == 'AUTH_NOT_REGISTERED';
   bool get isUnauthorized => code == 'UNAUTHORIZED' || statusCode == 401;
   bool get isDuplicateNickname => code == 'DUPLICATE_NICKNAME';
-  bool get isAlreadyAccepted => code == 'QUEST_ALREADY_DONE';
+  /// 이미 수락해 진행 중이다. 오류가 아니라 "이어서 하기"다.
+  bool get isAlreadyAccepted => code == 'QUEST_ALREADY_ACCEPTED';
+
+  /// 이미 완료했다. 재수락·재인증 모두 서버가 막는다.
+  bool get isAlreadyCompleted => code == 'QUEST_ALREADY_DONE';
 
   /// 인증 반경 밖. 서버는 `LOC_OUT_OF_RANGE`가 아니라 `OUT_OF_RANGE`를 쓴다.
   bool get isOutOfRange => code == 'OUT_OF_RANGE' || code == 'LOC_OUT_OF_RANGE';

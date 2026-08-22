@@ -215,8 +215,12 @@ class QuestRepository {
 
   /// 퀘스트 수락.
   ///
-  /// 이미 수락한 퀘스트면 서버가 409 `QUEST_ALREADY_DONE`을 준다. 그건 오류가 아니라
-  /// "이어서 하기"이므로 여기서 삼킨다.
+  /// 이미 수락해 진행 중이면 서버가 409 `QUEST_ALREADY_ACCEPTED`를 준다. 그건 오류가
+  /// 아니라 "이어서 하기"이므로 여기서 삼킨다.
+  ///
+  /// 반면 이미 완료한 퀘스트는 409 `QUEST_ALREADY_DONE`으로 오고, 이건 삼키면 안 된다.
+  /// 삼키면 앱이 수락에 성공한 줄 알고 퀘스트 흐름을 열어버리는데, 현장에 도착해
+  /// 인증을 누르는 순간 서버가 다시 거절한다. 여기서 바로 알려주는 게 맞다.
   static Future<void> acceptQuest(String questId) async {
     try {
       await ApiClient.post('/quests/$questId/accept');

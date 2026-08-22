@@ -266,8 +266,8 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
       message = '아직 인증 반경 밖이에요. 조금 더 가까이 가주세요.';
     } else if (e.isAccuracyTooLow) {
       message = 'GPS 오차가 너무 커요. 하늘이 트인 곳에서 다시 시도해 주세요.';
-    } else if (e.isAlreadyAccepted) {
-      message = '이미 완료한 퀘스트예요.';
+    } else if (e.isAlreadyCompleted) {
+      message = '이미 완료한 퀘스트예요. 다시 진행할 수 없어요.';
     } else if (e.isNetwork) {
       message = '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.';
     } else {
