@@ -185,12 +185,21 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     if (TokenStore.hasSession) {
       if (mounted) setState(() => _splashProgress = 0.55);
       try {
-        final user = await AuthRepository.me();
+        final user = await _withCompletedQuests(await AuthRepository.me());
         await _persistUser(user);
+
+        // 다른 기기에서 끝낸 퀘스트가 "진행 중"으로 남아 있을 수 있다.
+        // 그대로 두면 홈에서 "이어서 하기"로 들어갔다가 인증 단계에서야 거절당한다.
+        final remaining = _withoutCompleted(_activeQuests, user);
+        if (remaining.length != _activeQuests.length) {
+          await _persistActiveQuests(remaining);
+        }
+
         if (mounted) {
           setState(() {
             _currentUser = user;
             _isLoggedIn = true;
+            _activeQuests = remaining;
             _splashProgress = 0.9;
           });
         }
@@ -255,11 +264,13 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
 
       switch (outcome) {
         case LoginSuccess(:final session):
-          await _persistUser(session.user);
+          final user = await _withCompletedQuests(session.user);
+          await _persistUser(user);
           if (!mounted) return;
           setState(() {
-            _currentUser = session.user;
+            _currentUser = user;
             _isLoggedIn = true;
+            _activeQuests = _withoutCompleted(_activeQuests, user);
             _pendingSignup = null;
           });
         case LoginNeedsSignup(:final pending):
@@ -302,6 +313,42 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   // DEV-ONLY: 고정 uid로 로그인해 소셜 SDK를 건너뛴다.
   Future<void> _loginAsGuest() =>
       _runLogin(const SocialCredential.guest(DevTools.guestUid));
+
+  // ---------------------------------------------------------------------------
+  // 완료 이력
+  // ---------------------------------------------------------------------------
+
+  /// 서버가 아는 완료 목록을 프로필에 채워 넣는다.
+  ///
+  /// 완료 판정의 진실은 서버 `quest_completions`인데, [UserModel.fromServer]는
+  /// 그 필드를 싣고 오지 않는다. 채우지 않으면 앱을 다시 켤 때마다 완료 이력이
+  /// 빈 채로 시작해, 이미 끝낸 퀘스트가 다시 수락 가능한 것처럼 보인다.
+  /// (서버가 인증을 거절하므로 EXP가 새지는 않지만, 현장에 가서야 알게 된다)
+  Future<UserModel> _withCompletedQuests(UserModel user) async {
+    try {
+      final rows = await QuestRepository.fetchMyQuests(status: 'completed');
+      return user.copyWith(
+        completedQuestIds: [
+          for (final row in rows)
+            if (row['questId'] != null) '${row['questId']}',
+        ],
+      );
+    } on ApiException catch (e) {
+      // 목록을 못 받아도 로그인 자체는 성공시킨다. 재클리어는 서버가 막는다.
+      debugPrint('완료 퀘스트 목록 불러오기 실패: ${e.code}');
+      return user;
+    }
+  }
+
+  /// 이미 완료한 퀘스트를 진행 중 목록에서 걷어낸다.
+  List<ActiveQuest> _withoutCompleted(
+    List<ActiveQuest> quests,
+    UserModel user,
+  ) =>
+      [
+        for (final a in quests)
+          if (!user.hasCompleted(a.quest.id)) a,
+      ];
 
   // ---------------------------------------------------------------------------
   // 저장
@@ -357,7 +404,15 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   // ---------------------------------------------------------------------------
 
   /// 지도·홈에서 퀘스트를 수락하거나, 이미 진행 중이면 이어서 하기.
+  ///
+  /// 한 번 완료한 퀘스트는 여기서 끝이다. 서버도 수락과 인증을 모두 거절하지만,
+  /// 목업 퀘스트는 서버를 거치지 않으므로 이 검사가 유일한 관문이다.
   Future<void> _acceptQuest(QuestModel quest) async {
+    if (_currentUser?.hasCompleted(quest.id) ?? false) {
+      _toast('이미 완료한 퀘스트예요. 다시 진행할 수 없어요.');
+      return;
+    }
+
     final existingIndex =
         _activeQuests.indexWhere((a) => a.quest.id == quest.id);
 
@@ -613,6 +668,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
 
     final user = _currentUser!;
     final activeIds = {for (final a in _activeQuests) a.quest.id};
+    final completedIds = user.completedQuestIds.toSet();
 
     // 5. 설정 (5d) — 탭 위에 겹친다
     if (_showSettings) {
@@ -664,6 +720,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       return MapScreen(
         user: user,
         activeQuestIds: activeIds,
+        completedQuestIds: completedIds,
         focusQuestId: _focusQuestId,
         onAcceptQuest: _acceptQuest,
         onOpenHome: () => setState(() {
@@ -685,7 +742,9 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     return HomeScreen(
       user: user,
       activeQuests: _activeQuests,
-      recommendedQuests: QuestRepository.nearby(excludeIds: activeIds),
+      // 완료한 퀘스트는 추천하지 않는다. 눌러도 수락되지 않으니 자리만 차지한다.
+      recommendedQuests:
+          QuestRepository.nearby(excludeIds: {...activeIds, ...completedIds}),
       badges: BadgeRepository.progressFor(completedQuests),
       onContinueQuest: _openQuestFlow,
       onSelectQuest: _focusQuestOnMap,

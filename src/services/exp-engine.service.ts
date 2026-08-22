@@ -5,11 +5,15 @@ export interface ExpFactors {
   isNewArea: boolean; // 처음 방문한 시·군 (x1.5)[cite: 1]
   isOffPeak: boolean; // 평일 오전 비피크 (x1.2)[cite: 1]
   streakDays: number; // 연속 접속 스트릭 (일당 +5%, 상한 x1.5)[cite: 1]
-  isReattempt: boolean; // 동일 퀘스트 재수행 (x0.3)[cite: 1]
   isAbused: boolean; // 속도 초과 어뷰징 여부
 }
 
 // 1. EXP 배율 산출 및 상한 제한 계산
+//
+// 재수행 배율(x0.3)은 없앴다. 완료한 퀘스트는 `QuestService.verifyQuest`가
+// 아예 거절하므로 재수행이라는 상태 자체가 생기지 않는다. 배율만 남겨두면
+// "막았다"와 "깎아서 준다"가 코드 안에 동시에 있게 되어 어느 쪽이 규칙인지
+// 읽는 사람이 헷갈린다.
 export function calculateRewardExp(factors: ExpFactors, dailyExpEarned: number) {
   if (factors.isAbused) {
     return { finalExp: 0, breakdown: { abusePenalty: true } };
@@ -20,11 +24,10 @@ export function calculateRewardExp(factors: ExpFactors, dailyExpEarned: number) 
   const mArea = factors.isNewArea ? 1.5 : 1.0;
   const mTime = factors.isOffPeak ? 1.2 : 1.0;
   const mStreak = Math.min(1.0 + factors.streakDays * 0.05, 1.5);
-  const mReattempt = factors.isReattempt ? 0.3 : 1.0;
 
   // 공식 적용 후 소수점 버림(floor)
   const calculatedExp = Math.floor(
-    factors.baseExp * mHalf * mCong * mArea * mTime * mStreak * mReattempt
+    factors.baseExp * mHalf * mCong * mArea * mTime * mStreak
   );
 
   // 단일 퀘스트 상한 1,600 EXP[cite: 1]
@@ -44,7 +47,6 @@ export function calculateRewardExp(factors: ExpFactors, dailyExpEarned: number) 
       mArea,
       mTime,
       mStreak,
-      mReattempt,
       calculatedExp,
       singleCappedExp,
       finalExp,

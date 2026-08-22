@@ -64,6 +64,17 @@ interface KakaoPlace {
 }
 
 export class QuestService {
+  /**
+   * `user_quests.status`가 완료를 뜻하는가.
+   *
+   * 초기 데이터에 소문자 `done`이 섞여 들어가 있어 두 값을 모두 완료로 본다.
+   * 완료 판정이 여러 군데(수락·인증·포기)에 흩어져 있어서, 한 곳만 고쳐 놓고
+   * 다른 곳이 새는 일이 없도록 여기로 모았다.
+   */
+  private static isCompletedStatus(status?: string | null) {
+    return status === "COMPLETED" || status === "done";
+  }
+
   // -------------------------------------------------------------
   // [카카오 연동 헬퍼] 카카오 API 검색 및 퀘스트 자동 생성을 위한 모듈
   // -------------------------------------------------------------
@@ -393,7 +404,16 @@ export class QuestService {
     });
 
     if (existingUserQuest) {
-      throw new CustomError(409, "QUEST_ALREADY_DONE", "이미 수락했거나 완료한 퀘스트입니다.");
+      // 두 경우를 한 코드로 뭉뚱그리면 앱이 구분을 못 한다.
+      // 진행 중이면 "이어서 하기"로 삼켜야 하고, 완료면 막아야 한다.
+      if (this.isCompletedStatus(existingUserQuest.status)) {
+        throw new CustomError(
+          409,
+          "QUEST_ALREADY_DONE",
+          "이미 완료한 퀘스트입니다. 다시 진행할 수 없습니다."
+        );
+      }
+      throw new CustomError(409, "QUEST_ALREADY_ACCEPTED", "이미 수락한 퀘스트입니다.");
     }
 
     const userQuest = await prisma.userQuest.create({
@@ -417,7 +437,7 @@ export class QuestService {
       throw new CustomError(404, "NOT_FOUND", "수락한 이력이 없는 퀘스트입니다.");
     }
 
-    if (userQuest.status === "COMPLETED") {
+    if (this.isCompletedStatus(userQuest.status)) {
       throw new CustomError(400, "BAD_REQUEST", "이미 완료된 퀘스트는 취소할 수 없습니다.");
     }
 
@@ -439,6 +459,28 @@ export class QuestService {
         isAlreadyProcessed: true,
         completion: existingCompletion,
       };
+    }
+
+    // 완료한 퀘스트는 재클리어를 막는다. 위치·정확도를 보기 전에 끊어야
+    // "현장까지 갔는데 반경 밖이라더니 알고 보니 완료된 퀘스트"가 안 생긴다.
+    //
+    // 진실은 `quest_completions`다. `user_quests`는 포기 시 삭제되므로 완료 판정을
+    // 여기에만 기대면 안 되고, 반대로 완료 기록이 정리된 계정도 있을 수 있어 둘 다 본다.
+    const [priorCompletion, userQuest] = await Promise.all([
+      prisma.questCompletion.findFirst({
+        where: { userId: dto.userId, questId: dto.questId },
+      }),
+      prisma.userQuest.findUnique({
+        where: { userId_questId: { userId: dto.userId, questId: dto.questId } },
+      }),
+    ]);
+
+    if (priorCompletion || this.isCompletedStatus(userQuest?.status)) {
+      throw new CustomError(
+        409,
+        "QUEST_ALREADY_DONE",
+        "이미 완료한 퀘스트입니다. 다시 진행할 수 없습니다."
+      );
     }
 
     if (dto.accuracyM > 100) {
@@ -481,10 +523,6 @@ export class QuestService {
       );
     }
 
-    const userQuest = await prisma.userQuest.findUnique({
-      where: { userId_questId: { userId: dto.userId, questId: dto.questId } },
-    });
-
     const now = new Date();
     let isAbused = false;
 
@@ -513,7 +551,6 @@ export class QuestService {
         isNewArea: true,
         isOffPeak: false,
         streakDays: user.streakDays,
-        isReattempt: userQuest?.status === "COMPLETED" || userQuest?.status === "done",
         isAbused,
       },
       dailyExpEarned

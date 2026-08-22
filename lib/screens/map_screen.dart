@@ -14,6 +14,10 @@ import '../widgets/app_widgets.dart';
 class MapScreen extends StatefulWidget {
   final UserModel user;
   final Set<String> activeQuestIds;
+
+  /// 이미 완료해 다시 수락할 수 없는 퀘스트들.
+  final Set<String> completedQuestIds;
+
   final ValueChanged<QuestModel> onAcceptQuest;
   final String? focusQuestId;
 
@@ -29,6 +33,7 @@ class MapScreen extends StatefulWidget {
     required this.user,
     required this.onAcceptQuest,
     this.activeQuestIds = const {},
+    this.completedQuestIds = const {},
     this.focusQuestId,
     this.onOpenHome,
     this.onOpenBadges,
@@ -527,6 +532,12 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Widget _acceptButton(QuestModel quest) {
+    // 완료한 퀘스트는 재수락도 재클리어도 안 된다. 서버가 거절하기 전에
+    // 버튼에서 먼저 알려준다 — 눌러보고 스낵바로 거절당하는 것보다 낫다.
+    if (widget.completedQuestIds.contains(quest.id)) {
+      return const PrimaryButton(label: '완료한 퀘스트', enabled: false);
+    }
+
     final isActive = widget.activeQuestIds.contains(quest.id);
     return PrimaryButton(
       label: isActive ? '이어서 하기' : '퀘스트 수락',

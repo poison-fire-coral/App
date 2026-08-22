@@ -22,9 +22,6 @@ class ExpFactors {
   /// 연속 접속 스트릭. 일당 +5%, 상한 ×1.5
   final int streakDays;
 
-  /// 동일 퀘스트 재수행이면 ×0.3
-  final bool isRepeat;
-
   /// 40km/h 초과 구간 도달이면 EXP 0 (기획서 6d 안티 어뷰징)
   final bool isSpeedAbuse;
 
@@ -35,7 +32,6 @@ class ExpFactors {
     this.isNewRegion = false,
     this.isOffPeak = false,
     this.streakDays = 0,
-    this.isRepeat = false,
     this.isSpeedAbuse = false,
   });
 }
@@ -95,6 +91,8 @@ class ExpBreakdown {
       'mArea': '첫 지역',
       'mTime': '비피크',
       'mStreak': '스트릭',
+      // 서버는 더 이상 이 키를 보내지 않는다. 규칙이 바뀌기 전에 저장된 완료 기록을
+      // 멱등 응답으로 되읽을 때만 나타나므로, 그 내역을 옳게 보여주려고 남겨둔다.
       'mReattempt': '재수행',
     };
 
@@ -216,7 +214,6 @@ class ExpService {
   static const double offPeakMultiplier = 1.2;
   static const double streakPerDay = 0.05;
   static const double streakMaxMultiplier = 1.5;
-  static const double repeatMultiplier = 0.3;
 
   /// 레벨 도달 시 해금되는 콘텐츠 (기획서 6d)
   static const Map<int, List<String>> levelUnlocks = {
@@ -231,7 +228,10 @@ class ExpService {
   static bool isOffPeak(DateTime now) =>
       now.weekday <= DateTime.friday && now.hour >= 6 && now.hour < 12;
 
-  /// 최종 = floor(기본EXP × 혼잡도 × 신규지역 × 시간대 × 스트릭 × 재수행)
+  /// 최종 = floor(기본EXP × 반개 × 혼잡도 × 신규지역 × 시간대 × 스트릭)
+  ///
+  /// 재수행 배율(×0.3)은 없앴다. 완료한 퀘스트는 서버가 재인증 자체를 거절하므로
+  /// (`QuestService.verifyQuest`) 이 폴백에도 재수행이라는 경우가 없다.
   static ExpBreakdown calculate(ExpFactors factors, {required int dailyExpEarned}) {
     if (factors.isSpeedAbuse) {
       return ExpBreakdown(
@@ -262,10 +262,6 @@ class ExpService {
     if (streak != 1.0) {
       multipliers['스트릭'] = streak;
     }
-    if (factors.isRepeat) {
-      multipliers['재수행'] = repeatMultiplier;
-    }
-
     var value = factors.baseExp.toDouble();
     for (final multiplier in multipliers.values) {
       value *= multiplier;
@@ -338,7 +334,6 @@ class ExpService {
       isNewRegion: !user.hasVisited(quest.regionLabel),
       isOffPeak: isOffPeak(now),
       streakDays: user.streakDaysOn(now),
-      isRepeat: user.hasCompleted(quest.id),
       isSpeedAbuse: isSpeedAbuse,
     );
   }
