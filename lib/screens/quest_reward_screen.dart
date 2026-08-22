@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../data/badge_api.dart';
 import '../data/badge_repository.dart';
 import '../models/quest_completion.dart';
 import '../services/exp_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/badge_widgets.dart';
 
 /// 4c · 보상 획득
 ///
@@ -59,7 +61,11 @@ class QuestRewardScreen extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xl),
                 _LevelStrip(level: level),
 
-                if (result.badge != null) ...[
+                // 서버가 내려준 진행도가 있으면 그쪽이 진실이다.
+                if (result.serverBadge != null) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  _ServerBadgeCard(badge: result.serverBadge!),
+                ] else if (result.badge != null) ...[
                   const SizedBox(height: AppSpacing.lg),
                   _BadgeCard(
                     badge: result.badge!,
@@ -198,6 +204,61 @@ class _BadgeCard extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   badge.progressLabel,
+                  style: AppType.caption.copyWith(color: AppColors.jade700),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 서버 `badgeProgress` 기반 카드.
+///
+/// 로컬 카드와 달리 **실제 배지 아트**를 쓴다. 트로피 아이콘 하나로 13종을
+/// 다 대신하면 어떤 배지를 땄는지 알 수 없다.
+class _ServerBadgeCard extends StatelessWidget {
+  final VerifyBadgeProgress badge;
+  const _ServerBadgeCard({required this.badge});
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      color: AppColors.jade50,
+      shadow: badge.justEarned ? AppElevation.e3 : AppElevation.e2,
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: AppSurface.paper,
+              boxShadow: AppElevation.e1,
+            ),
+            child: BadgeArt(
+              artKey: badge.artKey,
+              size: 30,
+              dimmed: !badge.achieved,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  badge.justEarned ? '배지 획득! ${badge.name}' : badge.name,
+                  style: AppType.h3.copyWith(color: AppColors.jade700),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                ProgressBar(value: badge.ratio, accent: AppColors.jade500),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  badge.label,
                   style: AppType.caption.copyWith(color: AppColors.jade700),
                 ),
               ],

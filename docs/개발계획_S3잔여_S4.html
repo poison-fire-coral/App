@@ -1,0 +1,811 @@
+<title>S4 개발 계획</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+/* 팔레트는 프로젝트 디자인 시스템 "Parchment & Seal" 문서 레이어를 승계한다. */
+:root{
+  --ground:#F6F1ED; --surface:#FFFDFB; --surface-2:#FBF5F1; --sunken:#F1E9E3;
+  --text:#2A1512; --text-2:#6D5A55; --text-3:#8E7A74;
+  --hairline:rgba(42,21,18,.10); --hairline-2:rgba(42,21,18,.18);
+  --accent:#9E2B1E; --accent-soft:rgba(158,43,30,.09);
+  --amber:#8A5C15; --amber-soft:rgba(138,92,21,.10);
+  --jade:#1E5A40; --jade-soft:rgba(30,90,64,.10);
+  --lapis:#1E3F62; --lapis-soft:rgba(30,63,98,.09);
+  --rail:rgba(42,21,18,.055);
+  --shadow:0 1px 2px rgba(42,21,18,.05), 0 4px 14px rgba(42,21,18,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#171010; --surface:#211615; --surface-2:#2A1D1B; --sunken:#1C1312;
+    --text:#F3E7E2; --text-2:#C0A9A2; --text-3:#9A817A;
+    --hairline:rgba(255,240,235,.10); --hairline-2:rgba(255,240,235,.20);
+    --accent:#E1917F; --accent-soft:rgba(225,145,127,.13);
+    --amber:#E2B45F; --amber-soft:rgba(226,180,95,.13);
+    --jade:#6FC49C; --jade-soft:rgba(111,196,156,.13);
+    --lapis:#8FB6DC; --lapis-soft:rgba(143,182,220,.13);
+    --rail:rgba(255,240,235,.06);
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#171010; --surface:#211615; --surface-2:#2A1D1B; --sunken:#1C1312;
+  --text:#F3E7E2; --text-2:#C0A9A2; --text-3:#9A817A;
+  --hairline:rgba(255,240,235,.10); --hairline-2:rgba(255,240,235,.20);
+  --accent:#E1917F; --accent-soft:rgba(225,145,127,.13);
+  --amber:#E2B45F; --amber-soft:rgba(226,180,95,.13);
+  --jade:#6FC49C; --jade-soft:rgba(111,196,156,.13);
+  --lapis:#8FB6DC; --lapis-soft:rgba(143,182,220,.13);
+  --rail:rgba(255,240,235,.06);
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.35);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--ground);color:var(--text);
+  font-family:'IBM Plex Sans KR',-apple-system,BlinkMacSystemFont,'Malgun Gothic',sans-serif;
+  font-size:15px;line-height:1.72;-webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent);text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+code,.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+code{font-size:.85em;background:var(--rail);padding:1.5px 5px;border-radius:4px;color:var(--text)}
+strong{font-weight:600}
+
+.wrap{max-width:1160px;margin:0 auto;padding:0 24px 110px}
+.layout{display:grid;grid-template-columns:1fr;gap:36px}
+@media (min-width:1020px){
+  .layout{grid-template-columns:196px minmax(0,1fr);gap:58px;align-items:start}
+  .rail{position:sticky;top:26px}
+}
+
+.masthead{padding:60px 0 32px;border-bottom:1px solid var(--hairline);margin-bottom:40px}
+.eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--text-3);margin:0 0 16px}
+.masthead h1{font-size:clamp(30px,5.2vw,44px);font-weight:600;line-height:1.08;
+  letter-spacing:-.03em;margin:0 0 10px;text-wrap:balance}
+.masthead .lede{max-width:62ch;font-size:16px;color:var(--text-2);margin:0}
+.masthead .lede strong{color:var(--text)}
+
+.rail nav{display:flex;flex-direction:column;gap:1px}
+.rail a{display:block;text-decoration:none;color:var(--text-3);font-size:13px;
+  padding:5px 10px;border-radius:6px}
+.rail a:hover{color:var(--text);background:var(--rail)}
+.rail-title{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--text-3);padding:0 10px;margin:0 0 12px}
+.rail .sep{height:1px;background:var(--hairline);margin:10px 10px}
+
+section{margin-bottom:62px;scroll-margin-top:22px}
+h2{font-size:23px;font-weight:600;letter-spacing:-.02em;margin:0 0 8px;
+  padding-bottom:9px;border-bottom:1px solid var(--hairline)}
+h3{font-size:15.5px;font-weight:600;margin:30px 0 10px;letter-spacing:-.01em}
+.note{color:var(--text-2);font-size:14.5px;max-width:66ch;margin:0 0 20px}
+p{max-width:66ch}
+
+/* ---- 단계 카드 ---- */
+.stage{
+  background:var(--surface);border:1px solid var(--hairline);border-radius:14px;
+  box-shadow:var(--shadow);margin-bottom:18px;overflow:hidden;
+}
+.stage-head{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:16px 20px;border-bottom:1px solid var(--hairline);background:var(--surface-2);
+}
+.stage-num{
+  flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  background:var(--accent);color:#FFF6F3;
+  font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:600;
+}
+.stage-title{flex:1 1 220px;min-width:0;font-size:16.5px;font-weight:600;letter-spacing:-.01em}
+.stage-title small{display:block;font-size:12.5px;font-weight:400;color:var(--text-3);letter-spacing:0}
+.stage-body{padding:18px 20px}
+.stage-body > *:first-child{margin-top:0}
+.stage-body > *:last-child{margin-bottom:0}
+
+.chip{
+  display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
+  font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:500;
+  letter-spacing:.07em;padding:3px 9px;border-radius:999px;
+}
+.chip.be{color:var(--lapis);background:var(--lapis-soft)}
+.chip.fe{color:var(--jade);background:var(--jade-soft)}
+.chip.both{color:var(--amber);background:var(--amber-soft)}
+.chip.block{color:var(--accent);background:var(--accent-soft)}
+
+ul.rules{margin:0 0 18px;padding:0;list-style:none;max-width:68ch}
+ul.rules li{position:relative;padding-left:20px;margin-bottom:8px;color:var(--text-2);font-size:14.5px}
+ul.rules li::before{content:"";position:absolute;left:4px;top:11px;width:5px;height:5px;
+  border-radius:50%;background:var(--accent)}
+ul.rules li b{color:var(--text);font-weight:600}
+ul.rules ul{margin:7px 0 0;padding:0;list-style:none}
+ul.rules ul li::before{background:var(--text-3);width:4px;height:4px;top:11px}
+
+.check{margin:0 0 18px;padding:0;list-style:none;max-width:68ch}
+.check li{position:relative;padding-left:26px;margin-bottom:7px;color:var(--text-2);font-size:14px}
+.check li::before{
+  content:"";position:absolute;left:0;top:5px;width:14px;height:14px;border-radius:4px;
+  border:1.5px solid var(--hairline-2);background:var(--sunken);
+}
+.check li b{color:var(--text);font-weight:600}
+
+pre{
+  background:var(--sunken);border:1px solid var(--hairline);border-radius:10px;
+  padding:13px 15px;overflow-x:auto;margin:0 0 18px;
+  font-family:'IBM Plex Mono',monospace;font-size:12.5px;line-height:1.68;color:var(--text);
+}
+pre .c{color:var(--text-3)}
+pre .k{color:var(--accent)}
+
+.tbl{overflow-x:auto;margin-bottom:20px}
+table{border-collapse:collapse;width:100%;min-width:520px;font-size:13.5px}
+th{text-align:left;font-family:'IBM Plex Mono',monospace;font-size:10px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--text-3);
+  font-weight:500;padding:0 14px 8px 0;border-bottom:1px solid var(--hairline-2)}
+td{padding:10px 14px 10px 0;border-bottom:1px solid var(--hairline);
+  color:var(--text-2);vertical-align:top}
+td:first-child{color:var(--text);font-weight:500}
+td.nowrap{white-space:nowrap}
+.num{font-variant-numeric:tabular-nums}
+
+.callout{
+  background:var(--surface);border:1px solid var(--hairline);border-left:3px solid var(--accent);
+  border-radius:0 10px 10px 0;padding:13px 17px;margin:0 0 18px;max-width:68ch;
+  font-size:14px;color:var(--text-2);
+}
+.callout b{color:var(--text)}
+.callout.amber{border-left-color:var(--amber)}
+.callout.lapis{border-left-color:var(--lapis)}
+
+.footer{border-top:1px solid var(--hairline);padding-top:20px;margin-top:8px;
+  color:var(--text-3);font-size:12.5px}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">로컬 퀘스트 · 개발 계획 · 2026.08.23</p>
+  <h1>S3 잔여 정리와 배지 시스템</h1>
+  <p class="lede">
+    S3까지의 프론트엔드는 실기기에서 한 사이클 완주까지 확인했다.
+    이제 남은 건 <strong>미뤄둔 S3 항목</strong>과 <strong>S4 배지 시스템 전체</strong>다.
+    배지는 스키마만 있고 기능은 0% — 서버 코드가 한 줄도 없고 테이블은 항상 비어 있다.
+    혼자 순차로 진행하는 전제로, <strong>의존성이 있는 것을 앞에</strong> 두고 정렬했다.
+  </p>
+</header>
+
+<div class="layout">
+  <aside class="rail">
+    <nav aria-label="목차">
+      <p class="rail-title">순서</p>
+      <a href="#s0">0 · 어휘와 데이터 정리</a>
+      <a href="#s1">1 · 배지 백엔드</a>
+      <a href="#s2">2 · 배지 화면</a>
+      <a href="#s3">3 · 프로필과 설정</a>
+      <a href="#s4">4 · 지도 마커</a>
+      <a href="#s5">5 · 폭죽 연출</a>
+      <a href="#s6">6 · 어뷰징 방어</a>
+      <a href="#s7">7 · 사진 업로드</a>
+      <a href="#s8">8 · 카카오 로그인</a>
+      <a href="#s9">9 · 지도 재조회</a>
+      <a href="#s10">10 · 홈 통합 API</a>
+      <div class="sep"></div>
+      <p class="rail-title">참고</p>
+      <a href="#why">왜 이 순서인가</a>
+      <a href="#later">더 뒤로 미룬 것</a>
+    </nav>
+  </aside>
+
+  <main>
+
+  <!-- ===================================================== -->
+  <section id="why">
+    <h2>왜 이 순서인가</h2>
+    <p class="note">
+      혼자 하므로 병렬 배치는 의미가 없다. 대신 <b>뒤 작업이 앞 작업의 결과물을 필요로 하는지</b>로만 정렬했다.
+      세 갈래로 갈린 키워드 어휘를 정리하는 0단계가 맨 앞인 이유는, 배지 규칙과 마커 카테고리가
+      둘 다 그 결과에 의존하기 때문이다.
+    </p>
+    <div class="tbl">
+      <table>
+        <thead><tr><th style="width:56px">단계</th><th>무엇을</th><th style="width:210px">앞선 무엇이 필요한가</th></tr></thead>
+        <tbody>
+          <tr><td class="num">0</td><td>퀘스트 유형·지역 데이터 정리</td><td>—</td></tr>
+          <tr><td class="num">1</td><td>배지 규칙 엔진 · API</td><td>0 (유형·지역이 채워져야 규칙이 성립)</td></tr>
+          <tr><td class="num">2</td><td>배지 화면 5a·5b</td><td>1 (API)</td></tr>
+          <tr><td class="num">3</td><td>프로필 5c · 설정 5d</td><td>1 (대표 배지 API)</td></tr>
+          <tr><td class="num">4</td><td>지도 마커 이미지</td><td>0 (유형이 있어야 모양이 갈림)</td></tr>
+          <tr><td class="num">5</td><td>폭죽 연출</td><td>—</td></tr>
+          <tr><td class="num">6</td><td>Mock GPS 감지</td><td>—</td></tr>
+          <tr><td class="num">7</td><td>사진 업로드</td><td>—</td></tr>
+          <tr><td class="num">8</td><td>카카오 로그인</td><td>—</td></tr>
+          <tr><td class="num">9</td><td>지도 재조회 · 디바운스</td><td>—</td></tr>
+          <tr><td class="num">10</td><td>홈 통합 API</td><td>1, 3 (합칠 대상이 다 있어야)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">
+      5~9는 서로 독립이라 순서를 바꿔도 된다. 위 배열은 <b>사용자 눈에 띄는 것</b>을 앞에 뒀다.
+    </p>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="s0">
+    <h2>0 · 어휘와 데이터 정리</h2>
+    <div class="callout">
+      <b>이걸 먼저 하지 않으면 1·4단계가 헛돈다.</b>
+      지금 키워드 어휘가 세 갈래다 — 온보딩은 <code>#골목산책</code>, 시드 퀘스트는
+      <code>["골목","체력"]</code>, 카카오 자동생성은 <code>["산책","공원"]</code>.
+      그래서 <b>기존 배지 6개 중 5개는 지금도 영원히 안 열린다.</b>
+      배지를 지역·유형 축으로 가는 이유가 이것이다. 그 둘은 자유 텍스트가 아니라 DB 컬럼이라 갈릴 여지가 없다.
+    </div>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">0</div>
+        <div class="stage-title">시드 퀘스트에 유형 채우기<small>prisma/seed.ts</small></div>
+        <span class="chip be">BACKEND</span>
+      </div>
+      <div class="stage-body">
+        <ul class="rules">
+          <li>
+            <b>21개가 전부 <code>VISIT</code>이다.</b> 주석은 퀴즈형·탐색형으로 나눠놨는데
+            <code>questType</code> 컬럼을 안 넣어 전부 기본값으로 들어갔다.
+          </li>
+          <li>
+            <b>주석의 enum 이름이 실제와 다르다.</b> 그대로 복붙하면 컴파일이 안 된다.
+            <ul>
+              <li><code>TIME_LIMITED</code> → 실제 <code>TIME_WINDOW</code></li>
+              <li><code>SUBJECT_PHOTO</code> → 실제 <code>PHOTO_SINGLE</code></li>
+              <li><code>COLLECTION_PHOTO</code> → 실제 <code>PHOTO_COLLECT</code></li>
+              <li><code>EXPLORE</code> → 실제 <code>EXPLORATION</code></li>
+            </ul>
+          </li>
+          <li>수집형에는 <code>requiredCount</code>를 2~5로 넣는다. 진행바 부분완료를 눈으로 볼 수 있게.</li>
+          <li>퀴즈형에는 <code>quizQuestion</code> · <code>quizOptions</code> · <code>quizAnswer</code>를 채운다. 9단계 구현자가 테스트할 데이터가 된다.</li>
+        </ul>
+        <ul class="check">
+          <li><b>확인</b> <code>select quest_type, count(*) from quests group by 1</code> 에 7종이 고루 나온다</li>
+          <li><b>확인</b> <code>requiredCount &gt; 1</code>인 퀘스트가 최소 2개</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">0</div>
+        <div class="stage-title">지역 코드 일원화<small>regionCode 표기 통일</small></div>
+        <span class="chip be">BACKEND</span>
+      </div>
+      <div class="stage-body">
+        <ul class="rules">
+          <li>
+            시드 Place는 <code>"SUWON_01"</code>, 카카오 생성은 <code>"경기"</code>(주소 첫 토큰),
+            사용자 <code>homeRegion</code>은 <code>"경기"</code>. <b>지역 배지가 이 셋을 다 알아야 한다.</b>
+          </li>
+          <li>
+            카카오 형식(<code>"경기"</code> · <code>"서울"</code>)을 정본으로 삼고
+            <b>시드 Place를 거기에 맞춘다.</b> 카카오가 만드는 데이터가 압도적으로 많고,
+            <code>lib/data/region_options.dart</code>의 저장값도 이미 그 형식이다.
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="s1">
+    <h2>1 · 배지 백엔드</h2>
+    <p class="note">
+      의뢰서 S4 BE 1~5. <b>지금 서버에 배지 코드가 한 줄도 없다</b>(<code>grep -ri badge src/</code> → 0건).
+      테이블과 마이그레이션만 있다.
+    </p>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">1</div>
+        <div class="stage-title">규칙 스키마 확정 + 시드<small>prisma/seed.ts · ruleJson</small></div>
+        <span class="chip be">BACKEND</span>
+        <span class="chip block">선행</span>
+      </div>
+      <div class="stage-body">
+        <p class="note">
+          의뢰서가 <b>"규칙은 DB 데이터로 두고 코드에 하드코딩 금지"</b>라고 못박았다.
+          지금은 정반대로 Dart <code>static const</code>에 박혀 있다.
+          <code>Badge.ruleJson</code>(jsonb)이 그릇이니 그 구조부터 정한다.
+        </p>
+<pre><span class="c">// ruleJson 스키마 — 이 네 가지만 쓴다</span>
+{ "type": <span class="k">"TOTAL"</span> }                          <span class="c">// 아무 퀘스트나</span>
+{ "type": <span class="k">"REGION"</span>,      "value": "경기" }   <span class="c">// 특정 지역</span>
+{ "type": <span class="k">"REGION_COUNT"</span> }                   <span class="c">// 서로 다른 지역 N곳</span>
+{ "type": <span class="k">"QUEST_TYPE"</span>,  "value": "QUIZ" }   <span class="c">// 특정 유형</span>
+
+<span class="c">// 목표치는 ruleJson이 아니라 Badge.threshold 컬럼을 쓴다.
+// 둘 다에 넣으면 어느 쪽이 진실인지 헷갈린다.</span></pre>
+
+        <p class="note">
+          <b>이름은 배지답게.</b> "골목 탐험가"처럼 딱딱한 기능 설명 말고,
+          받았을 때 기분이 나는 이름으로 짓는다. 아래는 초안이다.
+        </p>
+        <div class="tbl">
+          <table>
+            <thead><tr><th style="width:150px">이름</th><th style="width:130px">규칙</th><th class="num" style="width:60px">목표</th><th>성격</th></tr></thead>
+            <tbody>
+              <tr><td>첫 발자국</td><td class="mono">TOTAL</td><td class="num">1</td><td>특수 — 시작을 기념</td></tr>
+              <tr><td>스무 걸음</td><td class="mono">TOTAL</td><td class="num">20</td><td>특수 — 꾸준함</td></tr>
+              <tr><td>경기 순례자</td><td class="mono">REGION 경기</td><td class="num">5</td><td>지역</td></tr>
+              <tr><td>서울 산책자</td><td class="mono">REGION 서울</td><td class="num">5</td><td>지역</td></tr>
+              <tr><td>제주 바람</td><td class="mono">REGION 제주</td><td class="num">3</td><td>지역</td></tr>
+              <tr><td>팔도 유람</td><td class="mono">REGION_COUNT</td><td class="num">5</td><td>지역 — 서로 다른 5곳</td></tr>
+              <tr><td>셔터를 누르는 손</td><td class="mono">QUEST_TYPE PHOTO_SINGLE</td><td class="num">3</td><td>유형</td></tr>
+              <tr><td>모으는 재미</td><td class="mono">QUEST_TYPE PHOTO_COLLECT</td><td class="num">3</td><td>유형</td></tr>
+              <tr><td>수수께끼 풀이</td><td class="mono">QUEST_TYPE QUIZ</td><td class="num">3</td><td>유형</td></tr>
+              <tr><td>길 없는 길</td><td class="mono">QUEST_TYPE EXPLORATION</td><td class="num">3</td><td>유형</td></tr>
+              <tr><td>해 질 무렵</td><td class="mono">QUEST_TYPE TIME_WINDOW</td><td class="num">3</td><td>유형</td></tr>
+              <tr><td>기록하는 사람</td><td class="mono">QUEST_TYPE RECORD</td><td class="num">3</td><td>유형</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">
+          <code>hidden: true</code>인 배지를 두어 5a의 "미공개(?)" 상태를 실제로 채운다.
+          기존 6개는 버린다 — 이름만 남길 만한 것도 조건이 통째로 바뀌므로 새로 짓는 게 깔끔하다.
+        </p>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">1</div>
+        <div class="stage-title">규칙 엔진 · 완료 시 적립<small>src/services/badge.service.ts (신규)</small></div>
+        <span class="chip be">BACKEND</span>
+      </div>
+      <div class="stage-body">
+        <ul class="rules">
+          <li>
+            <b><code>verifyQuest</code> 트랜잭션 안에서 적립한다.</b> 지금 그 트랜잭션은
+            user·userQuest·questCompletion 세 개만 건드린다. 배지 갱신을 같은 트랜잭션에 넣어야
+            "EXP는 들어갔는데 배지는 안 오른" 상태가 안 생긴다.
+          </li>
+          <li>
+            <b>카운트는 <code>quest_completions</code>에서 다시 센다.</b> 증분 카운터를 따로 들면
+            중복 적립·유실이 생긴다. 완료 기록이 이미 진실의 원천이다.
+          </li>
+          <li>
+            응답에 <b><code>badgeProgress[]</code></b>를 동봉한다 (의뢰서 S4 BE 3). 4c 보상 화면이 쓴다.
+            지금 그 화면은 로컬 계산 결과를 그리고 있는데, 그걸 서버 값으로 갈아끼운다.
+          </li>
+        </ul>
+<pre><span class="c">// 응답에 추가되는 모양</span>
+"badgeProgress": [
+  { "badgeId": 1, "name": "첫 발자국", "progress": 1, "threshold": 1,
+    "justEarned": <span class="k">true</span> },
+  { "badgeId": 3, "name": "경기 순례자", "progress": 2, "threshold": 5,
+    "justEarned": <span class="k">false</span> }
+]</pre>
+        <ul class="check">
+          <li><b>확인</b> 퀘스트 완료 → <code>user_badges.progress</code>가 오른다</li>
+          <li><b>확인</b> 목표치 도달 → <code>achieved_at</code>이 채워진다</li>
+          <li><b>확인</b> 같은 <code>requestId</code>로 재요청해도 배지가 두 번 안 오른다 <span class="mono" style="font-size:11px">(멱등)</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">1</div>
+        <div class="stage-title">배지 API 3종<small>src/routes/badge.routes.ts (신규)</small></div>
+        <span class="chip be">BACKEND</span>
+      </div>
+      <div class="stage-body">
+<pre>GET   /api/v1/badges              <span class="c">획득·진행중·미공개 3상태 + 지역/유형 필터</span>
+GET   /api/v1/badges/:id          <span class="c">상세 + 어떤 퀘스트로 채웠는지 이력</span>
+PUT   /api/v1/users/me/featured-badges   <span class="c">대표 3개 (순서 포함)</span></pre>
+        <ul class="rules">
+          <li>
+            <b>미공개(<code>hidden</code>) 배지는 이름·설명을 가린다.</b> 5a에서 <code>?</code>로만 보여야 하는데
+            서버가 이름을 그대로 내려보내면 앱을 뜯어 미리 볼 수 있다.
+          </li>
+          <li>
+            대표 배지는 <b>서버가 3개 상한을 강제</b>한다. DB에 제약이 없어서 코드가 막아야 한다.
+            획득하지 않은 배지를 대표로 지정하는 것도 막는다.
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="s2">
+    <h2>2 · 배지 화면</h2>
+    <p class="note">와이어프레임 5a·5b. <b>지금 배지 탭을 누르면 "준비 중입니다" 스낵바가 뜬다</b> — <code>main.dart</code>가 <code>onOpenBadges</code>를 아예 안 넘긴다.</p>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">2</div>
+        <div class="stage-title">배지 그리드 5a<small>lib/screens/badge_screen.dart (신규)</small></div>
+        <span class="chip fe">FRONTEND</span>
+      </div>
+      <div class="stage-body">
+        <ul class="rules">
+          <li><b>3상태 렌더링</b> — 획득(jade 채움) / 진행 중(카운터 + 진행바) / 미공개(<code>?</code>, 오목한 면)</li>
+          <li>상단에 <code>배지 12 / 40</code>과 전체 진행바. 필터 칩은 지역별·유형별</li>
+          <li>디자인 시스템대로: 획득은 볼록(e1), 미공개는 오목(sunken). 04장 "볼록과 오목을 짝으로"</li>
+          <li><b><code>main.dart</code>에 <code>onOpenBadges</code>를 연결</b>하는 걸 잊지 말 것 — 안 그러면 화면을 만들어도 도달할 수 없다</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">2</div>
+        <div class="stage-title">배지 상세 5b<small>+ 배지 아트 SVG</small></div>
+        <span class="chip fe">FRONTEND</span>
+      </div>
+      <div class="stage-body">
+        <ul class="rules">
+          <li>큰 배지 아트, 획득 조건 문구, 진행/획득 일자, <b>어떤 퀘스트로 채웠는지 이력</b></li>
+          <li>"대표 배지로 설정" 버튼 — 이미 3개면 무엇을 뺄지 물어본다</li>
+          <li>
+            <b>배지 아트 SVG 12종</b>을 아바타와 같은 문법으로 그린다.
+            지역 배지는 lapis, 유형 배지는 amber, 특수 배지는 quest red 계열로 축을 색으로 구분한다.
+          </li>
+        </ul>
+        <div class="callout amber">
+          <b>희소도·랭킹은 넣지 않는다.</b> 와이어프레임 5b가 명시적으로 뺐다.
+          "어떤 퀘스트로 채웠는지 이력만" 보여주는 게 이 앱의 태도다.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="s3">
+    <h2>3 · 프로필과 설정</h2>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">3</div>
+        <div class="stage-title">프로필 5c<small>최근 발자국 · 대표 배지 지정</small></div>
+        <span class="chip both">BE + FE</span>
+      </div>
+      <div class="stage-body">
+        <ul class="rules">
+          <li>
+            <b>서버 엔드포인트가 필요하다.</b> 지금 <code>UserModel.completedQuestIds</code>·
+            <code>visitedRegions</code>는 <b>SharedPreferences에만 있는 로컬 값</b>이라
+            기기를 바꾸면 사라진다. 진실은 <code>quest_completions</code>에 있다.
+          </li>
+        </ul>
+<pre>GET /api/v1/users/me/profile
+  → { stats: { completed, regions, badges },
+      footprints: [ { date, region, questTitle } ] }   <span class="c">최근 N개</span></pre>
+        <ul class="rules">
+          <li>대표 배지 3칸 + <code>+</code> 빈 칸 → 배지 화면으로</li>
+          <li>0개일 때 "배지를 모아보세요" 안내 (의뢰서 S4 FE 7)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">3</div>
+        <div class="stage-title">설정 5d<small>lib/screens/settings_screen.dart (신규)</small></div>
+        <span class="chip fe">FRONTEND</span>
+      </div>
+      <div class="stage-body">
+        <p class="note">
+          지금 우상단 톱니를 누르면 <b>개발자 메뉴 바텀시트</b>가 뜬다. 그걸 진짜 설정 화면으로 바꾸고,
+          개발자 모드는 그 화면 안쪽 항목으로 내린다.
+        </p>
+        <ul class="check">
+          <li>계정 · 닉네임 · 아바타 변경 <span class="mono" style="font-size:11px">(온보딩 editProfile 재사용)</span></li>
+          <li>관심 키워드 다시 고르기 <span class="mono" style="font-size:11px">(이미 동작 — 연결만)</span></li>
+          <li>알림 토글 · 위치 권한 상태 · 지도 데이터 절약 · 사진 공개 범위</li>
+          <li>약관 · 개인정보 · 오픈소스 라이선스 · 버전</li>
+          <li><b>로그아웃</b> <span class="mono" style="font-size:11px">(동작 중)</span> · <b>회원 탈퇴</b> <span class="mono" style="font-size:11px">(서버 DELETE 필요 — 미구현)</span></li>
+          <li>개발자 모드 토글 <span class="mono" style="font-size:11px">(여기로 이동)</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="s4">
+    <h2>4 · 지도 마커</h2>
+
+    <div class="callout lapis">
+      <b>기술 제약을 먼저 확인했다.</b> <code>kakao_map_plugin</code>은 에셋 바이트를 base64로 감싼 뒤
+      WebView에서 <code>new Blob([...], { type: 'image/png' })</code>로 되살린다 —
+      <b>MIME이 PNG로 고정</b>이라 SVG는 못 쓴다. 마커는 PNG여야 한다.
+    </div>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">4</div>
+        <div class="stage-title">마커 PNG 생성기<small>tool/generate_marker_icons.dart (신규)</small></div>
+        <span class="chip fe">FRONTEND</span>
+      </div>
+      <div class="stage-body">
+        <p class="note">
+          <b>모양은 유형, 색은 난이도.</b> 7종 × 5색을 손으로 그리면 35장이라 관리가 안 된다.
+          대신 <b>아이콘 7개를 코드로 그리고 색을 입혀 합성</b>한다.
+        </p>
+<pre><span class="c">// Flutter로 위젯을 PNG로 굽는다. 런타임 아니라 빌드 전 1회.</span>
+PictureRecorder → Canvas → picture.toImage()
+  → toByteData(format: png) → assets/markers/{type}_{tier}.png
+
+<span class="c">// 아이콘 7종 (유형)</span>
+VISIT 발자국 · TIME_WINDOW 해와 달 · PHOTO_SINGLE 카메라
+PHOTO_COLLECT 사진 더미 · QUIZ 물음표 · EXPLORATION 나침반 · RECORD 펜
+
+<span class="c">// 색 5단 (난이도) — 디자인 시스템 08장 QuestTierStyle 그대로</span>
+★ ink500 · ★★ jade500 · ★★★ lapis500 · ★★★★ amber500 · ★★★★★ quest500</pre>
+        <ul class="rules">
+          <li>
+            <b>접지 그림자를 넣는다.</b> 디자인 시스템 10장이 "드롭 섀도우 + 접지 그림자가 같이 있어야
+            지면에 꽂힌 것으로 읽힌다"고 했다. 지도 타일 위에서 플랫한 마커는 가장 먼저 묻힌다.
+          </li>
+          <li>@2x·@3x를 함께 굽는다. 고밀도 화면에서 뭉개지지 않게.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">4</div>
+        <div class="stage-title">현위치 마커를 크림슨으로<small>map_screen.dart</small></div>
+        <span class="chip fe">FRONTEND</span>
+      </div>
+      <div class="stage-body">
+        <ul class="rules">
+          <li>
+            지금 내 위치와 퀘스트가 <b>둘 다 카카오 기본 파란 핀</b>이라 구별이 안 된다.
+            현위치는 <code>quest500 #9E2B1E</code> 원형 + 흰 테두리 + 붉은 정확도 원으로 바꾼다.
+          </li>
+          <li>
+            퀘스트 핀(물방울)과 <b>모양 자체를 다르게</b> 한다. 색만 다르면 색약 사용자가 구별 못 한다.
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="s5">
+    <h2>5 · 폭죽 연출</h2>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">5</div>
+        <div class="stage-title">퀘스트 완료 시 폭죽<small>quest_reward_screen.dart</small></div>
+        <span class="chip fe">FRONTEND</span>
+      </div>
+      <div class="stage-body">
+        <ul class="rules">
+          <li>
+            <b>패키지 대신 직접 그린다.</b> <code>CustomPainter</code> + <code>AnimationController</code>로
+            입자 60~80개면 충분하다. 의존성을 하나 더 들이는 것보다 색을 팔레트에 맞추기가 쉽다.
+          </li>
+          <li>
+            색은 <b>amber·quest·jade</b>만 쓴다. 무지개색 폭죽은 이 앱의 종이 질감과 싸운다.
+            디자인 시스템 "spend your boldness in one place" — 보상 화면이 그 자리다.
+          </li>
+          <li>
+            EXP 카운트업이 끝나는 순간에 터뜨린다. 화면 진입과 동시에 터지면 숫자를 못 읽는다.
+          </li>
+          <li>
+            <b>레벨업 때는 더 크게.</b> 4d는 4c보다 드문 사건이니 연출도 그만큼 차이가 나야 한다.
+          </li>
+          <li>
+            <b><code>MediaQuery.disableAnimations</code>를 존중한다.</b> 접근성 설정으로 애니메이션을
+            끈 사용자에게는 최종 상태만 보여준다.
+          </li>
+        </ul>
+        <div class="callout amber">
+          <b>어뷰징 판정을 받은 완료에는 터뜨리지 않는다.</b>
+          <code>isAbused</code>면 EXP가 0이고 화면 제목도 "퀘스트 기록됨"으로 바뀐다.
+          거기서 축포가 터지면 앱이 상황을 모르는 것처럼 보인다.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="s6">
+    <h2>6 · 어뷰징 방어</h2>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">6</div>
+        <div class="stage-title">Mock location 감지<small>의뢰서가 S3 항목으로 지정</small></div>
+        <span class="chip both">BE + FE</span>
+      </div>
+      <div class="stage-body">
+        <div class="callout">
+          <b>의뢰서 6장이 "Mock location 감지(<code>isMocked</code>) + 속도 검증. S3에서 구현"</b>이라고
+          못박았는데 <b>지금 완전 미구현</b>이다(<code>grep isMocked</code> → 0건).
+          속도 검증만 서버에 있다.
+        </div>
+        <ul class="rules">
+          <li>
+            <code>geolocator</code>의 <code>Position.isMocked</code>가 이미 있다. 인증 요청에 실어 보낸다.
+          </li>
+          <li>
+            서버는 <code>isMocked</code>면 <code>isAbused</code>로 처리해 EXP를 0으로 만든다.
+            차단이 아니라 기록은 남기되 보상만 막는 방식 — 지금 속도 초과와 같은 취급이다.
+          </li>
+          <li>
+            <b>개발자 모드 순간이동과 충돌한다.</b> 개발용 위조 좌표는 <code>isMocked</code>가 아니라
+            앱이 만든 값이라 감지에 안 걸린다. 그건 의도한 대로다 —
+            제출 전 <code>lib/dev/</code>를 지우면 그 경로 자체가 사라진다.
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="s7">
+    <h2>7 · 사진 업로드</h2>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">7</div>
+        <div class="stage-title">presign 배선<small>서버는 이미 완성돼 있다</small></div>
+        <span class="chip fe">FRONTEND</span>
+      </div>
+      <div class="stage-body">
+        <p class="note">
+          <b>서버 절반은 이미 살아 있다.</b> <code>POST /quests/:id/upload-url</code>과
+          <code>upload.service.ts</code>가 구현돼 있는데 <b>부르는 클라이언트가 없다.</b>
+          그래서 사진을 찍어도 <code>photoUrl</code>이 영원히 null이고 어디에도 저장되지 않는다.
+        </p>
+        <ul class="check">
+          <li>AWS 자격증명이 실제로 동작하는지 먼저 확인 <span class="mono" style="font-size:11px">(.env에 키는 있으나 미검증)</span></li>
+          <li>촬영 → presign 요청 → S3에 PUT → <code>publicUrl</code>을 verify에 실어 보내기</li>
+          <li>업로드 실패 시 <b>사진 없이 완료 경로로 폴백</b>하고 사용자에게 알린다. 사진은 필수가 아니다</li>
+          <li>
+            <b><code>validatePhotoMetadata()</code>를 배선한다.</b> EXIF 5분 검증이 구현돼 있는데
+            아무도 안 부른다 — 지금은 갤러리에서 작년 사진을 골라도 통과한다
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="s8">
+    <h2>8 · 카카오 로그인</h2>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">8</div>
+        <div class="stage-title">안드로이드 리다이렉트 설정<small>AndroidManifest.xml</small></div>
+        <span class="chip fe">FRONTEND</span>
+      </div>
+      <div class="stage-body">
+        <ul class="rules">
+          <li>
+            <code>kakao{네이티브키}://oauth</code> 인텐트 필터와
+            <code>AuthCodeCustomTabsActivity</code>가 <b>둘 다 없다.</b>
+            카카오톡이 없는 기기에서 웹 로그인 후 앱으로 못 돌아온다.
+          </li>
+          <li>
+            <b>네이티브 앱키가 <code>main.dart</code>에 하드코딩</b>돼 있다.
+            <code>--dart-define</code>이나 <code>.env</code>로 빼는 게 맞다.
+          </li>
+          <li>구글 로그인은 이미 동작을 확인했다. 카카오만 남았다.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="s9">
+    <h2>9 · 지도 재조회</h2>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">9</div>
+        <div class="stage-title">카메라 이동 시 재조회 + 디바운스<small>map_screen.dart</small></div>
+        <span class="chip fe">FRONTEND</span>
+      </div>
+      <div class="stage-body">
+        <ul class="rules">
+          <li>
+            <b>지금 카메라를 움직여도 마커가 안 바뀐다.</b> 재조회 자체가 없다 —
+            <code>_fetchQuestsFromBackend</code>는 지도 준비 시와 현위치 버튼에서만 불린다.
+          </li>
+          <li>
+            <b>디바운스 없이 붙이면 안 된다.</b> 이 API는 호출마다 카카오 로컬 API를 4번 때리고
+            DB에 쓴다. 300ms 디바운스 + 이전 조회 지점에서 일정 거리 이상 움직였을 때만.
+          </li>
+          <li>
+            의뢰서 S2는 원래 <b>뷰포트(bounds) 조회</b>를 요구했다. <code>GET /quests</code>가
+            이미 bounds·zoom·클러스터를 지원하는데 앱은 <code>nearby</code>를 쓴다.
+            여기서 갈아타는 게 정석이다.
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="s10">
+    <h2>10 · 홈 통합 API</h2>
+
+    <div class="stage">
+      <div class="stage-head">
+        <div class="stage-num">10</div>
+        <div class="stage-title">GET /home<small>의뢰서 S4 BE 6</small></div>
+        <span class="chip both">BE + FE</span>
+      </div>
+      <div class="stage-body">
+        <ul class="rules">
+          <li>진행중 퀘스트 + 추천 퀘스트 + 대표 배지를 <b>1회 호출</b>로</li>
+          <li>
+            <b>진행중 퀘스트의 진실을 서버로 옮긴다.</b> 지금은 SharedPreferences가 진실이라
+            기기를 바꾸면 진행 상황이 사라진다. <code>GET /quests/my</code>는 함수만 있고
+            부르는 곳이 없다.
+          </li>
+          <li>홈과 지도가 각자 <code>nearby</code>를 부르는 중복도 여기서 정리된다.</li>
+        </ul>
+        <p class="note">
+          <b>마지막에 두는 이유:</b> 합칠 대상(배지·프로필)이 다 만들어진 뒤에 합쳐야
+          한 번만 만들고 끝난다. 먼저 만들면 배지가 생길 때마다 다시 손대게 된다.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="later">
+    <h2>더 뒤로 미룬 것</h2>
+    <p class="note">이번 범위에 넣지 않았다. 왜 미뤘는지 함께 적는다.</p>
+    <div class="tbl">
+      <table>
+        <thead><tr><th style="width:200px">항목</th><th>왜 지금이 아닌가</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>퀴즈형·수집형 제출 API</td>
+            <td>
+              분량이 크고(유형별 검증 분기 + <code>currentProgress</code> 배선) S3 방문형이
+              이미 완주된다. <b>다만 지금은 수집형 5장짜리도 GPS 1회로 완료되는 보상 남용 경로가 열려 있다</b> —
+              0단계에서 수집형 시드를 넣을 때 이 점을 인지할 것.
+            </td>
+          </tr>
+          <tr>
+            <td>키워드 어휘 통일</td>
+            <td>배지를 지역·유형 축으로 가면서 급하지 않아졌다. 키워드 배지를 되살릴 때 함께.</td>
+          </tr>
+          <tr>
+            <td><code>isNewArea</code> 하드코딩</td>
+            <td>
+              모든 퀘스트에 항상 ×1.5가 붙는다. 3단계에서 <code>visitedRegions</code>를
+              서버로 옮기면 그때 자연스럽게 판정할 재료가 생긴다.
+            </td>
+          </tr>
+          <tr>
+            <td>S5 안정화 전체</td>
+            <td>기능 완성이 우선이라는 방침에 따라. 개인정보처리방침은 법적 필수라 출시 전 반드시.</td>
+          </tr>
+          <tr>
+            <td>iOS</td>
+            <td>의뢰서상 MVP는 Android만.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <p class="footer">
+    직전 인수인계 문서는 <code>docs/인수인계_2026-08-22.html</code>,
+    실기기 검증 스크린샷은 <code>docs/screenshots/2026-08-22-s1-검증/</code>에 있다.
+    S3 사이클 회귀 테스트는 <code>test/quest_cycle_live_test.dart</code> —
+    기기에서 탭하기 전에 이걸 먼저 돌리면 API 계약이 깨졌는지 바로 안다.
+  </p>
+
+  </main>
+</div>
+</div>

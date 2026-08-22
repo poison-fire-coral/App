@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <!-- type_collect · type 축 -->
+  <defs>
+    <linearGradient id="g8bg" x1="48" y1="4" x2="48" y2="92" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#FDF6E7"/>
+    </linearGradient>
+    <linearGradient id="g8seal" x1="48" y1="14" x2="48" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E2B45F"/><stop offset="1" stop-color="#8A5C15"/>
+    </linearGradient>
+  </defs>
+  <circle cx="48" cy="48" r="45" fill="url(#g8bg)"/>
+  <ellipse cx="48" cy="82" rx="27" ry="7" fill="#2A1512" opacity=".07"/>
+  <circle cx="48" cy="48" r="34" fill="url(#g8seal)"/>
+  <path d="M48 14a34 34 0 0 1 34 34c0 2-.2 4-.5 6A34 34 0 0 0 48 22a34 34 0 0 0-33.5 32c-.3-2-.5-4-.5-6A34 34 0 0 1 48 14z" fill="#FFFFFF" opacity=".18"/>
+  <rect x="26" y="38" width="26" height="20" rx="4" fill="#FDF6E7" opacity=".55"/><rect x="34" y="43" width="26" height="20" rx="4" fill="#FDF6E7" opacity=".8"/><rect x="42" y="48" width="26" height="20" rx="4" fill="#FDF6E7"/>
+  <circle cx="48" cy="48" r="34" fill="none" stroke="#FFFFFF" stroke-opacity=".45" stroke-width="1.6"/>
+  <circle cx="48" cy="48" r="45" fill="none" stroke="#2A1512" stroke-opacity=".12" stroke-width="1.6"/>
+</svg>

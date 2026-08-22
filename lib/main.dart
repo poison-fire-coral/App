@@ -8,6 +8,7 @@ import 'package:kakao_map_plugin/kakao_map_plugin.dart' as kakao_map;
 import 'package:firebase_core/firebase_core.dart';
 
 import 'data/auth_repository.dart';
+import 'data/badge_api.dart';
 import 'data/badge_repository.dart';
 import 'data/quest_repository.dart';
 import 'dev/dev_tools.dart'; // DEV-ONLY
@@ -21,7 +22,10 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/map_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/badge_screen.dart';
+import 'screens/profile_screen.dart';
 import 'screens/quest_active_screen.dart';
+import 'screens/settings_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/api_client.dart';
@@ -29,8 +33,6 @@ import 'services/auth_service.dart';
 import 'services/exp_service.dart';
 import 'services/geolocator_location_service.dart';
 import 'services/token_store.dart';
-import 'theme/app_colors.dart';
-import 'theme/design_tokens.dart';
 import 'theme/app_theme.dart';
 import 'widgets/app_widgets.dart';
 
@@ -151,6 +153,11 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
 
   /// 홈 추천 목록에서 퀘스트를 골라 지도로 넘어왔을 때 펼칠 시트
   String? _focusQuestId;
+
+  /// 프로필(5c)·설정(5d)은 하단 탭이 아니라 그 위에 겹쳐 뜬다.
+  /// 뒤로 가면 원래 탭으로 돌아온다.
+  bool _showProfile = false;
+  bool _showSettings = false;
 
   @override
   void initState() {
@@ -491,7 +498,18 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       lastExpEarnedAt: now,
     );
 
-    // 배지는 아직 서버에 없다(S4). 완료한 퀘스트의 키워드 카운트로 로컬 적립한다.
+    // 서버가 완료 기록을 다시 세어 내려준 배지 진행도. 멱등 재요청이면
+    // payload 안쪽에 들어 있다.
+    final serverBadge = serverResult == null
+        ? null
+        : VerifyBadgeProgress.pick(
+            serverResult['badgeProgress'] ??
+                (serverResult['completion'] is Map
+                    ? (serverResult['completion'] as Map)['badgeProgress']
+                    : null),
+          );
+
+    // 서버가 없을 때만 쓰는 폴백. 완료한 퀘스트의 키워드 카운트로 로컬 적립한다.
     final completedQuests = [
       for (final id in completedIds)
         if (QuestRepository.findById(id) != null) QuestRepository.findById(id)!,
@@ -517,6 +535,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       levelResult: levelResult,
       badge: badge,
       badgeJustEarned: badge != null && badge.count == badge.rule.requiredCount,
+      serverBadge: serverBadge,
     );
   }
 
@@ -595,6 +614,51 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     final user = _currentUser!;
     final activeIds = {for (final a in _activeQuests) a.quest.id};
 
+    // 5. 설정 (5d) — 탭 위에 겹친다
+    if (_showSettings) {
+      return SettingsScreen(
+        onBack: () => setState(() => _showSettings = false),
+        onEditProfile: () => setState(() {
+          _showSettings = false;
+          _isEditingSurvey = true;
+        }),
+        onEditKeywords: () => setState(() {
+          _showSettings = false;
+          _isEditingSurvey = true;
+        }),
+        onLogout: () {
+          setState(() => _showSettings = false);
+          _logout();
+        },
+      );
+    }
+
+    // 6. 프로필 (5c)
+    if (_showProfile) {
+      return ProfileScreen(
+        user: user,
+        onBack: () => setState(() => _showProfile = false),
+        onOpenBadges: () => setState(() {
+          _showProfile = false;
+          _currentTab = AppTab.badges;
+        }),
+      );
+    }
+
+    // 7. 배지 탭 (5a)
+    if (_currentTab == AppTab.badges) {
+      return BadgeScreen(
+        user: user,
+        onOpenHome: () => setState(() => _currentTab = AppTab.home),
+        onOpenMap: () => setState(() {
+          _currentTab = AppTab.map;
+          _focusQuestId = null;
+        }),
+        onOpenProfile: () => setState(() => _showProfile = true),
+        onOpenSettings: (_) => setState(() => _showSettings = true),
+      );
+    }
+
     // 3. 지도 탭
     if (_currentTab == AppTab.map) {
       return MapScreen(
@@ -606,7 +670,9 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
           _currentTab = AppTab.home;
           _focusQuestId = null;
         }),
-        onOpenSettings: (mapContext) => _showDevMenu(mapContext),
+        onOpenBadges: () => setState(() => _currentTab = AppTab.badges),
+        onOpenProfile: () => setState(() => _showProfile = true),
+        onOpenSettings: (_) => setState(() => _showSettings = true),
       );
     }
 
@@ -623,93 +689,13 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       badges: BadgeRepository.progressFor(completedQuests),
       onContinueQuest: _openQuestFlow,
       onSelectQuest: _focusQuestOnMap,
-      onOpenSettings: (homeContext) => _showDevMenu(homeContext),
+      onOpenSettings: (_) => setState(() => _showSettings = true),
+      onOpenProfile: () => setState(() => _showProfile = true),
+      onOpenBadges: () => setState(() => _currentTab = AppTab.badges),
       onOpenMap: () => setState(() {
         _currentTab = AppTab.map;
         _focusQuestId = null;
       }),
-    );
-  }
-
-  void _showDevMenu(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: StatefulBuilder(
-          builder: (sheetContext, setSheetState) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: AppSpacing.sm),
-              const GrabHandle(),
-              ListTile(
-                leading: const Icon(Icons.tune_rounded,
-                    color: AppColors.quest500),
-                title: const Text('취향 재설정하기'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  setState(() => _isEditingSurvey = true);
-                },
-              ),
-              ListTile(
-                leading:
-                    const Icon(Icons.logout, color: AppColors.textSecondary),
-                title: const Text('로그아웃'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _logout();
-                },
-              ),
-
-              // ─── DEV-ONLY ───────────────────────────────────────────────
-              const Divider(height: 1, color: AppColors.divider),
-              SwitchListTile(
-                secondary: const Icon(Icons.build_rounded,
-                    color: AppColors.textTertiary),
-                title: const Text('개발자 모드'),
-                subtitle: const Text('테스트용 위치 조작 도구를 켭니다'),
-                value: DevTools.enabled.value,
-                activeThumbColor: AppColors.quest500,
-                onChanged: (value) async {
-                  await DevTools.setEnabled(value);
-                  setSheetState(() {});
-                  if (mounted) setState(() {});
-                },
-              ),
-              if (DevTools.enabled.value) ...[
-                ListTile(
-                  leading: const Icon(Icons.my_location_rounded,
-                      color: AppColors.lapis500),
-                  title: Text(DevTools.isLocationOverridden
-                      ? '내 위치 고정 해제'
-                      : '내 위치를 수원화성으로 고정'),
-                  subtitle: const Text('시드 퀘스트가 보이게 합니다'),
-                  onTap: () {
-                    DevTools.toggleLocationOverride();
-                    setSheetState(() {});
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.key_off_rounded,
-                      color: AppColors.amber700),
-                  title: const Text('토큰 강제 만료'),
-                  subtitle: const Text('자동 갱신이 도는지 확인합니다'),
-                  onTap: () {
-                    TokenStore.debugCorruptAccessToken();
-                    Navigator.pop(sheetContext);
-                    _toast('access token을 망가뜨렸어요. 다음 요청에서 갱신이 돕니다.');
-                  },
-                ),
-              ],
-              // ─── /DEV-ONLY ──────────────────────────────────────────────
-              const SizedBox(height: AppSpacing.sm),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

@@ -63,8 +63,13 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
   StreamSubscription<LocationSample>? _subscription;
   LocationSample? _sample;
 
-  /// 목표 지점을 잡은 시점의 거리. 진행바 비율(1 - 남은거리/최초거리) 계산에 쓴다.
-  double _initialDistance = 0;
+  /// **첫 실측 표본**의 거리. 진행바 비율(1 - 남은거리/최초거리)의 분모다.
+  ///
+  /// 예전에는 목업 좌표(`QuestRepository.mockUserLocation`)로 잡았다. 실기기가
+  /// 목업에서 수십 km 떨어져 있으면 분모가 그만큼 커져서 83m를 남기고도
+  /// 진행바가 가득 찼다 — 실기기 테스트에서 잡았다.
+  /// 첫 표본이 오기 전에는 거리를 **모르는 것이지 0이 아니다.**
+  double? _initialDistance;
 
   /// 직전 표본과 그 시각. 40km/h 초과 이동 판정에 쓴다 (기획서 6d).
   LocationSample? _previousSample;
@@ -103,15 +108,24 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     _subscription?.cancel();
 
     final target = _activeQuest.currentSpot.point;
-    final origin = _sample?.point ?? _startingPoint();
-    _initialDistance = Geo.distanceMeters(origin, target);
+    final sample = _sample;
+    _initialDistance =
+        sample == null ? null : Geo.distanceMeters(sample.point, target);
     _previousSample = null;
     _previousSampleAt = null;
 
     _subscription = _location.track(target).listen((sample) {
       if (!mounted) return;
       _checkSpeedAbuse(sample);
-      setState(() => _sample = sample);
+      setState(() {
+        _sample = sample;
+        // 분모는 첫 표본에서 한 번만 정한다. 매번 갱신하면 다가갈수록
+        // 분모도 같이 줄어 진행바가 영영 안 찬다.
+        _initialDistance ??= Geo.distanceMeters(
+          sample.point,
+          _activeQuest.currentSpot.point,
+        );
+      });
     });
   }
 
@@ -134,18 +148,27 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     _previousSampleAt = now;
   }
 
-  double get _remainingDistance {
+  /// 첫 표본이 오기 전에는 null — "0m 남음"이 아니다.
+  double? get _remainingDistance {
     final sample = _sample;
-    if (sample == null) return _initialDistance;
+    if (sample == null) return null;
     return Geo.distanceMeters(sample.point, _activeQuest.currentSpot.point);
   }
 
   double get _approachProgress {
-    if (_initialDistance <= 0) return 1;
-    return (1 - _remainingDistance / _initialDistance).clamp(0.0, 1.0);
+    final remaining = _remainingDistance;
+    final initial = _initialDistance;
+    if (remaining == null || initial == null || initial <= 0) return 0;
+    // 반경 안이면 가득. 첫 표본부터 이미 안에 있어도 빈 막대는 이상하다.
+    if (remaining <= _activeQuest.currentSpot.radiusMeters) return 1;
+    return (1 - remaining / initial).clamp(0.0, 1.0);
   }
 
-  bool get _isInRange => _remainingDistance <= _activeQuest.currentSpot.radiusMeters;
+  bool get _isInRange {
+    final remaining = _remainingDistance;
+    return remaining != null &&
+        remaining <= _activeQuest.currentSpot.radiusMeters;
+  }
 
   bool get _needsRemeasure => _sample?.needsRemeasure ?? false;
 
@@ -421,7 +444,10 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
                 child: Text(
                   reached
                       ? '도착했어요'
-                      : '목적지까지 ${Geo.formatDistance(_remainingDistance)}',
+                      : _remainingDistance == null
+                          ? '위치를 확인하는 중'
+                          : '목적지까지 '
+                              '${Geo.formatDistance(_remainingDistance!)}',
                   style: AppType.h1.copyWith(
                     color: reached ? AppColors.jade700 : AppColors.textPrimary,
                   ),
@@ -485,7 +511,11 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     if (_isInRange) {
       return '인증 반경 안에 있어요. 도착 인증을 진행해 주세요.';
     }
-    final remaining = Geo.formatDistance(_remainingDistance);
-    return '$remaining 남았어요. ${spot.name}까지 이동해 주세요.';
+    final distance = _remainingDistance;
+    if (distance == null) {
+      return '위치를 확인하고 있어요. 잠시만 기다려 주세요.';
+    }
+    return '${Geo.formatDistance(distance)} 남았어요. '
+        '${spot.name}까지 이동해 주세요.';
   }
 }

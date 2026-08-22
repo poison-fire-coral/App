@@ -36,6 +36,8 @@ flutter:
     - assets/avatars/
     - assets/illustrations/
     - assets/brand/
+    - assets/badges/
+    - assets/markers/
 
   # 디자인 시스템 v1.0 (Parchment & Seal) 05 타이포 — Pretendard 400/500/600/700
   fonts:

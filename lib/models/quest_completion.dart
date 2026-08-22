@@ -1,3 +1,4 @@
+import '../data/badge_api.dart';
 import '../data/badge_repository.dart';
 import '../services/exp_service.dart';
 import 'quest_model.dart';
@@ -19,12 +20,17 @@ class QuestCompletionResult {
   /// 이번 완료로 배지가 막 완성되었는지 (4c에서 "배지 획득!" 연출로 대체)
   final bool badgeJustEarned;
 
+  /// 서버가 다시 세어 내려준 배지 진행도. 있으면 **이쪽이 진실**이고
+  /// 위의 로컬 [badge]는 오프라인 폴백으로만 남는다.
+  final VerifyBadgeProgress? serverBadge;
+
   const QuestCompletionResult({
     required this.quest,
     required this.breakdown,
     required this.levelResult,
     this.badge,
     this.badgeJustEarned = false,
+    this.serverBadge,
   });
 
   int get expAwarded => breakdown.finalExp;

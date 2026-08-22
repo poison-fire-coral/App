@@ -832,6 +832,21 @@ class TagChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tone = accent ?? AppColors.quest500;
+    final isBrand = tone == AppColors.quest500;
+
+    // 선택 상태의 채움도 [accent]를 따라간다.
+    // 예전에는 배경이 brandFill(빨강)로 고정이고 accent는 그림자에만 쓰여서,
+    // jade를 줘도 칩이 빨갛게 나왔다 — 4b "위치 확인됨"이 그 예였다.
+    final selectedFill = isBrand
+        ? AppSurface.brandFill
+        : LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color.lerp(tone, Colors.white, 0.16)!,
+              tone,
+            ],
+          );
 
     return PressableScale(
       onTap: onTap,
@@ -841,7 +856,7 @@ class TagChip extends StatelessWidget {
         curve: AppMotion.standard,
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
         decoration: BoxDecoration(
-          gradient: isSelected ? AppSurface.brandFill : AppSurface.paper,
+          gradient: isSelected ? selectedFill : AppSurface.paper,
           color: null,
           borderRadius: BorderRadius.circular(AppRadius.pill),
           border: Border.all(
@@ -1074,7 +1089,11 @@ class ProgressBar extends StatelessWidget {
     final tone = accent ?? AppColors.quest500;
     final v = value.clamp(0.0, 1.0);
 
+    // 폭을 명시하지 않으면 FractionallySizedBox가 자식 크기에 맞춰 접히면서
+    // **트랙이 사라지고 채움만 덩그러니 남는다.** 가운데 정렬 Column 안에서
+    // 실제로 그렇게 나왔다(4c 보상 화면). 항상 부모 폭을 채운다.
     return Container(
+      width: double.infinity,
       height: height,
       decoration: BoxDecoration(
         gradient: AppSurface.sunken,

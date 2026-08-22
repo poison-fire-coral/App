@@ -64,6 +64,9 @@ class ApiClient {
   static Future<dynamic> patch(String path, {Object? body}) =>
       _send('PATCH', path, body: body);
 
+  static Future<dynamic> put(String path, {Object? body}) =>
+      _send('PUT', path, body: body);
+
   static Future<dynamic> delete(String path, {Object? body}) =>
       _send('DELETE', path, body: body);
 
@@ -122,6 +125,10 @@ class ApiClient {
         case 'PATCH':
           return await http
               .patch(uri, headers: headers, body: encoded)
+              .timeout(timeout);
+        case 'PUT':
+          return await http
+              .put(uri, headers: headers, body: encoded)
               .timeout(timeout);
         case 'DELETE':
           return await http

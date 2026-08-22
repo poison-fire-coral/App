@@ -126,6 +126,21 @@ void main() {
       }
     });
 
+    testWidgets('ProgressBar는 트랙이 접히지 않고 부모 폭을 채운다', (tester) async {
+      // 가운데 정렬 Column 안에서 폭이 접혀 트랙이 사라졌던 회귀를 막는다.
+      await pumpAndPaint(
+        tester,
+        const SizedBox(
+          width: 300,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [ProgressBar(value: 0.75)],
+          ),
+        ),
+      );
+      expect(tester.getSize(find.byType(ProgressBar)).width, 300);
+    });
+
     testWidgets('SectionHeader', (tester) async {
       await pumpAndPaint(
         tester,

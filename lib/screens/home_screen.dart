@@ -29,6 +29,9 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback? onOpenMap;
   final VoidCallback? onOpenBadges;
 
+  /// 좌상단 프로필 링을 눌렀을 때 (5c)
+  final VoidCallback? onOpenProfile;
+
   const HomeScreen({
     super.key,
     required this.user,
@@ -40,6 +43,7 @@ class HomeScreen extends StatefulWidget {
     this.onOpenSettings,
     this.onOpenMap,
     this.onOpenBadges,
+    this.onOpenProfile,
   });
 
   @override
@@ -152,7 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
               level: widget.user.level,
               levelProgress: widget.user.levelProgress,
               avatarId: widget.user.avatarId,
-              onTapProfile: () => _notReady('프로필'),
+              onTapProfile: widget.onOpenProfile,
               onTapSettings: () => widget.onOpenSettings?.call(context),
             ),
             Expanded(

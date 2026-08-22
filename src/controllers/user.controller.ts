@@ -54,4 +54,19 @@ export class UserController {
       next(error);
     }
   }
+
+  // 3. 프로필 화면(5c) — 통계 + 최근 발자국
+  static async getProfileSummary(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        throw new AppError("UNAUTHORIZED", "인증 정보가 유효하지 않습니다.");
+      }
+
+      const summary = await UserService.getProfileSummary(userId);
+      return res.status(200).json({ data: summary, error: null });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

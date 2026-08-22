@@ -46,6 +46,11 @@ class QuestModel {
   final String summary;
   final String description;
   final QuestDifficulty difficulty;
+
+  /// 서버 `Quest.questType` (VISIT · TIME_WINDOW · PHOTO_SINGLE · PHOTO_COLLECT
+  /// · QUIZ · EXPLORATION · RECORD). 지도 마커의 **모양**을 정한다.
+  /// 목업 퀘스트에는 없으므로 기본값은 VISIT.
+  final String questType;
   final bool hasHalfStar;
   final double latitude;
   final double longitude;
@@ -64,6 +69,7 @@ class QuestModel {
     required this.summary,
     required this.description,
     required this.difficulty,
+    this.questType = 'VISIT',
     this.hasHalfStar = false,
     required this.latitude,
     required this.longitude,
@@ -123,6 +129,7 @@ class QuestModel {
         'story': description,
         'summary': summary,
         'difficulty': difficulty.stars,
+        'questType': questType,
         'halfStep': hasHalfStar,
         'radiusM': validRadiusMeters,
         'keywords': keywords,
@@ -183,6 +190,7 @@ class QuestModel {
       summary: json['story'] ?? json['summary'] ?? '',
       description: json['story'] ?? json['description'] ?? '',
       difficulty: diff,
+      questType: (json['questType'] as String?) ?? 'VISIT',
       hasHalfStar: json['halfStep'] ?? false,
       latitude: lat,
       longitude: lng,

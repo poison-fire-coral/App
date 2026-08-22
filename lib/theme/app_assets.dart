@@ -34,6 +34,60 @@ class AppAssets {
   // ---------------------------------------------------------------------------
   // 일러스트 · 브랜드
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // 배지 아트
+  //   서버는 `Badge.artUrl`에 'first_step' 같은 **키만** 저장한다.
+  //   경로를 DB에 넣으면 에셋 구조를 못 바꾸게 된다.
+  // ---------------------------------------------------------------------------
+  static const List<String> badgeArtKeys = <String>[
+    'first_step', 'twenty_steps',
+    'region_gyeonggi', 'region_seoul', 'region_jeju', 'region_all',
+    'type_photo', 'type_collect', 'type_quiz',
+    'type_explore', 'type_time', 'type_record',
+    'hidden_dawn',
+  ];
+
+  /// 모르는 키가 오면 null. 위젯이 자물쇠 아이콘으로 대신 그린다.
+  static String? badgeArtPath(String? artKey) {
+    if (artKey == null || !badgeArtKeys.contains(artKey)) return null;
+    return 'assets/badges/$artKey.svg';
+  }
+
+  // ---------------------------------------------------------------------------
+  // 지도 마커 (4단계)
+  //   `test/generate_marker_icons_test.dart`가 구워낸 PNG다. SVG는 못 쓴다 —
+  //   kakao_map_plugin이 에셋 바이트를 `new Blob([...], {type:'image/png'})`로
+  //   되살리기 때문에 MIME이 PNG로 고정이다.
+  //
+  //   **모양은 퀘스트 유형, 색은 난이도.** 색만 다르면 색약 사용자가 구별하지 못한다.
+  // ---------------------------------------------------------------------------
+  static const List<String> markerQuestTypes = <String>[
+    'VISIT', 'TIME_WINDOW', 'PHOTO_SINGLE', 'PHOTO_COLLECT',
+    'QUIZ', 'EXPLORATION', 'RECORD',
+  ];
+
+  /// Flutter의 `2.0x/` 변형 규약을 쓰지 않는다 — 플러그인이 `rootBundle.load`로
+  /// 경로를 직접 읽어서 변형 해석이 일어나지 않는다. 그래서 배율을 손으로 고른다.
+  static String _suffix(double devicePixelRatio) {
+    if (devicePixelRatio >= 2.5) return '@3x';
+    if (devicePixelRatio >= 1.5) return '@2x';
+    return '';
+  }
+
+  static String questMarker({
+    required String questType,
+    required int stars,
+    required double devicePixelRatio,
+  }) {
+    final type = markerQuestTypes.contains(questType) ? questType : 'VISIT';
+    final tier = stars.clamp(1, 5);
+    return 'assets/markers/${type.toLowerCase()}_t$tier'
+        '${_suffix(devicePixelRatio)}.png';
+  }
+
+  static String myLocationMarker(double devicePixelRatio) =>
+      'assets/markers/my_location${_suffix(devicePixelRatio)}.png';
+
   static const String locationPermission =
       'assets/illustrations/location_permission.svg';
   static const String logo = 'assets/brand/logo.svg';

@@ -90,4 +90,55 @@ export class UserService {
 
     return updatedUser;
   }
+
+  /**
+   * 프로필 화면(5c) 요약 — 통계 + 최근 발자국.
+   *
+   * 앱이 그동안 `completedQuestIds`·`visitedRegions`를 SharedPreferences에만
+   * 들고 있었는데, 그건 기기를 바꾸면 사라진다. 진실은 `quest_completions`에 있다.
+   */
+  static async getProfileSummary(userId: number, footprintLimit = 20) {
+    const [completions, badgeCount] = await Promise.all([
+      prisma.questCompletion.findMany({
+        where: { userId, isAbused: false },
+        orderBy: { createdAt: "desc" },
+        select: {
+          createdAt: true,
+          expAwarded: true,
+          quest: {
+            select: {
+              title: true,
+              questType: true,
+              difficulty: true,
+              place: { select: { name: true, regionCode: true } },
+            },
+          },
+        },
+      }),
+      prisma.userBadge.count({ where: { userId, achievedAt: { not: null } } }),
+    ]);
+
+    const regions = new Set(
+      completions
+        .map((c) => c.quest.place?.regionCode)
+        .filter((r): r is string => !!r)
+    );
+
+    return {
+      stats: {
+        completed: completions.length,
+        regions: regions.size,
+        badges: badgeCount,
+      },
+      footprints: completions.slice(0, footprintLimit).map((c) => ({
+        date: c.createdAt,
+        questTitle: c.quest.title,
+        questType: String(c.quest.questType),
+        difficulty: c.quest.difficulty,
+        placeName: c.quest.place?.name ?? null,
+        regionCode: c.quest.place?.regionCode ?? null,
+        expAwarded: c.expAwarded,
+      })),
+    };
+  }
 }

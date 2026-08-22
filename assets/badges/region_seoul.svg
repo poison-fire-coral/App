@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <!-- region_seoul · region 축 -->
+  <defs>
+    <linearGradient id="g4bg" x1="48" y1="4" x2="48" y2="92" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#EDF2F8"/>
+    </linearGradient>
+    <linearGradient id="g4seal" x1="48" y1="14" x2="48" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4A7CAE"/><stop offset="1" stop-color="#1E3F62"/>
+    </linearGradient>
+  </defs>
+  <circle cx="48" cy="48" r="45" fill="url(#g4bg)"/>
+  <ellipse cx="48" cy="82" rx="27" ry="7" fill="#2A1512" opacity=".07"/>
+  <circle cx="48" cy="48" r="34" fill="url(#g4seal)"/>
+  <path d="M48 14a34 34 0 0 1 34 34c0 2-.2 4-.5 6A34 34 0 0 0 48 22a34 34 0 0 0-33.5 32c-.3-2-.5-4-.5-6A34 34 0 0 1 48 14z" fill="#FFFFFF" opacity=".18"/>
+  <path d="M30 66l8-22 10 14 10-20 8 28z" fill="#EDF2F8"/><circle cx="58" cy="34" r="4" fill="#EDF2F8"/>
+  <circle cx="48" cy="48" r="34" fill="none" stroke="#FFFFFF" stroke-opacity=".45" stroke-width="1.6"/>
+  <circle cx="48" cy="48" r="45" fill="none" stroke="#2A1512" stroke-opacity=".12" stroke-width="1.6"/>
+</svg>

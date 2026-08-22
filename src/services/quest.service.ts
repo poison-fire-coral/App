@@ -3,6 +3,7 @@ import { prisma } from "../utils/prisma";
 import { CustomError } from "../utils/CustomError";
 import { calculateHaversineDistance, checkSpeedAbuse } from "../utils/geo.util";
 import { calculateRewardExp, processLevelUp } from "./exp-engine.service";
+import { recalculateBadges } from "./badge.service";
 
 
 /**
@@ -579,10 +580,16 @@ export class QuestService {
         },
       });
 
+      // 배지는 완료 기록을 다시 세는 방식이라 **이 트랜잭션 안에서** 돌아야 한다.
+      // 밖에서 부르면 "EXP는 들어갔는데 배지는 안 오른" 상태가 생길 수 있다.
+      const badgeProgress = await recalculateBadges(tx, dto.userId);
+
       return {
         completionId: completion.id,
         expAwarded: expResult.finalExp,
         breakdown: expResult.breakdown,
+        // 4c 보상 화면이 "배지 획득!" 연출에 쓴다 (의뢰서 S4 BE 3).
+        badgeProgress,
         // 클라이언트가 진행 링을 그리려면 "다음 레벨까지 얼마"가 필요하다.
         // 이 값을 안 주면 앱이 자체 하드코딩 테이블로 계산해 서버와 어긋난다.
         levelInfo: {

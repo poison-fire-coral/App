@@ -6,6 +6,7 @@ import '../data/quest_repository.dart';
 import '../models/quest_model.dart';
 import '../models/user_model.dart';
 import '../services/geo.dart';
+import '../theme/app_assets.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
@@ -18,6 +19,9 @@ class MapScreen extends StatefulWidget {
 
   final VoidCallback? onOpenHome;
   final VoidCallback? onOpenBadges;
+
+  /// 좌상단 프로필 링을 눌렀을 때 (5c)
+  final VoidCallback? onOpenProfile;
   final void Function(BuildContext context)? onOpenSettings;
 
   const MapScreen({
@@ -28,6 +32,7 @@ class MapScreen extends StatefulWidget {
     this.focusQuestId,
     this.onOpenHome,
     this.onOpenBadges,
+    this.onOpenProfile,
     this.onOpenSettings,
   });
 
@@ -133,7 +138,7 @@ class _MapScreenState extends State<MapScreen> {
     if (_mapController == null || !_isMapReady) return;
 
     try {
-      final markers = _buildKakaoMarkers();
+      final markers = await _buildKakaoMarkers();
       await _mapController!.clearMarker();
 
       if (markers.isNotEmpty) {
@@ -218,23 +223,62 @@ class _MapScreenState extends State<MapScreen> {
     return set.toList();
   }
 
-  List<Marker> _buildKakaoMarkers() {
+  /// 아이콘은 에셋을 읽어 base64로 감싸는 비용이 있다. 지도를 움직일 때마다
+  /// 마커를 다시 그리므로 경로별로 한 번만 만들고 재사용한다.
+  final Map<String, MarkerIcon> _iconCache = {};
+
+  Future<MarkerIcon?> _icon(String assetPath) async {
+    final cached = _iconCache[assetPath];
+    if (cached != null) return cached;
+    try {
+      final icon = await MarkerIcon.fromAsset(assetPath);
+      _iconCache[assetPath] = icon;
+      return icon;
+    } catch (e) {
+      // 에셋이 빠졌다고 지도가 통째로 비면 안 된다. 기본 핀으로 떨어진다.
+      debugPrint('마커 아이콘 로드 실패($assetPath): $e');
+      return null;
+    }
+  }
+
+  Future<List<Marker>> _buildKakaoMarkers() async {
     final List<Marker> markers = [];
+    final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
 
     for (final q in _visibleQuests) {
+      final icon = await _icon(AppAssets.questMarker(
+        questType: q.questType,
+        stars: q.difficulty.stars,
+        devicePixelRatio: dpr,
+      ));
       markers.add(
         Marker(
           markerId: q.id,
           latLng: LatLng(q.latitude, q.longitude),
+          icon: icon,
+          // 논리 크기 36×46. 끝점(아래 중앙)이 좌표에 꽂히도록 오프셋을 준다.
+          width: 36,
+          height: 46,
+          offsetX: 18,
+          offsetY: 40,
         ),
       );
     }
 
     if (_userLocation != null) {
+      final icon = await _icon(AppAssets.myLocationMarker(dpr));
       markers.add(
         Marker(
           markerId: 'user_my_location_pin',
           latLng: _userLocation!,
+          icon: icon,
+          // 현위치는 원이라 중심이 곧 좌표다.
+          width: 28,
+          height: 28,
+          offsetX: 14,
+          offsetY: 14,
+          // 퀘스트 핀에 가리지 않게 위로 올린다.
+          zIndex: 10,
         ),
       );
     }
@@ -282,7 +326,7 @@ class _MapScreenState extends State<MapScreen> {
               level: widget.user.level,
               levelProgress: widget.user.levelProgress,
               avatarId: widget.user.avatarId,
-              onTapProfile: () => _notReady('프로필'),
+              onTapProfile: widget.onOpenProfile,
               onTapSettings: () => widget.onOpenSettings?.call(context),
             ),
             Expanded(
