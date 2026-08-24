@@ -30,17 +30,12 @@ class ApiClient {
   // ---------------------------------------------------------------------------
   // Base URL
   //   실행 시 --dart-define=API_BASE_URL=... 로 덮어쓸 수 있다.
-  //   실기기에서는 `adb reverse tcp:5001 tcp:5001` 후 localhost를 쓰면 된다.
   // ---------------------------------------------------------------------------
   static const String _override = String.fromEnvironment('API_BASE_URL');
 
   static String get baseUrl {
     if (_override.isNotEmpty) return _override;
-    if (kIsWeb) return 'http://localhost:5001/api/v1';
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:5001/api/v1'; // 안드로이드 에뮬레이터
-    }
-    return 'http://localhost:5001/api/v1';
+    return 'https://chewing-asleep-vest.ngrok-free.dev/api/v1';
   }
 
   // ---------------------------------------------------------------------------
@@ -107,6 +102,7 @@ class ApiClient {
     final headers = <String, String>{
       'Content-Type': 'application/json; charset=utf-8',
       'Accept': 'application/json',
+      'bypass-tunnel-reminder': 'true', // localtunnel 경고 화면 우회 헤더
     };
     final token = TokenStore.accessToken;
     if (auth && token != null && token.isNotEmpty) {

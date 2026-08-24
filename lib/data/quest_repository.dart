@@ -3,6 +3,7 @@ import '../services/api_client.dart';
 import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 import '../models/quest_model.dart';
 import '../services/geo.dart';
+import 'package:flutter/foundation.dart';
 
 class QuestRepository {
   /// 가상 내 위치 (수원화성/행궁동 시드 데이터 위치)
@@ -101,6 +102,16 @@ class QuestRepository {
     }
     return mockQuests.where((q) => !excludeIds.contains(q.id)).toList();
   }
+
+  /// .env 백엔드 설정에 맞춘 5001번 포트 Base URL
+  static String get baseUrl {
+    if (kIsWeb) return 'http://localhost:5001/api/v1';
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return 'http://10.0.2.2:5001/api/v1'; // 안드로이드 에뮬레이터
+    }
+    return 'http://192.168.219.198:5001/api/v1';// ios 실제 기기
+  }
+
 
   /// 사용자 위치 기준 거리를 '350m', '1.2km' 형식 문자열로 반환
   static String distanceFromUser(
