@@ -25,7 +25,7 @@
     <key>CFBundleVersion</key>
     <string>$(FLUTTER_BUILD_NUMBER)</string>
 
-    <!-- Google 로그인 URL Scheme 추가 -->
+    <!-- Google 및 카카오 로그인 URL Scheme -->
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
@@ -34,8 +34,17 @@
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>com.googleusercontent.apps.830613840669-6c50r7ua2lmh1ddf1r39iqhctamkfp08</string>
+                <!-- 아래 kakao 뒤에 본인의 카카오 네이티브 앱키를 붙여주세요 -->
+                <string>kakaobddd99905a1b4d3731ed3b0f370aa8da</string>
             </array>
         </dict>
+    </array>
+
+    <!-- 카카오톡 앱 실행 및 인증을 위한 쿼리 스키마 허용 -->
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+        <string>kakaokompassauth</string>
+        <string>kakaolink</string>
     </array>
 
     <key>LSRequiresIPhoneOS</key>
