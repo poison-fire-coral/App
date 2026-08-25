@@ -57,6 +57,7 @@ class QuestModel {
   final double validRadiusMeters;
   final String spotName;
   final String regionLabel;
+  final String? imageUrl;
   final List<String> keywords;
 
   final double crowdMultiplier;
@@ -76,6 +77,7 @@ class QuestModel {
     this.validRadiusMeters = 50.0,
     required this.spotName,
     this.regionLabel = '',
+    this.imageUrl,
     required this.keywords,
     this.crowdMultiplier = 1.0,
     this.spots = const [],
@@ -120,9 +122,6 @@ class QuestModel {
   }
 
   /// 진행 중 퀘스트를 로컬에 통째로 저장하기 위한 직렬화.
-  ///
-  /// [fromJson]이 읽는 백엔드 형식과 **같은 모양**으로 쓴다. 그래야 복원 경로가
-  /// 서버 응답이든 로컬 스냅샷이든 하나로 유지된다.
   Map<String, dynamic> toJson() => {
         'id': id,
         'title': title,
@@ -132,6 +131,7 @@ class QuestModel {
         'questType': questType,
         'halfStep': hasHalfStar,
         'radiusM': validRadiusMeters,
+        'imageUrl': imageUrl,
         'keywords': keywords,
         'requiresPhoto': requiresPhoto,
         'crowdMultiplier': crowdMultiplier,
@@ -149,6 +149,7 @@ class QuestModel {
           'address': regionLabel,
           'lat': latitude,
           'lng': longitude,
+          'imageUrl': imageUrl,
         },
       };
 
@@ -184,6 +185,12 @@ class QuestModel {
     final double lat = (place['lat'] as num?)?.toDouble() ?? (json['latitude'] as num?)?.toDouble() ?? 0.0;
     final double lng = (place['lng'] as num?)?.toDouble() ?? (json['longitude'] as num?)?.toDouble() ?? 0.0;
 
+    // 3. 대표 이미지 URL 추출 (place.imageUrl 또는 루트의 imageUrl)
+    final String? rawImageUrl = (place['imageUrl'] as String?) ?? (json['imageUrl'] as String?);
+    final String? parsedImageUrl = (rawImageUrl != null && rawImageUrl.trim().isNotEmpty)
+        ? rawImageUrl
+        : null;
+
     return QuestModel(
       id: json['id']?.toString() ?? '',
       title: json['title'] ?? '',
@@ -197,10 +204,10 @@ class QuestModel {
       validRadiusMeters: (json['radiusM'] as num?)?.toDouble() ?? 50.0,
       spotName: place['name'] ?? json['spotName'] ?? '',
       regionLabel: place['address'] ?? place['regionCode'] ?? json['regionLabel'] ?? '',
+      imageUrl: parsedImageUrl,
       keywords: List<String>.from(json['keywords'] ?? []),
       crowdMultiplier: crowdMult,
       requiresPhoto: json['requiresPhoto'] as bool?,
-      // 서버 스키마에는 지점 테이블이 없다. 로컬 스냅샷에서 복원할 때만 채워진다.
       spots: [
         if (json['spots'] is List)
           for (final raw in (json['spots'] as List))
