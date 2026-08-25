@@ -18,6 +18,11 @@ dependencies:
   firebase_core: ^4.13.0
   kakao_map_plugin: ^0.3.0
   geolocator: ^12.0.0
+  # 지도 위 "내가 보는 방향" 표시용 자기 나침반.
+  # flutter_compass 계열은 라이브러리 매니페스트에 package= 속성과 lintOptions가
+  # 남아 있어 이 프로젝트의 AGP 9에서 빌드가 깨진다. 자기계·가속도계를 직접 받아
+  # 방위각을 계산한다 (services/compass_service.dart).
+  sensors_plus: ^7.1.0
   http: ^1.6.0
   flutter_svg: ^2.3.0
   flutter_secure_storage: ^11.0.0
