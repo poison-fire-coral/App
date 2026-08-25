@@ -85,6 +85,26 @@ class AppAssets {
         '${_suffix(devicePixelRatio)}.png';
   }
 
+  /// 진행 중인 퀘스트 핀.
+  ///
+  /// 원칙은 **색 = 난이도**지만 진행 중인 퀘스트만은 예외로 브랜드 강조색
+  /// (quest500)으로 통일한다. 지도에서 "지금 내가 하고 있는 것"을 먼저 찾아야 하고,
+  /// 그 핀의 난이도는 이미 홈 캐러셀에서 보고 수락한 뒤다.
+  ///
+  /// 새 PNG를 굽지 않고 5성 아트를 빌려 쓴다 — 5성 색이 이미 quest500이고,
+  /// 에셋 생성기는 `test/`에 있어 앱 코드에서 손댈 수 없다. 5성 퀘스트와 겹치는
+  /// 만큼은 [MapScreen]이 핀을 키우고 위로 올려 구분한다.
+  static String activeQuestMarker({
+    required String questType,
+    required double devicePixelRatio,
+  }) {
+    return questMarker(
+      questType: questType,
+      stars: 5,
+      devicePixelRatio: devicePixelRatio,
+    );
+  }
+
   static String myLocationMarker(double devicePixelRatio) =>
       'assets/markers/my_location${_suffix(devicePixelRatio)}.png';
 
