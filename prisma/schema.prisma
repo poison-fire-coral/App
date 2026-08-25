@@ -66,7 +66,7 @@ model Place {
   address         String?
   lat             Float    // WGS84 위도
   lng             Float    // WGS84 경도
-  photoUrl        String?  @map("photo_url")
+  imageUrl        String?  @map("image_url") // 💡 photoUrl -> imageUrl 로 변경
   congestionScore Int      @default(1) @map("congestion_score") // 1: 하위30%(x1.4), 2: 보통(x1.0), 3: 상위10%(x0.7)
   updatedAt       DateTime @updatedAt @map("updated_at")
   quests          Quest[]

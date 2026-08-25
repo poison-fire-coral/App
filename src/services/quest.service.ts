@@ -5,16 +5,8 @@ import { calculateHaversineDistance, checkSpeedAbuse } from "../utils/geo.util";
 import { calculateRewardExp, processLevelUp } from "./exp-engine.service";
 import { recalculateBadges } from "./badge.service";
 
-
 /**
  * Place.congestionScore(0~100 백분위)를 EXP 엔진이 기대하는 1/2/3 등급으로 옮긴다.
- *
- * 엔진(exp-engine.service.ts:19)은 1=한산(x1.4) · 2=보통(x1.0) · 3=혼잡(x0.7)만 안다.
- * 그런데 DB에는 50, 80 같은 백분위가 들어 있어 어떤 값이든 "보통"으로 떨어졌고,
- * 결과적으로 기획서 6b가 "오버투어리즘 완화의 핵심"이라고 한 혼잡도 배율이
- * 한 번도 적용되지 않았다.
- *
- * 기준은 기획서 6b 그대로 — 방문자 하위 30%는 한산, 상위 10%는 혼잡.
  */
 export function toCongestionTier(score: number | null | undefined): number {
   if (score === null || score === undefined) return 2;
@@ -22,7 +14,6 @@ export function toCongestionTier(score: number | null | undefined): number {
   if (score >= 90) return 3; // 혼잡 x0.7
   return 2; // 보통 x1.0
 }
-
 
 export interface VerifyQuestDto {
   userId: number;
@@ -54,153 +45,189 @@ export interface NearbyQueryDto {
   keywords?: string[];
 }
 
-interface KakaoPlace {
-  id: string;
-  place_name: string;
-  category_name: string;
-  address_name: string;
-  x: string; // lng
-  y: string; // lat;
+interface TourApiPlace {
+  contentid: string;
+  contenttypeid: string;
+  title: string;
+  addr1?: string;
+  addr2?: string;
+  mapx: string; // lng
+  mapy: string; // lat
+  firstimage?: string; // 대표 이미지 원본
+  firstimage2?: string; // 대표 이미지 썸네일
+  areacode?: string;
 }
 
 export class QuestService {
-  /**
-   * `user_quests.status`가 완료를 뜻하는가.
-   *
-   * 초기 데이터에 소문자 `done`이 섞여 들어가 있어 두 값을 모두 완료로 본다.
-   * 완료 판정이 여러 군데(수락·인증·포기)에 흩어져 있어서, 한 곳만 고쳐 놓고
-   * 다른 곳이 새는 일이 없도록 여기로 모았다.
-   */
   private static isCompletedStatus(status?: string | null) {
     return status === "COMPLETED" || status === "done";
   }
 
   // -------------------------------------------------------------
-  // [카카오 연동 헬퍼] 카카오 API 검색 및 퀘스트 자동 생성을 위한 모듈
+  // [TourAPI Ver4.3 연동 헬퍼] 위치 기반 한국관광공사 데이터 조회
   // -------------------------------------------------------------
 
-  /** 카카오 로컬 API 키워드 검색 */
-  private static async searchKakaoPlaces(
+  /** TourAPI 위치 기반 관광정보 조회 API (locationBasedList2 - KorService2) */
+  private static async searchTourApiPlaces(
     lat: number,
     lng: number,
-    keyword: string,
     radiusM: number
-  ): Promise<KakaoPlace[]> {
-    const kakaoApiKey = process.env.KAKAO_REST_API_KEY;
-    if (!kakaoApiKey) {
-      console.warn("⚠️ KAKAO_REST_API_KEY가 설정되지 않았습니다. 실시간 검색을 스킵합니다.");
+  ): Promise<TourApiPlace[]> {
+    const serviceKey = process.env.TOUR_API_SERVICE_KEY;
+    if (!serviceKey) {
+      console.warn("⚠️ TOUR_API_SERVICE_KEY가 설정되지 않았습니다. 실시간 검색을 스킵합니다.");
       return [];
     }
 
     try {
-      const response = await axios.get("https://dapi.kakao.com/v2/local/search/keyword.json", {
-        headers: { Authorization: `KakaoAK ${kakaoApiKey}` },
+      const encodedKey = serviceKey.includes("%") ? serviceKey : encodeURIComponent(serviceKey);
+      
+      // 💡 승인받은 상세기능에 맞추어 KorService2 / locationBasedList2 엔드포인트 적용
+      const baseUrl = "https://apis.data.go.kr/B551011/KorService2/locationBasedList2";
+
+      const response = await axios.get(`${baseUrl}?serviceKey=${encodedKey}`, {
         params: {
-          query: keyword,
-          x: lng.toString(),
-          y: lat.toString(),
-          radius: Math.min(radiusM, 20000), // 카카오 최대 반경 20km
-          sort: "distance",
+          numOfRows: 30,
+          pageNo: 1,
+          MobileOS: "ETC",
+          MobileApp: "LocalQuest",
+          _type: "json",
+          mapX: lng.toString(),
+          mapY: lat.toString(),
+          radius: Math.min(radiusM, 20000),
         },
       });
-      return response.data?.documents || [];
-    } catch (error) {
-      console.error(`카카오 API 호출 실패 (${keyword}):`, error);
+
+      const items = response.data?.response?.body?.items?.item;
+      if (!items) return [];
+      return Array.isArray(items) ? items : [items];
+    } catch (error: any) {
+      if (error.response?.data) {
+        console.error("TourAPI 에러 응답 상세:", JSON.stringify(error.response.data, null, 2));
+      } else {
+        console.error("TourAPI 호출 실패:", error.message);
+      }
       return [];
     }
   }
 
-  /** 카카오 카테고리/장소명 기반 퀘스트 메타데이터 자동 생성 규칙 */
-  private static generateQuestMetadata(place: KakaoPlace) {
-    const category = place.category_name;
-    const name = place.place_name;
+  /** TourAPI 관광지 카테고리(contentTypeId) 기반 퀘스트 메타데이터 자동 생성 규칙 */
+  private static generateQuestMetadata(place: TourApiPlace) {
+    const typeId = place.contenttypeid;
+    const name = place.title;
 
-    if (category.includes("공원") || name.includes("공원") || name.includes("산책")) {
-      return {
-        title: `${name} 산책 퀘스트`,
-        story: `${name} 주변을 가볍게 거닐며 힐링하는 시간을 가져보세요!`,
-        difficulty: 1,
-        baseExp: 50,
-        keywords: ["산책", "공원", "힐링"],
-      };
-    } else if (category.includes("시장") || name.includes("시장")) {
-      return {
-        title: `${name} 활기찬 시장 탐방`,
-        story: `${name}의 풍성한 먹거리와 활기찬 정취를 느껴보세요.`,
-        difficulty: 2,
-        baseExp: 110,
-        keywords: ["시장", "탐방", "쇼핑"],
-      };
-    } else if (category.includes("카페") || category.includes("음료")) {
-      return {
-        title: `${name} 여유 스팟 방문`,
-        story: `${name}에서 향기로운 음료와 함께 휴식을 취해보세요.`,
-        difficulty: 1,
-        baseExp: 50,
-        keywords: ["카페", "휴식"],
-      };
-    } else if (category.includes("관광") || category.includes("문화") || name.includes("명소")) {
-      return {
-        title: `${name} 역사·문화 탐방`,
-        story: `${name}에 도달하여 장소의 특별한 매력을 발견해보세요!`,
-        difficulty: 3,
-        baseExp: 220,
-        keywords: ["명소", "탐험", "문화"],
-      };
+    switch (typeId) {
+      case "12": // 관광지
+        return {
+          title: `${name} 역사·문화 탐방`,
+          story: `${name}에 도달하여 지역 고유의 특별한 매력을 발견해보세요!`,
+          difficulty: 3,
+          baseExp: 220,
+          keywords: ["명소", "탐험", "관광"],
+        };
+      case "14": // 문화시설
+        return {
+          title: `${name} 로컬 전시 체험`,
+          story: `${name}에서 펼쳐지는 문화와 예술 공간을 조용히 관람해보세요.`,
+          difficulty: 2,
+          baseExp: 150,
+          keywords: ["문화", "전시", "힐링"],
+        };
+      case "15": // 축제/공연/행사
+        return {
+          title: `${name} 돌발 필드 퀘스트`,
+          story: `${name} 축제 현장을 방문하여 활기찬 분위기를 만끽해보세요!`,
+          difficulty: 2,
+          baseExp: 180,
+          keywords: ["축제", "이벤트", "체험"],
+        };
+      case "28": // 레포츠
+        return {
+          title: `${name} 액티비티 도전`,
+          story: `${name}에서 제공하는 짜릿한 활동으로 에너지를 충전해보세요.`,
+          difficulty: 3,
+          baseExp: 200,
+          keywords: ["액티비티", "모험", "스포츠"],
+        };
+      case "32": // 숙박
+        return {
+          title: `${name} 로컬 쉼터 방문`,
+          story: `${name} 주변 공간을 거닐며 정겨운 소도시의 휴식을 느껴보세요.`,
+          difficulty: 1,
+          baseExp: 50,
+          keywords: ["휴식", "숙소", "힐링"],
+        };
+      case "38": // 쇼핑/전통시장
+        return {
+          title: `${name} 전통시장·상점 탐방`,
+          story: `${name}의 풍성한 로컬 먹거리와 활기찬 정취를 느껴보세요.`,
+          difficulty: 2,
+          baseExp: 110,
+          keywords: ["시장", "탐방", "쇼핑"],
+        };
+      case "39": // 음식점
+        return {
+          title: `${name} NPC 맛집 탐방`,
+          story: `${name}에서 현지 주민(NPC)이 추천하는 로컬 맛을 즐겨보세요.`,
+          difficulty: 1,
+          baseExp: 60,
+          keywords: ["맛집", "음식", "로컬"],
+        };
+      default:
+        return {
+          title: `${name} 스팟 도달`,
+          story: `${name} 목표 지점에 도달하여 로컬 인증을 완료해보세요.`,
+          difficulty: 1,
+          baseExp: 50,
+          keywords: ["방문", "탐험"],
+        };
     }
-
-    return {
-      title: `${name} 스팟 도달`,
-      story: `${name} 목표 지점에 도달하여 인증을 완료해보세요.`,
-      difficulty: 1,
-      baseExp: 50,
-      keywords: ["방문", "탐험"],
-    };
   }
 
-  /** 주변 카카오 장소를 실시간 수집 및 DB 동기화 */
-  private static async syncNearbyKakaoQuests(lat: number, lng: number, radiusM: number) {
-    const searchKeywords = ["공원", "시장", "명소", "카페"];
-    const kakaoPlaces: KakaoPlace[] = [];
+  /** 주변 TourAPI 장소를 실시간 수집 및 DB 동기화 (대표 이미지 포함) */
+  private static async syncNearbyTourQuests(lat: number, lng: number, radiusM: number) {
+    const tourPlaces = await this.searchTourApiPlaces(lat, lng, radiusM);
 
-    // 1. 카카오 API에서 주요 키워드별 주변 장소 검색
-    for (const kw of searchKeywords) {
-      const places = await this.searchKakaoPlaces(lat, lng, kw, radiusM);
-      kakaoPlaces.push(...places);
-    }
+    for (const tPlace of tourPlaces) {
+      const placeLat = parseFloat(tPlace.mapy);
+      const placeLng = parseFloat(tPlace.mapx);
 
-    // 2. 검색된 장소를 DB Place 및 Quest 테이블에 Upsert (중복 방지)
-    for (const kPlace of kakaoPlaces) {
-      const placeLat = parseFloat(kPlace.y);
-      const placeLng = parseFloat(kPlace.x);
-      const meta = this.generateQuestMetadata(kPlace);
-      const regionCode = kPlace.address_name ? kPlace.address_name.split(" ")[0] : "전국";
+      if (isNaN(placeLat) || isNaN(placeLng)) continue;
+
+      const meta = this.generateQuestMetadata(tPlace);
+      const regionCode = tPlace.areacode ? String(tPlace.areacode) : "전국";
+      // TourAPI 대표 이미지 extraction (firstimage -> firstimage2 순서)
+      const imageUrl = tPlace.firstimage || tPlace.firstimage2 || null;
 
       try {
-        // 기존 동일 이름/좌표 근처 장소가 있는지 확인
         let place = await prisma.place.findFirst({
           where: {
-            name: kPlace.place_name,
+            name: tPlace.title,
             lat: { gte: placeLat - 0.0005, lte: placeLat + 0.0005 },
             lng: { gte: placeLng - 0.0005, lte: placeLng + 0.0005 },
           },
         });
 
-        // 장소가 없으면 생성
         if (!place) {
           place = await prisma.place.create({
             data: {
-              name: kPlace.place_name,
+              name: tPlace.title,
               lat: placeLat,
               lng: placeLng,
-              address: kPlace.address_name || "",
+              address: tPlace.addr1 || "",
+              imageUrl: imageUrl, // 💡 TourAPI 대표 이미지 URL 저장
               regionCode: regionCode,
               congestionScore: 50,
             },
           });
+        } else if (!place.imageUrl && imageUrl) {
+          // 이미지가 기존에 없었으면 업데이트
+          place = await prisma.place.update({
+            where: { id: place.id },
+            data: { imageUrl: imageUrl },
+          });
         }
 
-        // 해당 장소에 연결된 퀘스트가 없으면 생성
         const existingQuest = await prisma.quest.findFirst({
           where: { placeId: place.id },
         });
@@ -221,7 +248,7 @@ export class QuestService {
           });
         }
       } catch (err) {
-        console.error(`퀘스트 동적 생성 실패 (${kPlace.place_name}):`, err);
+        console.error(`TourAPI 퀘스트 생성 실패 (${tPlace.title}):`, err);
       }
     }
   }
@@ -230,10 +257,8 @@ export class QuestService {
   // [메인 서비스 메서드]
   // -------------------------------------------------------------
 
-  // 1. 지도 뷰포트 조회 & 클러스터링 & 검색
   static async getQuestsByViewport(dto: ViewportQueryDto) {
     const { swLat, swLng, neLat, neLng, zoom = 15, keywords, search } = dto;
-
     const whereClause: any = { active: true };
 
     if (swLat !== undefined && swLng !== undefined && neLat !== undefined && neLng !== undefined) {
@@ -285,30 +310,19 @@ export class QuestService {
         count: c.count,
       }));
 
-      return {
-        isClustered: true,
-        zoom,
-        totalQuests: quests.length,
-        clusters,
-      };
+      return { isClustered: true, zoom, totalQuests: quests.length, clusters };
     }
 
-    return {
-      isClustered: false,
-      zoom,
-      totalQuests: quests.length,
-      quests,
-    };
+    return { isClustered: false, zoom, totalQuests: quests.length, quests };
   }
 
-  // 2. 내 위치 기반 근처 퀘스트 조회 (실시간 카카오 탐지 연동)
+  // 2. 내 위치 기반 근처 퀘스트 조회 (TourAPI 실시간 연동)
   static async getNearbyQuests(dto: NearbyQueryDto) {
     const { lat, lng, radiusM = 3000, keywords } = dto;
 
-    // 💡 [추가] 카카오 API를 호출하여 내 위치 주변 스팟을 실시간으로 퀘스트화 DB 등록
-    await this.syncNearbyKakaoQuests(lat, lng, radiusM);
+    // 💡 TourAPI를 호출하여 내 위치 주변 관광 스팟을 퀘스트화 DB 등록
+    await this.syncNearbyTourQuests(lat, lng, radiusM);
 
-    // DB에서 실시간 생성된 항목을 포함하여 근처 퀘스트 조회
     const quests = await prisma.quest.findMany({
       where: {
         active: true,
@@ -317,7 +331,6 @@ export class QuestService {
       include: { place: true },
     });
 
-    // Haversine 거리 계산 후 반경 내 필터링 및 거리순 정렬
     const nearbyQuests = quests
       .map((quest) => {
         const distanceM = calculateHaversineDistance(lat, lng, quest.place.lat, quest.place.lng);
@@ -329,7 +342,6 @@ export class QuestService {
     return nearbyQuests;
   }
 
-  // 3. 사용자 맞춤 추천 퀘스트 조회
   static async getRecommendedQuests(userId: number) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -357,7 +369,6 @@ export class QuestService {
     return quests;
   }
 
-  // 4. 내 수락/진행/완료 퀘스트 목록 조회
   static async getMyQuests(userId: number, status?: string) {
     const userQuests = await prisma.userQuest.findMany({
       where: {
@@ -365,9 +376,7 @@ export class QuestService {
         ...(status && { status: status.toUpperCase() }),
       },
       include: {
-        quest: {
-          include: { place: true },
-        },
+        quest: { include: { place: true } },
       },
       orderBy: { startedAt: "desc" },
     });
@@ -375,7 +384,6 @@ export class QuestService {
     return userQuests;
   }
 
-  // 5. 퀘스트 단건 상세 조회
   static async getQuestById(questId: number) {
     const quest = await prisma.quest.findUnique({
       where: { id: questId },
@@ -389,11 +397,8 @@ export class QuestService {
     return quest;
   }
 
-  // 6. 퀘스트 수락
   static async acceptQuest(userId: number, questId: number) {
-    const quest = await prisma.quest.findUnique({
-      where: { id: questId },
-    });
+    const quest = await prisma.quest.findUnique({ where: { id: questId } });
 
     if (!quest) {
       throw new CustomError(404, "QUEST_NOT_FOUND", "존재하지 않는 퀘스트입니다.");
@@ -404,8 +409,6 @@ export class QuestService {
     });
 
     if (existingUserQuest) {
-      // 두 경우를 한 코드로 뭉뚱그리면 앱이 구분을 못 한다.
-      // 진행 중이면 "이어서 하기"로 삼켜야 하고, 완료면 막아야 한다.
       if (this.isCompletedStatus(existingUserQuest.status)) {
         throw new CustomError(
           409,
@@ -417,17 +420,12 @@ export class QuestService {
     }
 
     const userQuest = await prisma.userQuest.create({
-      data: {
-        userId,
-        questId,
-        status: "IN_PROGRESS",
-      },
+      data: { userId, questId, status: "IN_PROGRESS" },
     });
 
     return userQuest;
   }
 
-  // 7. 진행 중인 퀘스트 취소/포기
   static async abandonQuest(userId: number, questId: number) {
     const userQuest = await prisma.userQuest.findUnique({
       where: { userId_questId: { userId, questId } },
@@ -448,24 +446,15 @@ export class QuestService {
     return { success: true, message: "퀘스트 수락을 취소했습니다." };
   }
 
-  // 8. 퀘스트 도달 인증 및 보상 지급
   static async verifyQuest(dto: VerifyQuestDto) {
     const existingCompletion = await prisma.questCompletion.findUnique({
       where: { requestId: dto.requestId },
     });
 
     if (existingCompletion) {
-      return {
-        isAlreadyProcessed: true,
-        completion: existingCompletion,
-      };
+      return { isAlreadyProcessed: true, completion: existingCompletion };
     }
 
-    // 완료한 퀘스트는 재클리어를 막는다. 위치·정확도를 보기 전에 끊어야
-    // "현장까지 갔는데 반경 밖이라더니 알고 보니 완료된 퀘스트"가 안 생긴다.
-    //
-    // 진실은 `quest_completions`다. `user_quests`는 포기 시 삭제되므로 완료 판정을
-    // 여기에만 기대면 안 되고, 반대로 완료 기록이 정리된 계정도 있을 수 있어 둘 다 본다.
     const [priorCompletion, userQuest] = await Promise.all([
       prisma.questCompletion.findFirst({
         where: { userId: dto.userId, questId: dto.questId },
@@ -491,10 +480,7 @@ export class QuestService {
       );
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: dto.userId },
-    });
-
+    const user = await prisma.user.findUnique({ where: { id: dto.userId } });
     if (!user) {
       throw new CustomError(404, "USER_NOT_FOUND", "존재하지 않는 유저입니다.");
     }
@@ -508,12 +494,7 @@ export class QuestService {
       throw new CustomError(404, "QUEST_NOT_FOUND", "존재하지 않는 퀘스트입니다.");
     }
 
-    const distance = calculateHaversineDistance(
-      dto.lat,
-      dto.lng,
-      quest.place.lat,
-      quest.place.lng
-    );
+    const distance = calculateHaversineDistance(dto.lat, dto.lng, quest.place.lat, quest.place.lng);
 
     if (distance > quest.radiusM) {
       throw new CustomError(
@@ -557,12 +538,7 @@ export class QuestService {
     );
 
     const levelTable = await prisma.levelTable.findMany();
-    const levelResult = processLevelUp(
-      user.level,
-      user.expCurrent,
-      expResult.finalExp,
-      levelTable
-    );
+    const levelResult = processLevelUp(user.level, user.expCurrent, expResult.finalExp, levelTable);
 
     return await prisma.$transaction(async (tx) => {
       await tx.user.update({
@@ -571,9 +547,7 @@ export class QuestService {
           level: levelResult.level,
           expCurrent: levelResult.expCurrent,
           expTotal: { increment: expResult.finalExp },
-          dailyExpEarned: isSameDay
-            ? { increment: expResult.finalExp }
-            : expResult.finalExp,
+          dailyExpEarned: isSameDay ? { increment: expResult.finalExp } : expResult.finalExp,
           lastExpResetAt: now,
           lastActiveAt: now,
         },
@@ -617,23 +591,17 @@ export class QuestService {
         },
       });
 
-      // 배지는 완료 기록을 다시 세는 방식이라 **이 트랜잭션 안에서** 돌아야 한다.
-      // 밖에서 부르면 "EXP는 들어갔는데 배지는 안 오른" 상태가 생길 수 있다.
       const badgeProgress = await recalculateBadges(tx, dto.userId);
 
       return {
         completionId: completion.id,
         expAwarded: expResult.finalExp,
         breakdown: expResult.breakdown,
-        // 4c 보상 화면이 "배지 획득!" 연출에 쓴다 (의뢰서 S4 BE 3).
         badgeProgress,
-        // 클라이언트가 진행 링을 그리려면 "다음 레벨까지 얼마"가 필요하다.
-        // 이 값을 안 주면 앱이 자체 하드코딩 테이블로 계산해 서버와 어긋난다.
         levelInfo: {
           ...levelResult,
           nextRequiredExp:
-            levelTable.find((l) => l.level === levelResult.level + 1)
-              ?.requiredExp ?? null,
+            levelTable.find((l) => l.level === levelResult.level + 1)?.requiredExp ?? null,
         },
         isAbused,
       };

@@ -102,6 +102,7 @@ class ApiClient {
     final headers = <String, String>{
       'Content-Type': 'application/json; charset=utf-8',
       'Accept': 'application/json',
+      'ngrok-skip-browser-warning': 'true', // ngrok 경고 화면 우회 헤더
       'bypass-tunnel-reminder': 'true', // localtunnel 경고 화면 우회 헤더
     };
     final token = TokenStore.accessToken;

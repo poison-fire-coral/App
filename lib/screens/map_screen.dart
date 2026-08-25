@@ -116,7 +116,7 @@ class _MapScreenState extends State<MapScreen> {
 
     final questList = _quests.where((q) => q.id == id).toList();
     if (questList.isEmpty) return;
-    
+
     final quest = questList.first;
     _selectedQuest = quest;
     _sheetState = _SheetState.preview;
@@ -133,7 +133,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // 현위치 방향 부채꼴
+  // 현위치 방향 부채꼴 (나침반 로직)
   // ---------------------------------------------------------------------------
 
   void _onHeading(double degrees) {
@@ -195,7 +195,6 @@ class _MapScreenState extends State<MapScreen> {
         'transition:transform 150ms linear;will-change:transform;">'
         '<div style="position:absolute;left:21px;top:0px;width:0;height:0;'
         'border-left:11px solid transparent;border-right:11px solid transparent;'
-        // 현위치 점과 같은 quest500(#9E2B1E)을 옅게 깐다.
         'border-bottom:18px solid rgba(158,43,30,0.55);"></div>'
         '</div>';
   }
@@ -216,7 +215,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // 백엔드 통신 및 데이터 로드 (포트 5001 API 호출)
+  // 백엔드 통신 및 데이터 로드
   // ---------------------------------------------------------------------------
   Future<void> _fetchQuestsFromBackend(double lat, double lng) async {
     if (_isLoadingQuests) return;
@@ -226,8 +225,6 @@ class _MapScreenState extends State<MapScreen> {
       final fetchedQuests = await QuestRepository.fetchNearbyQuests(
         lat: lat,
         lng: lng,
-        // 이 API는 호출할 때마다 카카오 로컬 API를 4번 때리고 DB에 쓴다
-        // (quest.service.ts:278). 반경이 넓을수록 느려지고 DB가 계속 부푼다.
         radiusM: 5000,
       );
 
@@ -291,7 +288,6 @@ class _MapScreenState extends State<MapScreen> {
       double lat = position.latitude;
       double lng = position.longitude;
 
-      // 시뮬레이터/해외 좌표 처리 -> 시드 데이터가 존재하는 좌표로 대체
       if (!_isKoreaLatLng(lat, lng)) {
         lat = QuestRepository.mockUserLocation.latitude;
         lng = QuestRepository.mockUserLocation.longitude;
@@ -304,7 +300,7 @@ class _MapScreenState extends State<MapScreen> {
       _headingOverlayPlaced = false;
       _placeHeadingOverlay();
 
-      // 🚀 위치 확보 후 백엔드 API 호출!
+      // 위치 확보 후 백엔드 API 호출!
       await _fetchQuestsFromBackend(lat, lng);
 
       if (panToUser && _mapController != null && _isMapReady) {
@@ -343,8 +339,6 @@ class _MapScreenState extends State<MapScreen> {
     return set.toList();
   }
 
-  /// 아이콘은 에셋을 읽어 base64로 감싸는 비용이 있다. 지도를 움직일 때마다
-  /// 마커를 다시 그리므로 경로별로 한 번만 만들고 재사용한다.
   final Map<String, MarkerIcon> _iconCache = {};
 
   Future<MarkerIcon?> _icon(String assetPath) async {
@@ -355,7 +349,6 @@ class _MapScreenState extends State<MapScreen> {
       _iconCache[assetPath] = icon;
       return icon;
     } catch (e) {
-      // 에셋이 빠졌다고 지도가 통째로 비면 안 된다. 기본 핀으로 떨어진다.
       debugPrint('마커 아이콘 로드 실패($assetPath): $e');
       return null;
     }
@@ -407,12 +400,10 @@ class _MapScreenState extends State<MapScreen> {
           markerId: 'user_my_location_pin',
           latLng: _userLocation!,
           icon: icon,
-          // 현위치는 원이라 중심이 곧 좌표다.
           width: 28,
           height: 28,
           offsetX: 14,
           offsetY: 14,
-          // 퀘스트 핀에 가리지 않게 위로 올린다.
           zIndex: 10,
         ),
       );
@@ -449,6 +440,50 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // 대표 이미지 로딩 & 이미지 없음 처리 헬퍼 위젯
+  // ---------------------------------------------------------------------------
+  Widget _buildQuestImage(String? imageUrl, {double width = 78, double height = 62, double borderRadius = 7}) {
+    final hasImage = imageUrl != null && imageUrl.trim().isNotEmpty;
+
+    return Container(
+      width: width,
+      height: height,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: AppSurface.sunken,
+        borderRadius: BorderRadius.circular(borderRadius),
+      ),
+      child: hasImage
+          ? Image.network(
+              imageUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => _buildNoImagePlaceholder(),
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return const Center(
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.quest500),
+                  ),
+                );
+              },
+            )
+          : _buildNoImagePlaceholder(),
+    );
+  }
+
+  Widget _buildNoImagePlaceholder() {
+    return const Center(
+      child: Text(
+        '대표이미지\n없음',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 10, color: AppColors.textSecondary, height: 1.2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -474,7 +509,6 @@ class _MapScreenState extends State<MapScreen> {
                       markers: const [],
                       onMapCreated: (controller) async {
                         _mapController = controller;
-
                         await Future.delayed(const Duration(milliseconds: 800));
                         if (!mounted) return;
 
@@ -531,8 +565,6 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  /// 디자인 시스템 11: 현위치는 FloatingSurfaceButton(emphasized: false).
-  /// 주 행동이 아니므로 붉은 인장을 쓰지 않는다.
   Widget _buildMyLocationButton() {
     final double bottomPadding = _selectedQuest != null ? 220.0 : AppSpacing.xl;
 
@@ -551,7 +583,6 @@ class _MapScreenState extends State<MapScreen> {
       left: 0,
       right: 0,
       top: 0,
-      // 지도 배경이 복잡해서 납작한 바는 묻힌다. 종이 카드로 띄운다 (11).
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.md,
@@ -652,7 +683,6 @@ class _MapScreenState extends State<MapScreen> {
       right: 0,
       bottom: 0,
       top: isDetail ? 80 : null,
-      // 바텀시트는 e4 — 상단 반경 24 + 위로 던지는 그림자 (디자인 시스템 10).
       child: AppSheetSurface(
         child: isDetail
             ? SingleChildScrollView(child: _buildDetailContent(quest))
@@ -662,8 +692,6 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Widget _acceptButton(QuestModel quest) {
-    // 완료한 퀘스트는 재수락도 재클리어도 안 된다. 서버가 거절하기 전에
-    // 버튼에서 먼저 알려준다 — 눌러보고 스낵바로 거절당하는 것보다 낫다.
     if (widget.completedQuestIds.contains(quest.id)) {
       return const PrimaryButton(label: '완료한 퀘스트', enabled: false);
     }
@@ -683,33 +711,51 @@ class _MapScreenState extends State<MapScreen> {
         Center(child: GrabHandle(onTap: _expandSheet)),
         const SizedBox(height: AppSpacing.sm),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: Text(quest.title, style: AppType.h1)),
-            TierBadge(
-              stars: quest.difficulty.stars,
-              hasHalfStar: quest.hasHalfStar,
+            _buildQuestImage(quest.imageUrl, width: 72, height: 72, borderRadius: 10),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          quest.title,
+                          style: AppType.h1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      TierBadge(
+                        stars: quest.difficulty.stars,
+                        hasHalfStar: quest.hasHalfStar,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Row(
+                    children: [
+                      RewardPill(
+                        exp: quest.displayExp,
+                        multiplierNote: quest.crowdMultiplier != 1.0
+                            ? quest.crowdLabel
+                            : null,
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        QuestRepository.distanceFromUser(quest),
+                        style: AppType.numeric.copyWith(color: AppColors.textTertiary),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
         const SizedBox(height: AppSpacing.md),
-        Row(
-          children: [
-            // 보상은 앰버로 떠오르고(볼록),
-            RewardPill(
-              exp: quest.displayExp,
-              multiplierNote: quest.crowdMultiplier != 1.0
-                  ? quest.crowdLabel
-                  : null,
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Text(
-              QuestRepository.distanceFromUser(quest),
-              style: AppType.numeric.copyWith(color: AppColors.textTertiary),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        // 설명은 종이에 눌러 새긴 면으로 내려간다(오목). 04 표면.
         NoteBox.text(quest.summary),
         const SizedBox(height: AppSpacing.lg),
         _acceptButton(quest),
@@ -767,20 +813,7 @@ class _MapScreenState extends State<MapScreen> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 78,
-              height: 62,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                gradient: AppSurface.sunken,
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: const Text(
-                '사진 1장',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-              ),
-            ),
+            _buildQuestImage(quest.imageUrl, width: 88, height: 68, borderRadius: 8),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
