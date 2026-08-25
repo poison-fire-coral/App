@@ -91,7 +91,8 @@ class _MapScreenState extends State<MapScreen> {
     // 시드 데이터 중심지(수원/서울) 초기 위치 설정
     _initialCenter = QuestRepository.mockUserLatLng;
 
-    // 나침반 스트림 구독
+    // 나침반이 없는 기기·에뮬레이터면 값이 영영 안 온다. 그때는 방향 표시만
+    // 빠지고 현위치 점은 그대로 찍힌다.
     _headingSub = _compass.headingStream.listen(_onHeading);
   }
 
@@ -102,7 +103,8 @@ class _MapScreenState extends State<MapScreen> {
       _applyFocusRequest();
     }
 
-    // 퀘스트를 수락하거나 포기하고 돌아오면 마커의 상태/색상을 갱신한다.
+    // 퀘스트를 수락하거나 포기하고 돌아오면 그 핀의 색이 달라져야 한다.
+    // 마커는 지도(WebView) 쪽 상태라 build()가 다시 돌아도 저절로 갱신되지 않는다.
     if (!setEquals(widget.activeQuestIds, oldWidget.activeQuestIds)) {
       _updateMarkers();
     }
@@ -114,7 +116,7 @@ class _MapScreenState extends State<MapScreen> {
 
     final questList = _quests.where((q) => q.id == id).toList();
     if (questList.isEmpty) return;
-    
+
     final quest = questList.first;
     _selectedQuest = quest;
     _sheetState = _SheetState.preview;
@@ -137,6 +139,8 @@ class _MapScreenState extends State<MapScreen> {
   void _onHeading(double degrees) {
     _heading = degrees;
 
+    // 방위각은 화면 어디에도 글자로 안 나온다. setState를 부르면 지도까지
+    // 초당 열 번씩 다시 빌드된다 — WebView 안에서 CSS만 돌린다.
     if (!_isMapReady || _userLocation == null) return;
 
     if (!_headingOverlayPlaced) {
@@ -146,12 +150,19 @@ class _MapScreenState extends State<MapScreen> {
     _rotateHeadingCone(degrees);
   }
 
+  /// 현위치 점 위에 방향 부채꼴을 얹는다.
+  ///
+  /// 같은 id가 이미 있으면 플러그인의 `addCustomOverlay`가 조용히 무시하고,
+  /// `clearCustomOverlay(ids)`는 **넘긴 id만 남기고 나머지를 지운다**.
+  /// 그래서 갈아 끼우려면 인자 없이 한 번 비우고 다시 올려야 한다.
   void _placeHeadingOverlay() {
     final controller = _mapController;
     final location = _userLocation;
     final heading = _heading;
     if (controller == null || location == null || !_isMapReady) return;
 
+    // 아직 방위각을 못 받았으면(센서 없음·첫 표본 대기) 부채꼴을 올리지 않는다.
+    // 0으로 채우면 북쪽을 보고 있다고 거짓말하게 된다.
     if (heading == null) return;
 
     _headingOverlayPlaced = true;
@@ -161,13 +172,21 @@ class _MapScreenState extends State<MapScreen> {
         customOverlayId: _headingOverlayId,
         latLng: location,
         content: _headingConeHtml(heading),
+        // 부채꼴의 회전 중심이 곧 현위치 좌표다.
         xAnchor: 0.5,
         yAnchor: 0.5,
+        // 현위치 마커(zIndex 10)보다 아래. 부채꼴은 점 바깥쪽에만 그려서
+        // 두 레이어가 겹치지 않는다.
         zIndex: 9,
       ),
     ]);
   }
 
+  /// 64×64 상자 한가운데가 현위치다. 부채꼴은 반지름 14px(현위치 점) 밖에서
+  /// 시작하므로 점을 가리지 않는다. 상자를 통째로 돌려서 방향을 만든다.
+  ///
+  /// 플러그인이 이 문자열을 작은따옴표로 감싼 JS에 그대로 넣는다 —
+  /// 작은따옴표·줄바꿈을 쓰면 안 된다.
   static String _headingConeHtml(double degrees) {
     final deg = degrees.toStringAsFixed(1);
     return '<div id="$_headingConeId" style="width:64px;height:64px;'
@@ -277,10 +296,11 @@ class _MapScreenState extends State<MapScreen> {
       final userLatLng = LatLng(lat, lng);
       _userLocation = userLatLng;
 
-      // 위치 이동 시 나침반 오버레이 재배치
+      // 현위치가 움직였으니 방향 부채꼴도 새 좌표에 다시 올린다.
       _headingOverlayPlaced = false;
       _placeHeadingOverlay();
 
+      // 위치 확보 후 백엔드 API 호출!
       await _fetchQuestsFromBackend(lat, lng);
 
       if (panToUser && _mapController != null && _isMapReady) {
@@ -339,6 +359,8 @@ class _MapScreenState extends State<MapScreen> {
     final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
 
     for (final q in _visibleQuests) {
+      // 진행 중인 퀘스트는 난이도 색 대신 브랜드 강조색으로 통일한다.
+      // 5성 핀도 같은 색이므로, 크기와 zIndex로 한 번 더 갈라 놓는다.
       final isActive = widget.activeQuestIds.contains(q.id);
 
       final icon = await _icon(isActive
@@ -352,6 +374,7 @@ class _MapScreenState extends State<MapScreen> {
               devicePixelRatio: dpr,
             ));
 
+      // 논리 크기 36×46. 끝점(아래 중앙)이 좌표에 꽂히도록 오프셋을 준다.
       final width = isActive ? 43 : 36;
       final height = isActive ? 55 : 46;
 
@@ -363,6 +386,7 @@ class _MapScreenState extends State<MapScreen> {
           width: width,
           height: height,
           offsetX: (width / 2).round(),
+          // 원본 36×46에서 끝점은 y=40 — 높이의 40/46 지점이다.
           offsetY: (height * 40 / 46).round(),
           zIndex: isActive ? 5 : 0,
         ),
