@@ -85,6 +85,16 @@ class _MapScreenState extends State<MapScreen> {
   /// 오버레이를 이미 지도에 올렸는지. 현위치가 바뀌면 다시 올려야 한다.
   bool _headingOverlayPlaced = false;
 
+  /// CSS `rotate()`에 실제로 넣는 각도. 0~360으로 래핑하지 **않고** 누적한다.
+  ///
+  /// 래핑한 방위각을 그대로 넘기면 357° → 3°가 브라우저에는 +6°가 아니라
+  /// -354°로 보이고, `transition`이 그 길을 다 보간한다 — 북쪽을 지날 때마다
+  /// 부채꼴이 한 바퀴 거꾸로 휘도는 이유다. 최단 차이만 더해서 쌓는다.
+  double _coneAngle = 0;
+
+  /// `_coneAngle`을 마지막으로 갱신할 때 쓴 방위각. 다음 차이의 기준이 된다.
+  double? _coneAngleSource;
+
   @override
   void initState() {
     super.initState();
@@ -171,7 +181,9 @@ class _MapScreenState extends State<MapScreen> {
       CustomOverlay(
         customOverlayId: _headingOverlayId,
         latLng: location,
-        content: _headingConeHtml(heading),
+        // 새로 만든 div에는 이전 각도가 없어 보간이 안 일어나지만, 이후
+        // _rotateHeadingCone이 이어 붙일 수 있도록 누적값으로 시작한다.
+        content: _headingConeHtml(_advanceConeAngle(heading)),
         // 부채꼴의 회전 중심이 곧 현위치 좌표다.
         xAnchor: 0.5,
         yAnchor: 0.5,
@@ -187,8 +199,8 @@ class _MapScreenState extends State<MapScreen> {
   ///
   /// 플러그인이 이 문자열을 작은따옴표로 감싼 JS에 그대로 넣는다 —
   /// 작은따옴표·줄바꿈을 쓰면 안 된다.
-  static String _headingConeHtml(double degrees) {
-    final deg = degrees.toStringAsFixed(1);
+  static String _headingConeHtml(double rotation) {
+    final deg = rotation.toStringAsFixed(1);
     return '<div id="$_headingConeId" style="width:64px;height:64px;'
         'position:relative;pointer-events:none;'
         'transform:rotate(${deg}deg);transform-origin:32px 32px;'
@@ -199,11 +211,21 @@ class _MapScreenState extends State<MapScreen> {
         '</div>';
   }
 
+  /// 방위각을 누적 회전각으로 바꾼다. 두 각의 최단 차이(-180~180)만 더하므로
+  /// 359° 다음에 1°가 오면 +2°가 되고, 값은 360을 넘어 계속 자란다.
+  double _advanceConeAngle(double degrees) {
+    final previous = _coneAngleSource;
+    _coneAngle +=
+        previous == null ? degrees : ((degrees - previous + 540) % 360) - 180;
+    _coneAngleSource = degrees;
+    return _coneAngle;
+  }
+
   void _rotateHeadingCone(double degrees) {
     final controller = _mapController;
     if (controller == null) return;
 
-    final deg = degrees.toStringAsFixed(1);
+    final deg = _advanceConeAngle(degrees).toStringAsFixed(1);
     controller.webViewController.runJavaScript(
       'var e=document.getElementById("$_headingConeId");'
       'if(e){e.style.transform="rotate(${deg}deg)";}',
