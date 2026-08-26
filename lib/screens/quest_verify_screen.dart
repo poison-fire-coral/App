@@ -17,10 +17,6 @@ class QuestVerifyResult {
   final bool isPhotoPublic;
 
   /// 업로드가 끝난 사진의 공개 URL.
-  ///
-  /// 지금은 촬영한 사진을 화면에 보여주기만 하고 S3에는 올리지 않는다
-  /// (AWS 자격증명이 검증되지 않았다). 서버 인증에 사진은 필수가 아니라
-  /// null이어도 퀘스트가 완주된다. presign 업로드를 붙이면 여기가 채워진다.
   final String? photoUrl;
 
   /// 방금 찍은 사진의 기기 내 경로. 미리보기에만 쓴다.
@@ -35,11 +31,6 @@ class QuestVerifyResult {
 }
 
 /// 4b · 방문 인증
-///
-/// 촬영·선택은 실제로 동작하고 찍은 사진을 화면에 보여준다. 다만 S3 업로드는
-/// 아직 붙이지 않았다(AWS 자격증명이 검증되지 않음). 서버 인증에 사진은 필수가
-/// 아니므로 `photoUrl: null`로도 퀘스트가 완주된다. presign 업로드를 붙이면
-/// [QuestVerifyResult.photoUrl]만 채우면 된다.
 class QuestVerifyScreen extends StatefulWidget {
   final QuestModel quest;
   final QuestSpot spot;
@@ -61,16 +52,25 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
   XFile? _photo;
   bool _isPicking = false;
 
+  // 💡 ImagePicker 인스턴스를 상태 객체에서 싱글톤처럼 유지하여 메모리 누수 및 크래시 방지
+  final ImagePicker _picker = ImagePicker();
+
   Future<void> _pickPhoto({required bool fromGallery}) async {
     if (_isPicking) return;
     setState(() => _isPicking = true);
+
     try {
-      final picked = await ImagePicker().pickImage(
+      final picked = await _picker.pickImage(
         source: fromGallery ? ImageSource.gallery : ImageSource.camera,
         imageQuality: 80,
         maxWidth: 1600,
       );
-      if (picked != null && mounted) setState(() => _photo = picked);
+
+      if (picked != null && mounted) {
+        setState(() {
+          _photo = picked;
+        });
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -78,7 +78,9 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isPicking = false);
+      if (mounted) {
+        setState(() => _isPicking = false);
+      }
     }
   }
 
@@ -122,19 +124,35 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
       );
     }
 
+    final imageFile = File(photo.path);
+
     return Stack(
       fit: StackFit.expand,
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          child: Image.file(File(photo.path), fit: BoxFit.cover),
+          child: Image.file(
+            imageFile,
+            fit: BoxFit.cover,
+            // 💡 파일 읽기 실패 시 화면이 튕기는 현상 예방
+            errorBuilder: (context, error, stackTrace) {
+              return Container(
+                color: AppColors.surface,
+                alignment: Alignment.center,
+                child: const Text(
+                  '이미지를 불러올 수 없습니다.',
+                  style: TextStyle(color: AppColors.textDisabled),
+                ),
+              );
+            },
+          ),
         ),
         Positioned(
           right: AppSpacing.sm,
           bottom: AppSpacing.sm,
           child: FloatingSurfaceButton(
             icon: Icons.refresh_rounded,
-            onTap: () => _pickPhoto(fromGallery: false),
+            onTap: _isPicking ? null : () => _pickPhoto(fromGallery: false),
           ),
         ),
       ],
@@ -162,7 +180,6 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
                   children: [
                     Row(
                       children: [
-                        // 인증 성공은 jade. 빨강과 충돌하지 않는 성공색이다 (02).
                         const TagChip(
                           label: '✓ 위치 확인됨',
                           isSelected: true,
@@ -218,8 +235,7 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
                     Center(
                       child: GestureDetector(
                         onTap: _completeWithoutPhoto,
-                        child: Text('사진 없이 위치만으로 완료',
-                            style: AppType.caption),
+                        child: Text('사진 없이 위치만으로 완료', style: AppType.caption),
                       ),
                     ),
                   ],
@@ -246,12 +262,14 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
         children: [
           GestureDetector(
             onTap: () => Navigator.of(context).pop(),
-            child: const Text('✕ 닫기', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+            child: const Text('✕ 닫기',
+                style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
           ),
           const Spacer(),
           GestureDetector(
             onTap: _showHelp,
-            child: const Text('도움말', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+            child: const Text('도움말',
+                style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
           ),
         ],
       ),
@@ -270,7 +288,9 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Text('공개 범위', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+              const Text('공개 범위',
+                  style:
+                      TextStyle(fontSize: 12, color: AppColors.textTertiary)),
               const SizedBox(width: 8),
               TagChip(
                 label: '공개',
@@ -305,7 +325,10 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
             children: [
               const Text(
                 '방문 인증 안내',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary),
               ),
               const SizedBox(height: 10),
               Text(
@@ -313,7 +336,10 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
                 '· 달성 기준 : ${widget.quest.completionCriteria}\n'
                 '· GPS 정확도가 ${Geo.maxAccuracyMeters.round()}m를 넘으면 재측정을 요구합니다.\n'
                 '· 이동 속도가 ${Geo.abuseSpeedKmh.round()}km/h를 넘은 구간의 도달은 EXP가 지급되지 않습니다.',
-                style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.6),
+                style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                    height: 1.6),
               ),
             ],
           ),

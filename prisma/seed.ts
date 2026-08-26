@@ -190,7 +190,7 @@ async function main() {
       lat: 37.2882,
       lng: 127.0163,
       congestionScore: 25,
-      photoUrl: "https://example.com/suwon.jpg",
+      imageUrl: "https://example.com/suwon.jpg",
     },
   });
 
@@ -202,7 +202,7 @@ async function main() {
       lat: 37.2845,
       lng: 127.0135,
       congestionScore: 60,
-      photoUrl: "https://example.com/haenggung.jpg",
+      imageUrl: "https://example.com/haenggung.jpg",
     },
   });
 
@@ -214,7 +214,7 @@ async function main() {
       lat: 37.5512,
       lng: 126.9882,
       congestionScore: 80,
-      photoUrl: "https://example.com/seoultower.jpg",
+      imageUrl: "https://example.com/seoultower.jpg",
     },
   });
 
