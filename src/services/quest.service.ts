@@ -1,4 +1,5 @@
 import axios from "axios";
+import { QuestType } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 import { CustomError } from "../utils/CustomError";
 import { calculateHaversineDistance, checkSpeedAbuse } from "../utils/geo.util";
@@ -81,13 +82,11 @@ export class QuestService {
 
     try {
       const encodedKey = serviceKey.includes("%") ? serviceKey : encodeURIComponent(serviceKey);
-      
-      // 💡 승인받은 상세기능에 맞추어 KorService2 / locationBasedList2 엔드포인트 적용
       const baseUrl = "https://apis.data.go.kr/B551011/KorService2/locationBasedList2";
 
       const response = await axios.get(`${baseUrl}?serviceKey=${encodedKey}`, {
         params: {
-          numOfRows: 30,
+          numOfRows: 50, // 💡 기존 30개에서 50개로 상향 (더 많은 장소 수집)
           pageNo: 1,
           MobileOS: "ETC",
           MobileApp: "LocalQuest",
@@ -111,80 +110,95 @@ export class QuestService {
     }
   }
 
-  /** TourAPI 관광지 카테고리(contentTypeId) 기반 퀘스트 메타데이터 자동 생성 규칙 */
+  /** TourAPI 관광지 카테고리(contentTypeId) 기반 다양한 퀘스트 메타데이터 자동 생성 규칙 */
   private static generateQuestMetadata(place: TourApiPlace) {
     const typeId = place.contenttypeid;
     const name = place.title;
 
     switch (typeId) {
-      case "12": // 관광지
+      case "12": // 관광지 -> 퀴즈형
         return {
           title: `${name} 역사·문화 탐방`,
           story: `${name}에 도달하여 지역 고유의 특별한 매력을 발견해보세요!`,
           difficulty: 3,
           baseExp: 220,
           keywords: ["명소", "탐험", "관광"],
+          questType: "QUIZ" as QuestType,
+          quizQuestion: `${name} 방문 인증: 이곳은 어떤 유형의 명소일까요?`,
+          quizOptions: ["역사/문화 관광지", "대형 백화점", "첨단 연구소"],
+          quizAnswer: "역사/문화 관광지",
+          quizExplanation: "이곳은 주요 역사 및 문화 관광지입니다.",
         };
-      case "14": // 문화시설
+      case "14": // 문화시설 -> 피사체 지정 사진형
         return {
-          title: `${name} 로컬 전시 체험`,
+          title: `${name} 로컬 전시 인증`,
           story: `${name}에서 펼쳐지는 문화와 예술 공간을 조용히 관람해보세요.`,
           difficulty: 2,
           baseExp: 150,
           keywords: ["문화", "전시", "힐링"],
+          questType: "PHOTO_SINGLE" as QuestType,
+          photoPrompt: `${name}의 건물 입구 또는 대표 안내판을 촬영하세요.`,
         };
-      case "15": // 축제/공연/행사
+      case "15": // 축제/공연/행사 -> 수집 사진형
         return {
-          title: `${name} 돌발 필드 퀘스트`,
-          story: `${name} 축제 현장을 방문하여 활기찬 분위기를 만끽해보세요!`,
+          title: `${name} 현장 스냅 사진`,
+          story: `${name} 축제 현장의 생생한 분위기를 담아보세요!`,
           difficulty: 2,
           baseExp: 180,
           keywords: ["축제", "이벤트", "체험"],
+          questType: "PHOTO_COLLECT" as QuestType,
+          requiredCount: 2,
         };
-      case "28": // 레포츠
+      case "28": // 레포츠 -> 탐색형
         return {
           title: `${name} 액티비티 도전`,
-          story: `${name}에서 제공하는 짜릿한 활동으로 에너지를 충전해보세요.`,
+          story: `${name} 주변을 둘러보며 숨겨진 활동 장소를 탐색해 보세요.`,
           difficulty: 3,
           baseExp: 200,
           keywords: ["액티비티", "모험", "스포츠"],
+          questType: "EXPLORATION" as QuestType,
         };
-      case "32": // 숙박
+      case "32": // 숙박 -> 기록형
         return {
-          title: `${name} 로컬 쉼터 방문`,
-          story: `${name} 주변 공간을 거닐며 정겨운 소도시의 휴식을 느껴보세요.`,
+          title: `${name} 로컬 쉼터 한줄평`,
+          story: `${name} 주변 공간을 거닐며 정겨운 소도시 휴식의 소감을 기록해보세요.`,
           difficulty: 1,
           baseExp: 50,
           keywords: ["휴식", "숙소", "힐링"],
+          questType: "RECORD" as QuestType,
         };
-      case "38": // 쇼핑/전통시장
+      case "38": // 쇼핑/전통시장 -> 피사체 지정 사진형
         return {
-          title: `${name} 전통시장·상점 탐방`,
-          story: `${name}의 풍성한 로컬 먹거리와 활기찬 정취를 느껴보세요.`,
+          title: `${name} 전통시장 간판 찾기`,
+          story: `${name}의 풍성한 로컬 정취와 가게 간판을 담아보세요.`,
           difficulty: 2,
           baseExp: 110,
           keywords: ["시장", "탐방", "쇼핑"],
+          questType: "PHOTO_SINGLE" as QuestType,
+          photoPrompt: `${name}의 정겨운 가게 간판 사진`,
         };
-      case "39": // 음식점
+      case "39": // 음식점 -> 기록형
         return {
-          title: `${name} NPC 맛집 탐방`,
-          story: `${name}에서 현지 주민(NPC)이 추천하는 로컬 맛을 즐겨보세요.`,
+          title: `${name} NPC 맛집 방명록`,
+          story: `${name}에서 느낀 분위기와 맛에 대한 생각을 한 줄로 남겨보세요.`,
           difficulty: 1,
           baseExp: 60,
           keywords: ["맛집", "음식", "로컬"],
+          questType: "RECORD" as QuestType,
         };
-      default:
+      default: // 기본 -> 방문형
         return {
           title: `${name} 스팟 도달`,
           story: `${name} 목표 지점에 도달하여 로컬 인증을 완료해보세요.`,
           difficulty: 1,
           baseExp: 50,
           keywords: ["방문", "탐험"],
+          questType: "VISIT" as QuestType,
         };
     }
   }
 
-  /** 주변 TourAPI 장소를 실시간 수집 및 DB 동기화 (대표 이미지 포함) */
+  /** 주변 TourAPI 장소를 실시간 수집 및 DB 동기화 */
   private static async syncNearbyTourQuests(lat: number, lng: number, radiusM: number) {
     const tourPlaces = await this.searchTourApiPlaces(lat, lng, radiusM);
 
@@ -196,7 +210,6 @@ export class QuestService {
 
       const meta = this.generateQuestMetadata(tPlace);
       const regionCode = tPlace.areacode ? String(tPlace.areacode) : "전국";
-      // TourAPI 대표 이미지 extraction (firstimage -> firstimage2 순서)
       const imageUrl = tPlace.firstimage || tPlace.firstimage2 || null;
 
       try {
@@ -215,13 +228,12 @@ export class QuestService {
               lat: placeLat,
               lng: placeLng,
               address: tPlace.addr1 || "",
-              imageUrl: imageUrl, // 💡 TourAPI 대표 이미지 URL 저장
+              imageUrl: imageUrl,
               regionCode: regionCode,
-              congestionScore: 50,
+              congestionScore: 1,
             },
           });
         } else if (!place.imageUrl && imageUrl) {
-          // 이미지가 기존에 없었으면 업데이트
           place = await prisma.place.update({
             where: { id: place.id },
             data: { imageUrl: imageUrl },
@@ -240,10 +252,23 @@ export class QuestService {
               difficulty: meta.difficulty,
               baseExp: meta.baseExp,
               keywords: meta.keywords,
-              placeId: place.id,
+              place: {
+                connect: { id: place.id },
+              },
               active: true,
               radiusM: 50,
               halfStep: false,
+              questType: meta.questType,
+              photoPrompt: (meta as any).photoPrompt || null,
+              
+              // ⭕ [해결 핵심] requiredCount가 Int(non-null)이므로 null을 주면 Prisma 에러 발생!
+              // ?? 1 을 사용하여 null/undefined 시 기본값 1이 들어가게 함.
+              requiredCount: (meta as any).requiredCount ?? 1,
+
+              quizQuestion: (meta as any).quizQuestion || null,
+              quizOptions: (meta as any).quizOptions || undefined,
+              quizAnswer: (meta as any).quizAnswer || null,
+              quizExplanation: (meta as any).quizExplanation || null,
             },
           });
         }
@@ -320,7 +345,6 @@ export class QuestService {
   static async getNearbyQuests(dto: NearbyQueryDto) {
     const { lat, lng, radiusM = 3000, keywords } = dto;
 
-    // 💡 TourAPI를 호출하여 내 위치 주변 관광 스팟을 퀘스트화 DB 등록
     await this.syncNearbyTourQuests(lat, lng, radiusM);
 
     const quests = await prisma.quest.findMany({
