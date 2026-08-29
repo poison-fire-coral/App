@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:local_quest/data/auth_repository.dart';
+import 'package:local_quest/data/terms.dart';
 import 'package:local_quest/data/badge_api.dart';
 import 'package:local_quest/data/quest_repository.dart';
 import 'package:local_quest/models/api_exception.dart';
@@ -87,7 +88,7 @@ void main() {
       pending: PendingSignup(provider: 'GUEST', providerUid: '${tag}_$stamp'),
       nickname: '$tag$stamp'.substring(0, 10),
       keywords: const ['골목산책', '전통시장', '사진스팟'],
-      termsVersion: AuthRepository.termsVersion,
+      termsVersion: kTermsVersion,
     ));
   }
 

@@ -1,9 +1,12 @@
-import '../models/api_exception.dart';
-import '../services/api_client.dart';
-import 'package:kakao_map_plugin/kakao_map_plugin.dart';
-import '../models/quest_model.dart';
-import '../services/geo.dart';
 import 'package:flutter/foundation.dart';
+import 'package:kakao_map_plugin/kakao_map_plugin.dart';
+
+import '../models/api_exception.dart';
+import '../models/quest_model.dart';
+import '../models/viewport_quests.dart';
+import '../services/api_client.dart';
+import '../services/geo.dart';
+import '../services/photo_uploader.dart';
 
 class QuestRepository {
   /// 가상 내 위치 (수원화성/행궁동 시드 데이터 위치)
@@ -181,11 +184,84 @@ class QuestRepository {
   // 실패는 예외로 던진다. 조용히 목업으로 갈아치우면 "왜 다른 데이터가 뜨지"를 못 찾는다.
   // ---------------------------------------------------------------------------
 
+  /// 지도에 보이는 사각형 안의 퀘스트.
+  ///
+  /// **`/quests/nearby`와 무엇이 다른가**
+  /// `nearby`는 내 위치 반경으로 찾고 매 호출마다 TourAPI를 때려 새 퀘스트를
+  /// 만들어 넣는다(`quest.service.ts:348`). 지도를 옮길 때마다 부르기엔 너무
+  /// 무겁다. 이쪽은 순수 조회라 가볍고, 지도가 보고 있는 범위와 정확히 맞는다.
+  ///
+  /// [zoom]은 **웹 지도 기준**(클수록 확대)이다. 카카오 레벨과 반대이므로
+  /// 화면 쪽에서 `MapZoom.fromKakaoLevel`로 바꿔서 넘긴다. 서버는 이 값이
+  /// 14 미만이면 격자로 묶은 클러스터를 돌려준다.
+  ///
+  /// [search]와 [keywords]는 서버가 이미 받는 파라미터다
+  /// (`quest.service.ts:296`, `:305`). 앱에서 목록을 걸러 내면 **화면 밖에
+  /// 있는 퀘스트는 영영 찾을 수 없다** — 그래서 둘 다 서버로 넘긴다.
+  static Future<ViewportQuests> fetchQuestsInBounds({
+    required double swLat,
+    required double swLng,
+    required double neLat,
+    required double neLng,
+    required int zoom,
+    List<String>? keywords,
+    String? search,
+  }) async {
+    final trimmed = search?.trim();
+
+    final data = await ApiClient.get(
+      '/quests',
+      query: {
+        'swLat': swLat,
+        'swLng': swLng,
+        'neLat': neLat,
+        'neLng': neLng,
+        'zoom': zoom,
+        if (keywords != null && keywords.isNotEmpty) 'keywords': keywords,
+        if (trimmed != null && trimmed.isNotEmpty) 'search': trimmed,
+      },
+      auth: false,
+    );
+
+    if (data is! Map) return const ViewportQuests.empty();
+    return ViewportQuests.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  /// 범위를 가리지 않는 전국 검색.
+  ///
+  /// 검색은 지도 밖도 찾아야 의미가 있다. 좌표 없이 `search`만 보내면
+  /// 서버가 `where`에서 place 범위 조건을 빼고 전체에서 찾는다.
+  ///
+  /// **서버에 결과 상한이 없다**(체크리스트 08·12번 BE 몫). 한 글자만 넣어도
+  /// 전국이 통째로 올 수 있어서, 받은 뒤 내 위치에서 가까운 순으로 잘라 쓴다.
+  static Future<List<QuestModel>> searchQuests(
+    String query, {
+    int limit = 30,
+  }) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return const [];
+
+    final data = await ApiClient.get(
+      '/quests',
+      query: {'search': trimmed, 'zoom': 15},
+      auth: false,
+    );
+
+    if (data is! Map) return const [];
+    final result = ViewportQuests.fromJson(Map<String, dynamic>.from(data));
+
+    final sorted = [...result.quests]..sort((a, b) =>
+        distanceFromUserMeters(a).compareTo(distanceFromUserMeters(b)));
+    return sorted.length > limit ? sorted.sublist(0, limit) : sorted;
+  }
+
   /// 내 위치 기준 근처 퀘스트.
   ///
-  /// 온보딩 키워드(`#골목산책` …)와 서버 퀘스트 키워드(`산책`, `공원` …)는 어휘가
-  /// 완전히 달라서, 온보딩 값을 그대로 넘기면 결과가 항상 0건이다.
-  /// 매핑 테이블이 생기기 전까지 [keywords]는 지도 필터에서만 쓴다.
+  /// TourAPI 동기화를 겸하므로 **첫 진입과 "내 위치" 버튼에서만** 부른다.
+  /// 지도를 옮길 때는 [fetchQuestsInBounds]를 쓴다.
+  ///
+  /// [keywords]에는 서버 어휘(`골목`·`맛집` …)를 넘겨야 한다. 온보딩 값
+  /// (`골목산책` …)은 [KeywordTaxonomy]로 옮긴 뒤에 넘긴다.
   static Future<List<QuestModel>> fetchNearbyQuests({
     required double lat,
     required double lng,
@@ -252,6 +328,37 @@ class QuestRepository {
     }
   }
 
+  /// 퀘스트 하나를 id로 가져온다.
+  ///
+  /// 홈에서 고른 퀘스트가 지도의 현재 범위 밖일 수 있다. 그때 이걸로 좌표를
+  /// 알아내 지도를 옮긴다. 못 찾으면 null — 부르는 쪽이 조용히 넘어간다.
+  static Future<QuestModel?> fetchQuestById(String questId) async {
+    try {
+      final data = await ApiClient.get('/quests/$questId', auth: false);
+      if (data is! Map) return null;
+      return QuestModel.fromJson(Map<String, dynamic>.from(data));
+    } on ApiException catch (e) {
+      debugPrint('퀘스트 단건 조회 실패($questId): ${e.code}');
+      return null;
+    }
+  }
+
+  /// 사진 업로드용 presigned URL을 받아 온다.
+  ///
+  /// 서버가 S3에 직접 PUT할 수 있는 5분짜리 URL과, 업로드가 끝난 뒤
+  /// `verify`에 실어 보낼 공개 주소를 함께 준다(`upload.service.ts:9`).
+  /// 사진 바이트가 우리 서버를 거치지 않으므로 서버 대역폭을 쓰지 않는다.
+  static Future<PresignedUpload> requestUploadUrl({
+    required String questId,
+    required String extension,
+  }) async {
+    final data = await ApiClient.post(
+      '/quests/$questId/upload-url',
+      body: {'ext': extension},
+    );
+    return PresignedUpload.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
   /// 도달 인증. 서버가 거리·정확도·어뷰징을 재검증하고 EXP까지 확정해 돌려준다.
   ///
   /// [requestId]는 재시도할 때 **같은 값**을 보내야 한다. 그래야 서버가
@@ -262,6 +369,7 @@ class QuestRepository {
     required double lat,
     required double lng,
     required double accuracyM,
+    bool isMocked = false,
     String? photoUrl,
     String? photoVisibility,
     String? userText,
@@ -272,6 +380,13 @@ class QuestRepository {
       'lat': lat,
       'lng': lng,
       'accuracyM': accuracyM,
+      // 체크리스트 18번 — 운영체제가 모의 위치라고 표시한 표본인지.
+      //
+      // **서버는 아직 이 값을 읽지 않는다.** `VerifyQuestDto`에 자리가 없고
+      // `quest_completions`에도 컬럼이 없어서 지금은 버려진다. BE가 필드와
+      // 컬럼을 만들면(EXP 0 처리 + `is_abused` 기록) 앱 배포 없이 곧바로
+      // 값이 흘러 들어간다.
+      'isMocked': isMocked,
       'photoUrl': ?photoUrl,
       'photoVisibility': ?photoVisibility,
       'userText': ?userText,

@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../data/auth_repository.dart';
 import '../data/region_options.dart';
+import '../data/terms.dart';
 import '../models/api_exception.dart';
 import '../models/auth_models.dart';
 import '../models/user_model.dart';
@@ -13,6 +14,7 @@ import '../theme/design_tokens.dart';
 import '../utils/nickname_validator.dart';
 import '../widgets/app_widgets.dart';
 import '../widgets/avatar_widgets.dart';
+import '../widgets/terms_widgets.dart';
 
 /// 온보딩이 어떤 목적으로 열렸는지.
 enum OnboardingMode {
@@ -56,11 +58,28 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  static const int _stepCount = 3;
   static const int _minKeywords = 3;
 
   final PageController _pageController = PageController();
   int _currentStep = 0;
+
+  // --- 1c 약관 동의 -------------------------------------------------------------
+  /// 가입 경로에서만 받는다. 취향 재설정은 이미 동의한 사람이라 이 단계를 건너뛴다.
+  bool get _needsConsent => widget.mode == OnboardingMode.signup;
+
+  int get _stepCount => _needsConsent ? 4 : 3;
+
+  /// `TermsDocument.key` → 동의 여부.
+  final Map<String, bool> _consent = {
+    for (final doc in kConsentDocuments) doc.key: false,
+  };
+
+  bool get _hasAllRequiredConsent => kConsentDocuments
+      .where((doc) => doc.isRequired)
+      .every((doc) => _consent[doc.key] == true);
+
+  bool get _hasEveryConsent =>
+      kConsentDocuments.every((doc) => _consent[doc.key] == true);
 
   // --- 1d 프로필 ---------------------------------------------------------------
   late final TextEditingController _nicknameController;
@@ -253,6 +272,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           widget.onBack?.call();
           return;
         }
+        // 1c에서 실제로 받은 동의를 그대로 싣는다.
+        // 필수 항목이 하나라도 빠져 있으면 여기까지 올 수 없다(버튼이 잠긴다).
         final session = await AuthRepository.signup(SignupRequest(
           pending: pending,
           nickname: nickname,
@@ -260,7 +281,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           homeRegion: _selectedRegion?.code,
           activityLevel: _selectedIntensity,
           keywords: keywords,
-          termsVersion: AuthRepository.termsVersion,
+          termsAgreed: _hasAllRequiredConsent,
+          termsVersion: kTermsVersion,
+          marketingAgreed: _consent['marketing'] == true,
         ));
         user = session.user;
       } else {
@@ -353,6 +376,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 physics: const NeverScrollableScrollPhysics(),
                 onPageChanged: (index) => setState(() => _currentStep = index),
                 children: [
+                  if (_needsConsent) _buildConsentStep(),
                   _buildProfileStep(),
                   _buildKeywordStep(),
                   _buildPermissionStep(),
@@ -393,6 +417,50 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // ---- 1c 약관 동의 -------------------------------------------------------------
+  //
+  // 이 단계가 생기기 전까지는 화면 없이 `2026-08-implicit-v1`을 보내고 있었다.
+  // 위치정보를 수집하는 서비스라 명시적 동의는 선택지가 아니다.
+  Widget _buildConsentStep() {
+    return _StepScaffold(
+      title: '시작하기 전에',
+      subtitle: '필수 항목에 동의해야 계정을 만들 수 있어요.',
+      footer: PrimaryButton(
+        label: '동의하고 계속하기',
+        enabled: _hasAllRequiredConsent,
+        onTap: _goNext,
+      ),
+      children: [
+        AppCard(
+          padding: EdgeInsets.zero,
+          child: TermsAgreeAllRow(
+            value: _hasEveryConsent,
+            onChanged: (v) => setState(() {
+              for (final doc in kConsentDocuments) {
+                _consent[doc.key] = v;
+              }
+            }),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        for (final doc in kConsentDocuments)
+          TermsConsentRow(
+            doc: doc,
+            value: _consent[doc.key] ?? false,
+            onChanged: (v) => setState(() => _consent[doc.key] = v),
+          ),
+        const SizedBox(height: AppSpacing.lg),
+        NoteBox(
+          child: Text(
+            '내 위치는 퀘스트를 찾고 도착을 확인하는 데에만 씁니다.\n'
+            '이동 경로를 따로 저장하거나 공유하지 않아요.',
+            style: AppType.bodyMuted,
+          ),
+        ),
+      ],
     );
   }
 

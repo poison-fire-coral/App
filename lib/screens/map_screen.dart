@@ -5,11 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 
+import '../data/keyword_taxonomy.dart';
 import '../data/quest_repository.dart';
+import '../models/api_exception.dart';
 import '../models/quest_model.dart';
 import '../models/user_model.dart';
+import '../models/viewport_quests.dart';
 import '../services/compass_service.dart';
 import '../services/geo.dart';
+import '../services/map_zoom.dart';
 import '../theme/app_assets.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
@@ -52,14 +56,19 @@ class MapScreen extends StatefulWidget {
 enum _SheetState { closed, preview, detail }
 
 class _MapScreenState extends State<MapScreen> {
-  // 백엔드에서 받아올 동적 퀘스트 목록
+  /// 지금 보이는 범위에서 서버가 준 퀘스트. 확대 상태에서만 채워진다.
   List<QuestModel> _quests = [];
+
+  /// 축소 상태에서 서버가 격자로 묶어 준 덩어리들.
+  List<QuestCluster> _clusters = [];
+
+  /// 서버가 이 범위에서 찾은 전체 개수. 잘렸는지 알려줄 때 쓴다.
+  int _totalInViewport = 0;
+  bool _isTruncated = false;
+
   bool _isLoadingQuests = false;
 
   KakaoMapController? _mapController;
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
-  String _selectedKeywordFilter = '전체';
   QuestModel? _selectedQuest;
   _SheetState _sheetState = _SheetState.closed;
 
@@ -68,6 +77,48 @@ class _MapScreenState extends State<MapScreen> {
   bool _isMapReady = false;
 
   late final LatLng _initialCenter;
+
+  // ---------------------------------------------------------------------------
+  // 뷰포트 조회 (3b) — 체크리스트 08 · 09
+  // ---------------------------------------------------------------------------
+
+  /// 마지막으로 카카오가 알려준 지도 레벨. 1이 최대 확대다.
+  int _kakaoLevel = 3;
+
+  /// 카메라가 멈춘 뒤 이만큼 기다렸다 조회한다.
+  ///
+  /// 카카오는 드래그하는 내내 `idle`을 여러 번 던진다. 그대로 조회하면
+  /// 한 번 훑는 동안 요청이 수십 개 나가고, 그게 서버 최다 호출 경로가 된다.
+  static const Duration _cameraIdleDebounce = Duration(milliseconds: 300);
+  Timer? _cameraIdleTimer;
+
+  /// 조회 순번. 응답이 순서를 바꿔 도착해도 **더 오래된 것이 새 것을 덮지
+  /// 않게** 한다. 빠르게 두 번 움직이면 첫 요청이 나중에 올 수 있다.
+  int _viewportRequest = 0;
+
+  // ---------------------------------------------------------------------------
+  // 검색 · 필터 (3a) — 체크리스트 11 · 12
+  // ---------------------------------------------------------------------------
+
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  Timer? _searchDebounce;
+  static const Duration _searchDebounceDelay = Duration(milliseconds: 350);
+
+  /// 전국 검색 결과. 비어 있지 않으면 지도 위에 목록으로 펼친다.
+  List<QuestModel> _searchResults = [];
+  bool _isSearching = false;
+  int _searchRequest = 0;
+
+  /// null이면 '전체'. 값이 있으면 **서버 어휘**의 키워드 하나다.
+  String? _selectedKeyword;
+
+  /// 필터 칩 순서 — 내가 온보딩에서 고른 취향이 앞으로 온다.
+  ///
+  /// 결과에서 뽑지 않는다. 서버 필터를 걸면 결과가 줄어드는데 그걸로 칩을
+  /// 만들면 방금 누른 칩만 남고 되돌릴 수가 없다.
+  late final List<String> _keywordChips =
+      KeywordTaxonomy.filterChipOrder(widget.user.travelStyles);
 
   // ---------------------------------------------------------------------------
   // 현위치 방향 (나침반)
@@ -120,22 +171,44 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _applyFocusRequest() {
+  /// 홈에서 고른 퀘스트(2a → 3b)의 시트를 펼친다.
+  ///
+  /// 지도가 뷰포트 조회로 바뀌면서 **그 퀘스트가 현재 범위 밖일 수 있다.**
+  /// 목록에 없으면 서버에 단건으로 물어 좌표를 알아내고 그리로 옮긴다.
+  /// 그러지 않으면 홈에서 눌러도 아무 일도 일어나지 않는다.
+  Future<void> _applyFocusRequest() async {
     final id = widget.focusQuestId;
     if (id == null) return;
+    if (_selectedQuest?.id == id) return; // 이미 펼쳐 놨다
 
-    final questList = _quests.where((q) => q.id == id).toList();
-    if (questList.isEmpty) return;
+    QuestModel? quest;
+    for (final q in _quests) {
+      if (q.id == id) {
+        quest = q;
+        break;
+      }
+    }
 
-    final quest = questList.first;
-    _selectedQuest = quest;
-    _sheetState = _SheetState.preview;
+    // 목업 퀘스트(id가 정수가 아님)는 서버에 없으므로 로컬에서 찾는다.
+    quest ??= int.tryParse(id) == null
+        ? QuestRepository.findById(id)
+        : await QuestRepository.fetchQuestById(id);
+
+    if (quest == null || !mounted) return;
+
+    setState(() {
+      _selectedQuest = quest;
+      _sheetState = _SheetState.preview;
+    });
 
     _mapController?.setCenter(LatLng(quest.latitude, quest.longitude));
   }
 
   @override
   void dispose() {
+    // 살아 있는 타이머가 화면이 사라진 뒤 setState를 부르면 예외가 난다.
+    _cameraIdleTimer?.cancel();
+    _searchDebounce?.cancel();
     _searchController.dispose();
     _headingSub?.cancel();
     _compass.dispose();
@@ -161,37 +234,116 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   /// 현위치 점 위에 방향 부채꼴을 얹는다.
-  ///
-  /// 같은 id가 이미 있으면 플러그인의 `addCustomOverlay`가 조용히 무시하고,
-  /// `clearCustomOverlay(ids)`는 **넘긴 id만 남기고 나머지를 지운다**.
-  /// 그래서 갈아 끼우려면 인자 없이 한 번 비우고 다시 올려야 한다.
   void _placeHeadingOverlay() {
-    final controller = _mapController;
-    final location = _userLocation;
     final heading = _heading;
-    if (controller == null || location == null || !_isMapReady) return;
-
-    // 아직 방위각을 못 받았으면(센서 없음·첫 표본 대기) 부채꼴을 올리지 않는다.
-    // 0으로 채우면 북쪽을 보고 있다고 거짓말하게 된다.
-    if (heading == null) return;
+    if (_userLocation == null || heading == null || !_isMapReady) return;
 
     _headingOverlayPlaced = true;
-    controller.clearCustomOverlay();
-    controller.addCustomOverlay(customOverlays: [
-      CustomOverlay(
+    // 부채꼴이 새 좌표로 옮겨 가야 하므로 기존 것을 확실히 지우고 다시 그린다.
+    _syncCustomOverlays(rebuildCone: true);
+  }
+
+  /// 커스텀 오버레이(방향 부채꼴 + 클러스터 원)를 **한 번에** 올린다.
+  ///
+  /// **왜 따로 못 올리는가**
+  /// 플러그인의 `addCustomOverlay`는 넘긴 목록으로 먼저
+  /// `clearCustomOverlay(그 id들)`을 부르는데, 그 함수는 **목록에 없는 것을
+  /// 전부 지운다**. 부채꼴만 올리면 클러스터가 사라지고, 클러스터만 올리면
+  /// 부채꼴이 사라진다. 그래서 항상 전부를 함께 넘긴다.
+  ///
+  /// 같은 id가 이미 있으면 조용히 무시되므로, 부채꼴은 자연히 살아남고
+  /// (그래서 `_rotateHeadingCone`의 CSS 회전이 계속 먹는다)
+  /// 클러스터는 좌표·개수가 섞인 id 덕분에 값이 바뀌면 새로 그려진다.
+  Future<void> _syncCustomOverlays({bool rebuildCone = false}) async {
+    final controller = _mapController;
+    if (controller == null || !_isMapReady) return;
+
+    final overlays = <CustomOverlay>[];
+
+    final location = _userLocation;
+    final heading = _heading;
+    if (location != null && heading != null && _headingOverlayPlaced) {
+      overlays.add(CustomOverlay(
         customOverlayId: _headingOverlayId,
         latLng: location,
         // 새로 만든 div에는 이전 각도가 없어 보간이 안 일어나지만, 이후
         // _rotateHeadingCone이 이어 붙일 수 있도록 누적값으로 시작한다.
-        content: _headingConeHtml(_advanceConeAngle(heading)),
+        content: _headingConeHtml(
+          rebuildCone ? _advanceConeAngle(heading) : _coneAngle,
+        ),
         // 부채꼴의 회전 중심이 곧 현위치 좌표다.
         xAnchor: 0.5,
         yAnchor: 0.5,
         // 현위치 마커(zIndex 10)보다 아래. 부채꼴은 점 바깥쪽에만 그려서
         // 두 레이어가 겹치지 않는다.
         zIndex: 9,
-      ),
-    ]);
+      ));
+    }
+
+    for (final cluster in _clusters) {
+      overlays.add(CustomOverlay(
+        customOverlayId: cluster.overlayId,
+        latLng: LatLng(cluster.latitude, cluster.longitude),
+        content: _clusterHtml(cluster.count),
+        xAnchor: 0.5,
+        yAnchor: 0.5,
+        zIndex: 8,
+      ));
+    }
+
+    try {
+      if (rebuildCone) {
+        // 부채꼴을 옮길 때는 id가 그대로라 "이미 있음"으로 무시된다.
+        // 좌표를 바꾸려면 통째로 한 번 비우는 수밖에 없다.
+        controller.clearCustomOverlay();
+      }
+      if (overlays.isEmpty) {
+        controller.clearCustomOverlay();
+        return;
+      }
+      await controller.addCustomOverlay(customOverlays: overlays);
+    } catch (e) {
+      debugPrint('오버레이 갱신 실패: $e');
+    }
+  }
+
+  /// 클러스터 원 하나의 HTML.
+  ///
+  /// `MarkerCluster`(app_widgets.dart)와 **같은 모양**을 CSS로 옮긴 것이다.
+  /// 플러터 위젯을 지도 위에 그대로 얹을 수 없어서 — 지도는 WebView고
+  /// 마커는 PNG만 받는다 — 커스텀 오버레이의 HTML로 만든다.
+  ///
+  /// 플러그인이 이 문자열을 작은따옴표로 감싼 JS에 그대로 끼워 넣는다.
+  /// **작은따옴표와 줄바꿈을 쓰면 안 된다.**
+  static String _clusterHtml(int count) {
+    // MarkerCluster의 `34 + min(count,40) * 0.45`를 그대로 옮겼다.
+    final diameter = (34.0 + (count > 40 ? 40 : count) * 0.45).toStringAsFixed(0);
+    final label = count > 999 ? '999+' : '$count';
+
+    return '<div style="width:${diameter}px;height:${diameter}px;'
+        'display:flex;align-items:center;justify-content:center;'
+        'border-radius:50%;box-sizing:border-box;'
+        'background:linear-gradient(160deg,#B8402F,#8A2318);'
+        'border:2px solid rgba(255,255,255,0.65);'
+        'box-shadow:0 3px 10px rgba(74,58,42,0.35);'
+        'color:#FFF6F3;font-size:13px;font-weight:600;'
+        'font-family:-apple-system,Roboto,sans-serif;'
+        'cursor:pointer;">$label</div>';
+  }
+
+  /// 클러스터를 눌렀다 — 그 자리로 두 단계 확대한다.
+  ///
+  /// 한 단계만 당기면 여전히 클러스터라 두 번 눌러야 뭔가 보인다.
+  /// 확대가 끝나면 `onCameraIdle`이 알아서 다시 조회한다.
+  void _onCustomOverlayTap(String overlayId, LatLng latLng) {
+    if (overlayId == _headingOverlayId) return;
+
+    final next = (_kakaoLevel - 2).clamp(
+      MapZoom.minKakaoLevel,
+      MapZoom.maxKakaoLevel,
+    );
+    _mapController?.setCenter(latLng);
+    _mapController?.setLevel(next);
   }
 
   /// 64×64 상자 한가운데가 현위치다. 부채꼴은 반지름 14px(현위치 점) 밖에서
@@ -239,28 +391,94 @@ class _MapScreenState extends State<MapScreen> {
   // ---------------------------------------------------------------------------
   // 백엔드 통신 및 데이터 로드
   // ---------------------------------------------------------------------------
-  Future<void> _fetchQuestsFromBackend(double lat, double lng) async {
-    if (_isLoadingQuests) return;
+
+  /// 첫 진입과 "내 위치" 버튼에서만 부르는 무거운 조회.
+  ///
+  /// `/quests/nearby`는 매번 TourAPI를 때려 새 퀘스트를 만들어 넣는다
+  /// (`quest.service.ts:348`). 그 동기화가 있어야 처음 가는 동네에 퀘스트가
+  /// 생기므로 버리지 않고, 대신 **지도를 옮길 때는 부르지 않는다.**
+  Future<void> _syncNearbyQuests(double lat, double lng) async {
+    if (!mounted) return;
     setState(() => _isLoadingQuests = true);
 
     try {
-      final fetchedQuests = await QuestRepository.fetchNearbyQuests(
+      await QuestRepository.fetchNearbyQuests(
         lat: lat,
         lng: lng,
         radiusM: 5000,
       );
-
-      if (mounted) {
-        setState(() {
-          _quests = fetchedQuests;
-        });
-        await _updateMarkers();
-        _applyFocusRequest();
-      }
+    } on ApiException catch (e) {
+      debugPrint('주변 퀘스트 동기화 실패: ${e.code}');
     } catch (e) {
-      debugPrint('퀘스트 데이터를 불러오는 중 오류 발생: $e');
+      debugPrint('주변 퀘스트 동기화 실패: $e');
     } finally {
-      if (mounted) {
+      if (mounted) setState(() => _isLoadingQuests = false);
+    }
+
+    // 동기화로 새로 생긴 퀘스트까지 포함해 화면 범위를 다시 그린다.
+    await _refreshViewport();
+  }
+
+  /// 카메라가 멈췄다. 디바운스를 걸고 [_refreshViewport]로 넘긴다.
+  void _onCameraIdle(LatLng center, int zoomLevel) {
+    _kakaoLevel = zoomLevel;
+    _cameraIdleTimer?.cancel();
+    _cameraIdleTimer = Timer(_cameraIdleDebounce, () {
+      if (!mounted) return;
+      _refreshViewport();
+    });
+  }
+
+  /// 지금 보이는 사각형으로 서버에 다시 물어본다.
+  ///
+  /// 여기가 **지도의 유일한 데이터 경로**다. 검색·키워드 필터도 앱에서
+  /// 거르지 않고 이 호출의 파라미터로 들어간다 — 그래야 화면 밖에 있는
+  /// 퀘스트도 조건에 맞으면 잡힌다.
+  Future<void> _refreshViewport() async {
+    final controller = _mapController;
+    if (controller == null || !_isMapReady || !mounted) return;
+
+    final request = ++_viewportRequest;
+    setState(() => _isLoadingQuests = true);
+
+    try {
+      final bounds = await controller.getBounds();
+      final result = await QuestRepository.fetchQuestsInBounds(
+        swLat: bounds.sw.latitude,
+        swLng: bounds.sw.longitude,
+        neLat: bounds.ne.latitude,
+        neLng: bounds.ne.longitude,
+        zoom: MapZoom.fromKakaoLevel(_kakaoLevel),
+        keywords: _selectedKeyword == null ? null : [_selectedKeyword!],
+        search: _searchQuery,
+      );
+
+      // 늦게 도착한 옛 응답이 새 화면을 덮어쓰지 않게 한다.
+      if (!mounted || request != _viewportRequest) return;
+
+      setState(() {
+        _quests = result.quests;
+        _clusters = result.clusters;
+        _totalInViewport = result.totalQuests;
+        _isTruncated = result.isTruncated;
+      });
+
+      // 화면에서 사라진 퀘스트를 고른 채로 두면 시트만 떠 있고 핀이 없다.
+      if (_selectedQuest != null &&
+          !_quests.any((q) => q.id == _selectedQuest!.id)) {
+        _closeSheet();
+      }
+
+      await _updateMarkers();
+      await _syncCustomOverlays();
+      _applyFocusRequest();
+    } on ApiException catch (e) {
+      debugPrint('뷰포트 조회 실패: ${e.code}');
+    } catch (e) {
+      // getBounds()는 WebView가 아직 준비되지 않았으면 파싱에서 터진다.
+      debugPrint('뷰포트 조회 실패: $e');
+    } finally {
+      if (mounted && request == _viewportRequest) {
         setState(() => _isLoadingQuests = false);
       }
     }
@@ -322,13 +540,15 @@ class _MapScreenState extends State<MapScreen> {
       _headingOverlayPlaced = false;
       _placeHeadingOverlay();
 
-      // 위치 확보 후 백엔드 API 호출!
-      await _fetchQuestsFromBackend(lat, lng);
-
+      // 지도를 먼저 옮긴다. 그래야 뒤이은 뷰포트 조회가 **내 주변**을 본다.
+      // 순서를 뒤집으면 초기 중심(수원)의 범위를 조회하고 버리게 된다.
       if (panToUser && _mapController != null && _isMapReady) {
         await Future.delayed(const Duration(milliseconds: 100));
         await _mapController?.panTo(userLatLng);
       }
+
+      // TourAPI 동기화 + 새 범위 조회. 여기서만 무거운 쪽을 부른다.
+      await _syncNearbyQuests(lat, lng);
     } catch (e) {
       debugPrint('내 위치 가져오기 실패: $e');
     } finally {
@@ -337,28 +557,86 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // 필터링 및 마커 생성
+  // 검색 · 키워드 필터 — 체크리스트 11 · 12
   // ---------------------------------------------------------------------------
-  List<QuestModel> get _visibleQuests {
-    final query = _searchQuery.trim();
-    return _quests.where((q) {
-      final matchesKeyword =
-          _selectedKeywordFilter == '전체' || q.keywords.contains(_selectedKeywordFilter);
-      final matchesQuery = query.isEmpty ||
-          q.title.contains(query) ||
-          q.spotName.contains(query) ||
-          q.regionLabel.contains(query) ||
-          q.keywords.any((k) => k.contains(query));
-      return matchesKeyword && matchesQuery;
-    }).toList();
+
+  /// 지도에 그릴 퀘스트.
+  ///
+  /// **앱에서 더 거르지 않는다.** 검색어·키워드는 이미 서버 쿼리로 나갔고,
+  /// 여기서 한 번 더 걸러 봐야 서버가 이미 걸러 준 것을 다시 거를 뿐이다.
+  /// 예전에는 이 게터가 로컬 필터였고, 그래서 화면 밖 퀘스트는 아무리
+  /// 검색해도 나오지 않았다.
+  List<QuestModel> get _visibleQuests => _quests;
+
+  void _onSearchChanged(String value) {
+    setState(() => _searchQuery = value);
+
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(_searchDebounceDelay, () {
+      if (!mounted) return;
+      _runSearch();
+    });
   }
 
-  List<String> get _availableKeywords {
-    final set = <String>{};
-    for (final q in _quests) {
-      set.addAll(q.keywords);
+  /// 전국 검색. 지도 범위를 **넘어서** 찾는다.
+  ///
+  /// 검색은 "지금 보이는 곳"이 아니라 "어디에 있는지"를 묻는 기능이라
+  /// 뷰포트 조회와 별개로 좌표 없이 나간다(`quest.service.ts:289`가 좌표가
+  /// 없으면 범위 조건을 빼고 전체에서 찾는다).
+  Future<void> _runSearch() async {
+    final query = _searchQuery.trim();
+
+    if (query.isEmpty) {
+      setState(() {
+        _searchResults = const [];
+        _isSearching = false;
+      });
+      // 검색어를 지웠으면 지금 화면 범위로 되돌린다.
+      await _refreshViewport();
+      return;
     }
-    return set.toList();
+
+    final request = ++_searchRequest;
+    setState(() => _isSearching = true);
+
+    try {
+      final results = await QuestRepository.searchQuests(query);
+      if (!mounted || request != _searchRequest) return;
+      setState(() => _searchResults = results);
+    } on ApiException catch (e) {
+      if (!mounted || request != _searchRequest) return;
+      setState(() => _searchResults = const []);
+      debugPrint('검색 실패: ${e.code}');
+    } finally {
+      if (mounted && request == _searchRequest) {
+        setState(() => _isSearching = false);
+      }
+    }
+  }
+
+  /// 검색 결과를 골랐다 — 지도를 그 좌표로 옮기고 시트를 편다.
+  Future<void> _openSearchResult(QuestModel quest) async {
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _searchResults = const [];
+      _selectedQuest = quest;
+      _sheetState = _SheetState.preview;
+    });
+    FocusScope.of(context).unfocus();
+
+    _mapController?.setCenter(LatLng(quest.latitude, quest.longitude));
+    // 결과가 전국 어디든 될 수 있으니 확실히 보이는 축척까지 당긴다.
+    _mapController?.setLevel(4);
+
+    // setLevel/setCenter가 idle을 던지긴 하지만, 놓쳐도 목록이 비지 않도록
+    // 한 번 직접 새로 고친다. 순번 덕분에 중복 응답은 무해하다.
+    await _refreshViewport();
+  }
+
+  void _onKeywordChipTap(String? keyword) {
+    setState(() => _selectedKeyword = keyword);
+    _refreshViewport();
   }
 
   final Map<String, MarkerIcon> _iconCache = {};
@@ -536,6 +814,14 @@ class _MapScreenState extends State<MapScreen> {
 
                         _isMapReady = true;
                         await _initUserLocation(panToUser: true);
+
+                        // 위치 권한을 거부했거나 GPS가 꺼져 있으면
+                        // `_initUserLocation`이 아무것도 싣지 않고 끝난다.
+                        // 그래도 지도는 초기 중심을 보여주고 있으므로,
+                        // 최소한 그 범위의 퀘스트는 채워 준다.
+                        if (mounted && _quests.isEmpty && _clusters.isEmpty) {
+                          await _refreshViewport();
+                        }
                       },
                       onMarkerTap: (markerId, latLng, zoomLevel) {
                         if (markerId == 'user_my_location_pin') return;
@@ -545,6 +831,11 @@ class _MapScreenState extends State<MapScreen> {
                           _selectQuest(matched.first);
                         }
                       },
+                      // 클러스터 원을 눌렀을 때. 커스텀 오버레이는 이 콜백을
+                      // 넘겨야만 플러그인이 onclick 래퍼를 붙인다.
+                      onCustomOverlayTap: _onCustomOverlayTap,
+                      // 3b — 카메라가 멈추면 보이는 범위로 다시 조회한다.
+                      onCameraIdle: _onCameraIdle,
                       onMapTap: (latLng) {
                         if (_selectedQuest != null) {
                           _closeSheet();
@@ -563,7 +854,8 @@ class _MapScreenState extends State<MapScreen> {
                           child: LinearProgressIndicator(
                               color: AppColors.quest500)),
                     ),
-                  if (!_isLoadingQuests && _visibleQuests.isEmpty) _buildEmptyResultNote(),
+                  if (_shouldShowEmptyNote) _buildEmptyResultNote(),
+                  if (_isTruncated) _buildTruncatedNote(),
 
                   _buildMyLocationButton(),
 
@@ -626,10 +918,9 @@ class _MapScreenState extends State<MapScreen> {
                   Expanded(
                     child: TextField(
                       controller: _searchController,
-                      onChanged: (v) {
-                        setState(() => _searchQuery = v);
-                        _updateMarkers();
-                      },
+                      onChanged: _onSearchChanged,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _runSearch(),
                       style: AppType.body,
                       decoration: InputDecoration(
                         hintText: '지역 · 퀘스트 검색',
@@ -642,6 +933,24 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                     ),
                   ),
+                  if (_isSearching)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.quest500,
+                      ),
+                    )
+                  else if (_searchQuery.isNotEmpty)
+                    GestureDetector(
+                      onTap: () {
+                        _searchController.clear();
+                        _onSearchChanged('');
+                      },
+                      child: const Icon(Icons.close_rounded,
+                          size: 18, color: AppColors.textTertiary),
+                    ),
                 ],
               ),
             ),
@@ -652,35 +961,113 @@ class _MapScreenState extends State<MapScreen> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(vertical: 2),
                 children: [
-                  _filterChip('전체'),
-                  for (final k in _availableKeywords) ...[
+                  _filterChip(null),
+                  for (final k in _keywordChips) ...[
                     const SizedBox(width: AppSpacing.sm),
                     _filterChip(k),
                   ],
                 ],
               ),
             ),
+            if (_searchResults.isNotEmpty) _buildSearchResults(),
           ],
         ),
       ),
     );
   }
 
-  Widget _filterChip(String label) {
+  /// [keyword]가 null이면 '전체' 칩이다.
+  Widget _filterChip(String? keyword) {
     return Center(
       child: TagChip(
-        label: label,
-        isSelected: _selectedKeywordFilter == label,
+        label: keyword ?? '전체',
+        isSelected: _selectedKeyword == keyword,
         fontSize: 12.5,
-        onTap: () {
-          setState(() => _selectedKeywordFilter = label);
-          _updateMarkers();
-        },
+        onTap: () => _onKeywordChipTap(keyword),
       ),
     );
   }
 
+  /// 전국 검색 결과 목록.
+  ///
+  /// 지도 밖 결과가 대부분이라 마커로는 보여줄 수 없다. 목록에서 고르면
+  /// 그때 지도가 그 좌표로 옮겨 간다.
+  Widget _buildSearchResults() {
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      child: AppCard(
+        padding: EdgeInsets.zero,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 260),
+          child: ListView.separated(
+            shrinkWrap: true,
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            itemCount: _searchResults.length,
+            separatorBuilder: (_, _) =>
+                const Divider(height: 1, color: AppColors.divider),
+            itemBuilder: (context, index) {
+              final quest = _searchResults[index];
+              return InkWell(
+                onTap: () => _openSearchResult(quest),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.sm,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              quest.title,
+                              style: AppType.body,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${quest.spotName} · ${quest.regionLabel}',
+                              style: AppType.caption,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        QuestRepository.distanceFromUser(quest),
+                        style: AppType.numeric.copyWith(
+                          fontSize: 11,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 안내 문구를 띄울 상황인지.
+  ///
+  /// 클러스터가 떠 있으면 퀘스트가 **없는 게 아니라 묶여 있는 것**이다.
+  /// 검색 결과 목록이 펼쳐져 있을 때도 지도 위 안내는 방해만 된다.
+  bool get _shouldShowEmptyNote =>
+      !_isLoadingQuests &&
+      _quests.isEmpty &&
+      _clusters.isEmpty &&
+      _searchResults.isEmpty;
+
   Widget _buildEmptyResultNote() {
+    final hasFilter = _selectedKeyword != null || _searchQuery.trim().isNotEmpty;
+
     return Positioned(
       left: 24,
       right: 24,
@@ -688,9 +1075,31 @@ class _MapScreenState extends State<MapScreen> {
       child: NoteBox(
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(vertical: 10),
-        child: const Text(
-          '조건에 맞는 퀘스트가 없어요',
-          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        child: Text(
+          hasFilter ? '조건에 맞는 퀘스트가 없어요' : '이 범위에는 퀘스트가 없어요 · 지도를 옮겨 보세요',
+          style: const TextStyle(
+              fontSize: 12, color: AppColors.textSecondary),
+        ),
+      ),
+    );
+  }
+
+  /// 서버가 준 개수가 그릴 수 있는 양을 넘었을 때.
+  ///
+  /// 서버 `findMany`에 `take` 상한이 아직 없다(체크리스트 08번 BE 몫).
+  /// 상한이 생기면 이 안내는 저절로 뜨지 않게 된다.
+  Widget _buildTruncatedNote() {
+    return Positioned(
+      left: 24,
+      right: 24,
+      top: 84,
+      child: NoteBox(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Text(
+          '$_totalInViewport개 중 ${ViewportQuests.renderLimit}개만 표시했어요 · 지도를 확대해 보세요',
+          style: const TextStyle(
+              fontSize: 12, color: AppColors.textSecondary),
         ),
       ),
     );

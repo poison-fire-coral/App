@@ -8,12 +8,25 @@ class LocationSample {
   final double accuracyMeters;
 
   /// 실제 GPS가 아니라 시뮬레이터가 만든 값인지. 안티 어뷰징 판정을 건너뛰는 근거가 된다.
+  ///
+  /// **[isMocked]와 다르다.** 이쪽은 *우리가* 만든 값(개발 도구·시뮬레이터)이라
+  /// 서버에 보내지 않는다. 저쪽은 *사용자가* 위치 위조 앱을 켰다는 뜻이다.
   final bool isSimulated;
+
+  /// 운영체제가 "이 좌표는 모의 위치 앱이 만든 것"이라고 표시한 표본인지.
+  ///
+  /// 안드로이드의 개발자 옵션 > 모의 위치 앱, iOS의 시뮬레이터·일부 탈옥 도구가
+  /// 여기에 걸린다. 체크리스트 18번 — 인증 요청에 그대로 실어 서버가 판단하게 한다.
+  ///
+  /// 클라이언트 값이라 마음먹으면 속일 수 있다. 그래도 **없는 것보다 낫다** —
+  /// 대충 위조 앱만 깐 사람은 걸리고, 걸린 기록이 남는다.
+  final bool isMocked;
 
   const LocationSample({
     required this.point,
     required this.accuracyMeters,
     this.isSimulated = false,
+    this.isMocked = false,
   });
 
   /// GPS 정확도 100m 초과 시 재측정 요구 (기획서 6d)

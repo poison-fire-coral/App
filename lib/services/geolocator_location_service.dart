@@ -82,6 +82,8 @@ class GeolocatorLocationService implements LocationService {
       point: GeoPoint(position.latitude, position.longitude),
       accuracyMeters: _forcedAccuracy ?? position.accuracy,
       isSimulated: _forcedAccuracy != null,
+      // 운영체제가 붙여 준 표시를 그대로 옮긴다. 판단은 서버가 한다.
+      isMocked: position.isMocked,
     );
   }
 

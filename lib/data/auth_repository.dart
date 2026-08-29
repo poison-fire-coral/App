@@ -3,17 +3,25 @@ import '../models/auth_models.dart';
 import '../models/user_model.dart';
 import '../services/api_client.dart';
 import '../services/token_store.dart';
+import 'terms.dart';
 
 /// 계정 관련 서버 호출. `QuestRepository`와 같은 static 유틸 스타일.
 class AuthRepository {
   const AuthRepository._();
 
-  /// 약관 UI가 아직 없는 구간임을 DB에 남기는 버전 문자열.
+  /// 동의 화면 없이 가입하던 시절의 버전 문자열.
   ///
-  /// 실제 약관 문서가 확정되면 온보딩에 동의 화면을 넣고 이 상수를
-  /// **사용자가 실제로 동의한 버전**으로 교체해야 한다.
-  /// `implicit`이라는 단어 덕분에 나중에 v1.0 사용자와 구분할 수 있다.
-  static const String termsVersion = '2026-08-implicit-v1';
+  /// 이제는 온보딩 1c가 실제 동의를 받고 [kTermsVersion]을 보낸다.
+  /// 이 상수는 **읽기 전용**이다 — 서버에 이 값으로 남아 있는 사용자는
+  /// 약관을 본 적이 없으므로, 문서가 확정되면 재동의 대상이다.
+  static const String legacyImplicitTermsVersion = '2026-08-implicit-v1';
+
+  /// 이 사용자에게 재동의를 받아야 하는지.
+  ///
+  /// 문서가 서고 [kTermsVersion]이 올라가면 여기가 자동으로 true가 된다.
+  /// (재동의 화면 자체는 아직 없다 — 문서가 없으면 물어볼 내용도 없다)
+  static bool needsReconsent(String? storedVersion) =>
+      storedVersion == null || storedVersion != kTermsVersion;
 
   // ---------------------------------------------------------------------------
   // 로그인

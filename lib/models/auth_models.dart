@@ -94,6 +94,15 @@ class SignupRequest {
   final bool termsAgreed;
   final String termsVersion;
 
+  /// 선택 항목(마케팅 정보 수신) 동의 여부.
+  ///
+  /// **서버는 아직 이 값을 저장하지 않는다.** `users` 테이블에 컬럼이 없어서
+  /// Express가 조용히 버린다. 그래도 보내는 이유는, 컬럼이 생기는 순간
+  /// 앱을 새로 배포하지 않아도 값이 흘러 들어가기 때문이다.
+  /// 그때까지 이 동의의 기록은 없는 것으로 봐야 한다 — 발송 경로(체크리스트
+  /// 24번 푸시 알림)도 아직 없으므로 실제로 쓰이는 곳도 없다.
+  final bool marketingAgreed;
+
   const SignupRequest({
     required this.pending,
     required this.nickname,
@@ -103,6 +112,7 @@ class SignupRequest {
     this.homeRegion,
     this.activityLevel,
     this.termsAgreed = true,
+    this.marketingAgreed = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -116,6 +126,7 @@ class SignupRequest {
         'keywords': keywords,
         'termsAgreed': termsAgreed,
         'termsVersion': termsVersion,
+        'marketingAgreed': marketingAgreed,
       };
 }
 

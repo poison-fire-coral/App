@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:local_quest/data/terms.dart';
 import 'package:local_quest/models/auth_models.dart';
 import 'package:local_quest/models/user_model.dart';
 import 'package:local_quest/screens/level_up_screen.dart';
@@ -115,7 +116,7 @@ void main() {
   });
 
   group('온보딩 게이트', () {
-    testWidgets('닉네임이 비어 있으면 다음으로 못 넘어간다', (tester) async {
+    testWidgets('가입은 약관 동의부터 시작하고, 필수 항목 전에는 못 넘어간다', (tester) async {
       await pumpScreen(
         tester,
         OnboardingScreen(
@@ -126,11 +127,45 @@ void main() {
         ),
       );
 
+      expect(find.text('시작하기 전에'), findsOneWidget);
+
+      // 필수 항목을 아직 안 눌렀으니 버튼이 잠겨 있어야 한다.
+      await tester.tap(find.text('동의하고 계속하기'));
+      await tester.pumpAndSettle();
+      expect(find.text('시작하기 전에'), findsOneWidget);
+
+      // 필수 2종을 누르면 프로필 단계로 넘어간다. 선택(마케팅)은 건드리지 않는다.
+      for (final doc in kConsentDocuments.where((d) => d.isRequired)) {
+        await tester.tap(find.text(doc.title));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.text('동의하고 계속하기'));
+      await tester.pumpAndSettle();
+
       expect(find.text('모험가 이름을 정해주세요'), findsOneWidget);
 
       // 중복확인 전이므로 어떤 판정 메시지도 떠 있으면 안 된다.
       expect(find.text('사용할 수 있는 이름이에요'), findsNothing);
       expect(find.text('이미 누군가 쓰고 있어요'), findsNothing);
+    });
+
+    testWidgets('취향 재설정 모드에는 약관 단계가 없다', (tester) async {
+      await pumpScreen(
+        tester,
+        OnboardingScreen(
+          mode: OnboardingMode.editProfile,
+          initialData: UserModel(
+            nickname: '모험가한글',
+            travelStyles: const ['골목산책'],
+            activityLevel: '보통',
+          ),
+          onComplete: (_) {},
+          onBack: () {},
+        ),
+      );
+
+      expect(find.text('시작하기 전에'), findsNothing);
+      expect(find.text('모험가 이름을 정해주세요'), findsOneWidget);
     });
 
     testWidgets('취향 재설정 모드는 기존 값을 채워 온다', (tester) async {
