@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../models/api_exception.dart';
 import '../models/quest_model.dart';
 import '../services/geo.dart';
+import '../services/photo_uploader.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
@@ -52,14 +54,22 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
   XFile? _photo;
   bool _isPicking = false;
 
+  /// S3 업로드가 도는 중. 이 동안 버튼을 잠근다.
+  bool _isUploading = false;
+
   // 💡 ImagePicker 인스턴스를 상태 객체에서 싱글톤처럼 유지하여 메모리 누수 및 크래시 방지
   final ImagePicker _picker = ImagePicker();
+
+  /// 목업 퀘스트는 서버에 없어서(백엔드 `Quest.id`는 Int) presign을 받을 수 없다.
+  bool get _isRemoteQuest => int.tryParse(widget.quest.id) != null;
 
   Future<void> _pickPhoto({required bool fromGallery}) async {
     if (_isPicking) return;
     setState(() => _isPicking = true);
 
     try {
+      // 여기서 이미 장변 1600px · 품질 80으로 줄여서 받는다.
+      // 네이티브 리사이즈라 순수 Dart로 다시 손대는 것보다 훨씬 빠르다.
       final picked = await _picker.pickImage(
         source: fromGallery ? ImageSource.gallery : ImageSource.camera,
         imageQuality: 80,
@@ -84,12 +94,85 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
     }
   }
 
-  void _completeWithPhoto() {
+  /// 사진을 올리고 그 공개 주소와 함께 4a로 돌아간다.
+  ///
+  /// **업로드 실패가 퀘스트 완료를 막지 않는다.** 사진은 선택 항목인데
+  /// 현장까지 가서 인증을 못 하면 손해가 너무 크다. 실패하면 사진만 빼고
+  /// 계속할지 물어본다.
+  Future<void> _completeWithPhoto() async {
+    final photo = _photo;
+    if (photo == null || _isUploading) return;
+
+    if (!_isRemoteQuest) {
+      // 목업 퀘스트 — 올릴 곳이 없다. 미리보기 경로만 들고 돌아간다.
+      Navigator.of(context).pop(QuestVerifyResult(
+        hasPhoto: true,
+        isPhotoPublic: _isPublic,
+        localPhotoPath: photo.path,
+      ));
+      return;
+    }
+
+    setState(() => _isUploading = true);
+
+    String? publicUrl;
+    try {
+      publicUrl = await PhotoUploader.upload(
+        questId: widget.quest.id,
+        file: File(photo.path),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _isUploading = false);
+
+      final proceed = await _askProceedWithoutPhoto(e);
+      if (proceed != true || !mounted) return;
+
+      Navigator.of(context).pop(QuestVerifyResult(
+        hasPhoto: false,
+        isPhotoPublic: _isPublic,
+        localPhotoPath: photo.path,
+      ));
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _isUploading = false);
+
     Navigator.of(context).pop(QuestVerifyResult(
-      hasPhoto: _photo != null,
+      hasPhoto: true,
       isPhotoPublic: _isPublic,
-      localPhotoPath: _photo?.path,
+      photoUrl: publicUrl,
+      localPhotoPath: photo.path,
     ));
+  }
+
+  Future<bool?> _askProceedWithoutPhoto(ApiException e) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: const RoundedRectangleBorder(borderRadius: AppRadius.panel),
+        title: const Text('사진을 올리지 못했어요', style: AppType.h2),
+        content: Text(
+          e.isNetwork
+              ? '네트워크가 불안정한 것 같아요. 사진 없이 위치만으로 완료할까요?\n'
+                  '(다시 시도해도 됩니다)'
+              : '사진 없이 위치만으로 완료할까요?\n(다시 시도해도 됩니다)',
+          style: AppType.bodyMuted,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('다시 시도'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('사진 없이 완료'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _completeWithoutPhoto() {
@@ -213,7 +296,7 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
                         Expanded(
                           child: SecondaryButton(
                             label: '갤러리',
-                            onTap: _isPicking
+                            onTap: _isPicking || _isUploading
                                 ? null
                                 : () => _pickPhoto(fromGallery: true),
                           ),
@@ -222,8 +305,12 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
                         Expanded(
                           flex: 2,
                           child: PrimaryButton(
-                            label: _photo == null ? '촬영하기' : '이 사진으로 완료',
-                            enabled: !_isPicking,
+                            label: _isUploading
+                                ? '사진 올리는 중…'
+                                : _photo == null
+                                    ? '촬영하기'
+                                    : '이 사진으로 완료',
+                            enabled: !_isPicking && !_isUploading,
                             onTap: _photo == null
                                 ? () => _pickPhoto(fromGallery: false)
                                 : _completeWithPhoto,
@@ -234,7 +321,7 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
                     const SizedBox(height: AppSpacing.md),
                     Center(
                       child: GestureDetector(
-                        onTap: _completeWithoutPhoto,
+                        onTap: _isUploading ? null : _completeWithoutPhoto,
                         child: Text('사진 없이 위치만으로 완료', style: AppType.caption),
                       ),
                     ),

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../config/app_config.dart';
+import '../data/terms.dart';
 import '../dev/dev_tools.dart'; // DEV-ONLY
 import '../services/permission_service.dart';
 import '../services/token_store.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/terms_widgets.dart';
 
 /// 5d · 설정
 ///
@@ -185,16 +188,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(height: AppSpacing.xl),
                   const SectionHeader(title: '정보'),
                   const SizedBox(height: AppSpacing.sm),
-                  _Row(
-                    icon: Icons.description_outlined,
-                    title: '서비스 이용약관',
-                    onTap: () => _toast('약관 문서는 아직 준비 중이에요.'),
-                  ),
-                  _Row(
-                    icon: Icons.privacy_tip_outlined,
-                    title: '개인정보 처리방침',
-                    onTap: () => _toast('개인정보 처리방침은 아직 준비 중이에요.'),
-                  ),
+                  // 가입 화면(1c)이 동의받는 목록과 **같은 곳**을 본다.
+                  // 항목이 늘거나 문서가 서면 `data/terms.dart`만 고치면 된다.
+                  for (final doc in kAllDocuments)
+                    _Row(
+                      icon: doc.key == 'privacy'
+                          ? Icons.privacy_tip_outlined
+                          : Icons.description_outlined,
+                      title: doc.title,
+                      trailing: doc.hasDocument ? null : '준비 중',
+                      onTap: () => showTermsDocument(context, doc),
+                    ),
                   _Row(
                     icon: Icons.code_rounded,
                     title: '오픈소스 라이선스',
@@ -225,40 +229,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
 
                   // ─── DEV-ONLY ─────────────────────────────────────────
-                  const SizedBox(height: AppSpacing.xxl),
-                  const SectionHeader(title: '개발자'),
-                  const SizedBox(height: AppSpacing.sm),
-                  _SwitchRow(
-                    icon: Icons.build_rounded,
-                    title: '개발자 모드',
-                    subtitle: '테스트용 위치 조작 도구를 켭니다',
-                    value: DevTools.enabled.value,
-                    onChanged: (v) async {
-                      await DevTools.setEnabled(v);
-                      if (mounted) setState(() {});
-                    },
-                  ),
-                  if (DevTools.enabled.value) ...[
-                    _Row(
-                      icon: Icons.place_outlined,
-                      title: DevTools.isLocationOverridden
-                          ? '내 위치 고정 해제'
-                          : '내 위치를 수원화성으로 고정',
-                      subtitle: '시드 퀘스트가 보이게 합니다',
-                      onTap: () {
-                        DevTools.toggleLocationOverride();
-                        setState(() {});
+                  // `AppConfig.devToolsEnabled`는 컴파일 상수다. 릴리스 빌드
+                  // (`--dart-define=DEV_TOOLS=false`)에서는 이 블록 전체가
+                  // 코드에서 사라지고, 여기서만 부르던 `DevTools`도 함께 지워진다.
+                  if (AppConfig.devToolsEnabled) ...[
+                    const SizedBox(height: AppSpacing.xxl),
+                    const SectionHeader(title: '개발자'),
+                    const SizedBox(height: AppSpacing.sm),
+                    _SwitchRow(
+                      icon: Icons.build_rounded,
+                      title: '개발자 모드',
+                      subtitle: '테스트용 위치 조작 도구를 켭니다',
+                      value: DevTools.enabled.value,
+                      onChanged: (v) async {
+                        await DevTools.setEnabled(v);
+                        if (mounted) setState(() {});
                       },
                     ),
-                    _Row(
-                      icon: Icons.key_off_rounded,
-                      title: '토큰 강제 만료',
-                      subtitle: '자동 갱신이 도는지 확인합니다',
-                      onTap: () {
-                        TokenStore.debugCorruptAccessToken();
-                        _toast('access token을 망가뜨렸어요. 다음 요청에서 갱신이 돕니다.');
-                      },
-                    ),
+                    if (DevTools.enabled.value) ...[
+                      _Row(
+                        icon: Icons.place_outlined,
+                        title: DevTools.isLocationOverridden
+                            ? '내 위치 고정 해제'
+                            : '내 위치를 수원화성으로 고정',
+                        subtitle: '시드 퀘스트가 보이게 합니다',
+                        onTap: () {
+                          DevTools.toggleLocationOverride();
+                          setState(() {});
+                        },
+                      ),
+                      _Row(
+                        icon: Icons.key_off_rounded,
+                        title: '토큰 강제 만료',
+                        subtitle: '자동 갱신이 도는지 확인합니다',
+                        onTap: () {
+                          TokenStore.debugCorruptAccessToken();
+                          _toast('access token을 망가뜨렸어요. 다음 요청에서 갱신이 돕니다.');
+                        },
+                      ),
+                    ],
                   ],
                   // ─── /DEV-ONLY ────────────────────────────────────────
                 ],

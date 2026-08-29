@@ -7,6 +7,7 @@ import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
 import 'package:kakao_map_plugin/kakao_map_plugin.dart' as kakao_map;
 import 'package:firebase_core/firebase_core.dart';
 
+import 'config/app_config.dart';
 import 'data/auth_repository.dart';
 import 'data/badge_api.dart';
 import 'data/badge_repository.dart';
@@ -49,18 +50,28 @@ void main() async {
     debugPrint("❌ Firebase 초기화 실패 에러: $e");
   }
 
-  // 2. 카카오 로그인 SDK 초기화 (네이티브 앱 키)
-  kakao.KakaoSdk.init(nativeAppKey: 'bddd99905a1b4d3731ed3b0f370aa8da');
+  // 2~3. 카카오 SDK 초기화 — 키는 소스가 아니라 --dart-define으로 들어온다.
+  //
+  // 키가 비어 있어도 앱은 뜬다. 지도·로그인만 죽고 나머지는 돌아가는 편이,
+  // 정의 하나 빠졌다고 아무것도 못 켜는 것보다 낫다. 대신 로그로 크게 알린다.
+  AppConfig.warnIfIncomplete();
 
-  // 3. 카카오 지도 SDK 초기화 (JavaScript 키 + baseUrl 지정)
-  kakao_map.AuthRepository.initialize(
-    appKey: '5956eb5b7490c0ec1be4c2419c0ffdae',
-    baseUrl: 'http://localhost',
-  );
+  if (AppConfig.kakaoNativeAppKey.isNotEmpty) {
+    kakao.KakaoSdk.init(nativeAppKey: AppConfig.kakaoNativeAppKey);
+  }
+  if (AppConfig.kakaoJavaScriptKey.isNotEmpty) {
+    kakao_map.AuthRepository.initialize(
+      appKey: AppConfig.kakaoJavaScriptKey,
+      baseUrl: 'http://localhost',
+    );
+  }
 
   // 4. 토큰과 개발자 모드 설정을 메모리로 올린다.
   await TokenStore.load();
-  await DevTools.load(); // DEV-ONLY
+  // DEV-ONLY — 릴리스에서는 상수가 false라 이 호출째로 트리쉐이킹된다.
+  if (AppConfig.devToolsEnabled) {
+    await DevTools.load();
+  }
 
   final prefs = await SharedPreferences.getInstance();
   final String? userJson = prefs.getString('user_profile');
@@ -313,6 +324,16 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   // DEV-ONLY: 고정 uid로 로그인해 소셜 SDK를 건너뛴다.
   Future<void> _loginAsGuest() =>
       _runLogin(const SocialCredential.guest(DevTools.guestUid));
+
+  /// 로그인·가입 화면에 개발용 버튼을 붙일지. 둘 다 통과해야 나온다.
+  ///
+  /// 컴파일 상수를 **앞에** 두는 게 핵심이다. 릴리스에서는 `&&`의 왼쪽이 상수
+  /// false라 오른쪽이 아예 평가되지 않고, `_loginAsGuest`와 그 아래
+  /// `DevTools`·`SocialCredential.guest` 경로가 함께 트리쉐이킹된다.
+  VoidCallback? get _devGuestLogin =>
+      AppConfig.devToolsEnabled && DevTools.enabled.value
+          ? _loginAsGuest
+          : null;
 
   // ---------------------------------------------------------------------------
   // 완료 이력
@@ -640,7 +661,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       return SignupScreen(
         isBusy: _isAuthBusy,
         onPickProvider: _pickProvider,
-        onGuest: DevTools.enabled.value ? _loginAsGuest : null, // DEV-ONLY
+        onGuest: _devGuestLogin, // DEV-ONLY
         onBack: () => setState(() => _authPhase = _AuthPhase.login),
       );
     }
@@ -650,7 +671,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       return LoginScreen(
         isBusy: _isAuthBusy,
         onPickProvider: _pickProvider,
-        onGuest: DevTools.enabled.value ? _loginAsGuest : null, // DEV-ONLY
+        onGuest: _devGuestLogin, // DEV-ONLY
         onGoSignup: () =>
             setState(() => _authPhase = _AuthPhase.chooseProvider),
       );

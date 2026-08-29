@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:local_quest/data/auth_repository.dart';
+import 'package:local_quest/data/terms.dart';
 import 'package:local_quest/models/api_exception.dart';
 import 'package:local_quest/models/auth_models.dart';
 import 'package:local_quest/services/api_client.dart';
@@ -115,7 +116,7 @@ void main() {
       homeRegion: '경기',
       activityLevel: '보통',
       keywords: const ['골목산책', '전통시장', '사진스팟'],
-      termsVersion: AuthRepository.termsVersion,
+      termsVersion: kTermsVersion,
     ));
     expect(session.user.nickname, nickname);
     expect(session.user.avatarId, 'avatar_03');
@@ -144,7 +145,7 @@ void main() {
       pending: PendingSignup(provider: 'GUEST', providerUid: '${uid}_r'),
       nickname: 'r$stamp'.substring(0, 10),
       keywords: const ['골목산책', '전통시장', '사진스팟'],
-      termsVersion: AuthRepository.termsVersion,
+      termsVersion: kTermsVersion,
     ));
 
     TokenStore.debugCorruptAccessToken();
@@ -175,7 +176,7 @@ void main() {
         pending: PendingSignup(provider: 'GUEST', providerUid: '${uid}_dup'),
         nickname: nickname, // 위에서 이미 쓴 이름
         keywords: const ['골목산책', '전통시장', '사진스팟'],
-        termsVersion: AuthRepository.termsVersion,
+        termsVersion: kTermsVersion,
       ));
       fail('중복 닉네임인데 가입이 통과했다');
     } on ApiException catch (e) {

@@ -245,6 +245,10 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
           lat: sample.point.latitude,
           lng: sample.point.longitude,
           accuracyM: sample.accuracyMeters,
+          // 운영체제가 모의 위치라고 표시했는지 그대로 넘긴다.
+          // 우리가 만든 개발용 좌표(`isSimulated`)는 보내지 않는다 —
+          // 그건 어뷰징이 아니라 우리 테스트다.
+          isMocked: sample.isMocked,
           photoUrl: verifyResult.photoUrl,
           photoVisibility: verifyResult.isPhotoPublic ? 'PUBLIC' : 'PRIVATE',
         );

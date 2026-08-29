@@ -1,0 +1,14 @@
+{
+  "_주석": "이 파일을 dart_defines.json 으로 복사한 뒤 실제 값을 채우세요. dart_defines.json 은 .gitignore에 걸려 있어 커밋되지 않습니다. 서버 쪽 .env / .env.example 과 같은 규칙입니다.",
+
+  "_KAKAO_NATIVE_APP_KEY": "카카오 개발자 콘솔 > 앱 설정 > 앱 키 > 네이티브 앱 키",
+  "KAKAO_NATIVE_APP_KEY": "",
+
+  "_KAKAO_JS_KEY": "같은 화면의 JavaScript 키. 지도 SDK가 쓴다.",
+  "KAKAO_JS_KEY": "",
+
+  "_DEV_TOOLS": "개발자 도구 노출 여부. 지우면 디버그 빌드에서만 켜진다. 릴리스 빌드에서는 반드시 false 여야 한다.",
+  "DEV_TOOLS": "true",
+
+  "_API_BASE_URL": "여기 두지 말 것. 사람마다 값이 달라서 launch.json 의 실행 구성이 --dart-define=API_BASE_URL=... 로 직접 넘긴다. 로컬 서버는 http://localhost:5001/api/v1, 안드로이드 에뮬레이터는 http://10.0.2.2:5001/api/v1 이다."
+}

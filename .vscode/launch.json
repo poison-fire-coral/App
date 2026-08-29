@@ -12,25 +12,41 @@
       "skipFiles": ["<node_internals>/**"]
     },
     {
-      "name": "Flutter (실기기 / API_BASE_URL 주입)",
+      "name": "Flutter (실기기 / 로컬 서버)",
       "type": "dart",
       "request": "launch",
       "program": "lib/main.dart",
       "cwd": "${workspaceFolder}",
-      "toolArgs": ["--dart-define=API_BASE_URL=http://localhost:5001/api/v1"]
+      "toolArgs": [
+        "--dart-define-from-file=dart_defines.json",
+        "--dart-define=API_BASE_URL=http://localhost:5001/api/v1"
+      ]
     },
     {
-      "name": "Flutter (에뮬레이터 기본값)",
+      "name": "Flutter (에뮬레이터 / 기본 서버)",
       "type": "dart",
       "request": "launch",
       "program": "lib/main.dart",
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "toolArgs": ["--dart-define-from-file=dart_defines.json"]
+    },
+    {
+      "name": "Flutter (릴리스 검증 · 개발도구 없음)",
+      "type": "dart",
+      "request": "launch",
+      "flutterMode": "release",
+      "program": "lib/main.dart",
+      "cwd": "${workspaceFolder}",
+      "toolArgs": [
+        "--dart-define-from-file=dart_defines.json",
+        "--dart-define=DEV_TOOLS=false"
+      ]
     }
   ],
   "compounds": [
     {
       "name": "▶ Backend + Flutter 동시 실행",
-      "configurations": ["Backend (npm run dev)", "Flutter (실기기 / API_BASE_URL 주입)"],
+      "configurations": ["Backend (npm run dev)", "Flutter (실기기 / 로컬 서버)"],
       "stopAll": true
     }
   ]
