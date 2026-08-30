@@ -50,20 +50,28 @@ void main() async {
     debugPrint("❌ Firebase 초기화 실패 에러: $e");
   }
 
-  // 2~3. 카카오 SDK 초기화 — 키는 소스가 아니라 --dart-define으로 들어온다.
-  //
-  // 키가 비어 있어도 앱은 뜬다. 지도·로그인만 죽고 나머지는 돌아가는 편이,
-  // 정의 하나 빠졌다고 아무것도 못 켜는 것보다 낫다. 대신 로그로 크게 알린다.
+  // 2~3. 카카오 SDK 초기화
   AppConfig.warnIfIncomplete();
+
+  // 💡 디버그 로그 추가로 키 로드 여부 직접 확인
+  debugPrint("🔑 Kakao Native Key: '${AppConfig.kakaoNativeAppKey}'");
+  debugPrint("🔑 Kakao JS Key: '${AppConfig.kakaoJavaScriptKey}'");
 
   if (AppConfig.kakaoNativeAppKey.isNotEmpty) {
     kakao.KakaoSdk.init(nativeAppKey: AppConfig.kakaoNativeAppKey);
+    debugPrint("✅ KakaoSdk 초기화 완료");
+  } else {
+    debugPrint("❌ [경고] KakaoNativeAppKey가 비어있어 KakaoSdk.init()을 스킵했습니다.");
   }
+
   if (AppConfig.kakaoJavaScriptKey.isNotEmpty) {
     kakao_map.AuthRepository.initialize(
       appKey: AppConfig.kakaoJavaScriptKey,
       baseUrl: 'http://localhost',
     );
+    debugPrint("✅ KakaoMap AuthRepository 초기화 완료");
+  } else {
+    debugPrint("❌ [경고] KakaoJavaScriptKey가 비어있어 지도 초기화를 스킵했습니다.");
   }
 
   // 4. 토큰과 개발자 모드 설정을 메모리로 올린다.
@@ -189,7 +197,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   }
 
   /// 스플래시가 보이는 동안 진짜 세션 복원을 한다.
-  /// 예전에는 1.5초를 무조건 기다리기만 했다.
   Future<void> _bootstrap() async {
     final startedAt = DateTime.now();
 
@@ -199,8 +206,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
         final user = await _withCompletedQuests(await AuthRepository.me());
         await _persistUser(user);
 
-        // 다른 기기에서 끝낸 퀘스트가 "진행 중"으로 남아 있을 수 있다.
-        // 그대로 두면 홈에서 "이어서 하기"로 들어갔다가 인증 단계에서야 거절당한다.
         final remaining = _withoutCompleted(_activeQuests, user);
         if (remaining.length != _activeQuests.length) {
           await _persistActiveQuests(remaining);
@@ -215,7 +220,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
           });
         }
       } on ApiException {
-        // refresh까지 실패했거나 계정이 사라졌다. 로그인부터 다시.
         await TokenStore.clear();
         if (mounted) {
           setState(() {
@@ -226,7 +230,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       }
     }
 
-    // 복원이 너무 빨리 끝나면 로고가 깜빡이고 만다. 최소 노출 시간을 준다.
     const minimumVisible = Duration(milliseconds: 900);
     final elapsed = DateTime.now().difference(startedAt);
     if (elapsed < minimumVisible) {
@@ -264,7 +267,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   // 로그인 · 가입
   // ---------------------------------------------------------------------------
 
-  /// 소셜 SDK → 우리 서버 로그인 → 성공이면 홈, 미가입이면 온보딩.
   Future<void> _runLogin(SocialCredential credential) async {
     if (_isAuthBusy) return;
     setState(() => _isAuthBusy = true);
@@ -299,7 +301,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     }
   }
 
-  /// 로그인·가입 화면의 provider 버튼이 부른다.
   Future<void> _pickProvider(String provider) async {
     if (_isAuthBusy) return;
     setState(() => _isAuthBusy = true);
@@ -317,19 +318,13 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       if (mounted) setState(() => _isAuthBusy = false);
     }
 
-    if (credential == null) return; // 사용자가 취소
+    if (credential == null) return;
     await _runLogin(credential);
   }
 
-  // DEV-ONLY: 고정 uid로 로그인해 소셜 SDK를 건너뛴다.
   Future<void> _loginAsGuest() =>
       _runLogin(const SocialCredential.guest(DevTools.guestUid));
 
-  /// 로그인·가입 화면에 개발용 버튼을 붙일지. 둘 다 통과해야 나온다.
-  ///
-  /// 컴파일 상수를 **앞에** 두는 게 핵심이다. 릴리스에서는 `&&`의 왼쪽이 상수
-  /// false라 오른쪽이 아예 평가되지 않고, `_loginAsGuest`와 그 아래
-  /// `DevTools`·`SocialCredential.guest` 경로가 함께 트리쉐이킹된다.
   VoidCallback? get _devGuestLogin =>
       AppConfig.devToolsEnabled && DevTools.enabled.value
           ? _loginAsGuest
@@ -339,12 +334,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   // 완료 이력
   // ---------------------------------------------------------------------------
 
-  /// 서버가 아는 완료 목록을 프로필에 채워 넣는다.
-  ///
-  /// 완료 판정의 진실은 서버 `quest_completions`인데, [UserModel.fromServer]는
-  /// 그 필드를 싣고 오지 않는다. 채우지 않으면 앱을 다시 켤 때마다 완료 이력이
-  /// 빈 채로 시작해, 이미 끝낸 퀘스트가 다시 수락 가능한 것처럼 보인다.
-  /// (서버가 인증을 거절하므로 EXP가 새지는 않지만, 현장에 가서야 알게 된다)
   Future<UserModel> _withCompletedQuests(UserModel user) async {
     try {
       final rows = await QuestRepository.fetchMyQuests(status: 'completed');
@@ -355,13 +344,11 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
         ],
       );
     } on ApiException catch (e) {
-      // 목록을 못 받아도 로그인 자체는 성공시킨다. 재클리어는 서버가 막는다.
       debugPrint('완료 퀘스트 목록 불러오기 실패: ${e.code}');
       return user;
     }
   }
 
-  /// 이미 완료한 퀘스트를 진행 중 목록에서 걷어낸다.
   List<ActiveQuest> _withoutCompleted(
     List<ActiveQuest> quests,
     UserModel user,
@@ -374,6 +361,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   // ---------------------------------------------------------------------------
   // 저장
   // ---------------------------------------------------------------------------
+
   Future<void> _persistUser(UserModel user) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_profile', user.toRawJson());
@@ -387,7 +375,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     );
   }
 
-  /// 온보딩(가입 또는 취향 재설정)이 끝났을 때. 서버가 확정한 프로필이 올라온다.
   Future<void> _saveUser(UserModel user) async {
     await _persistUser(user);
     if (!mounted) return;
@@ -406,7 +393,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_profile');
     await prefs.remove(_activeQuestsPrefsKey);
-    await prefs.remove('is_logged_in'); // 구버전 키 정리
+    await prefs.remove('is_logged_in');
 
     if (!mounted) return;
     setState(() {
@@ -420,14 +407,44 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     });
   }
 
+  /// 회원 탈퇴 — 백엔드 계정 삭제 API 호출 및 소셜 세션/캐시 완전 정리
+  Future<void> _deleteAccount() async {
+    try {
+      await AuthRepository.deleteAccount();
+      await AuthService.signOutSocial();
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('user_profile');
+      await prefs.remove(_activeQuestsPrefsKey);
+      await prefs.remove('is_logged_in');
+
+      if (!mounted) return;
+      setState(() {
+        _isLoggedIn = false;
+        _currentUser = null;
+        _isEditingSurvey = false;
+        _pendingSignup = null;
+        _showSettings = false;
+        _showProfile = false;
+        _authPhase = _AuthPhase.login;
+        _activeQuests = [];
+        _currentTab = AppTab.home;
+      });
+
+      _toast('회원 탈퇴가 완료되었습니다.');
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      _toast(e.displayMessage);
+    } catch (e) {
+      if (!mounted) return;
+      _toast('회원 탈퇴 처리 중 오류가 발생했습니다.');
+    }
+  }
+
   // ---------------------------------------------------------------------------
-  // 분기 D · 퀘스트 수행 흐름 (수락 → 이동/도달 → 인증 → 보상 → 레벨업)
+  // 퀘스트 수행 흐름
   // ---------------------------------------------------------------------------
 
-  /// 지도·홈에서 퀘스트를 수락하거나, 이미 진행 중이면 이어서 하기.
-  ///
-  /// 한 번 완료한 퀘스트는 여기서 끝이다. 서버도 수락과 인증을 모두 거절하지만,
-  /// 목업 퀘스트는 서버를 거치지 않으므로 이 검사가 유일한 관문이다.
   Future<void> _acceptQuest(QuestModel quest) async {
     if (_currentUser?.hasCompleted(quest.id) ?? false) {
       _toast('이미 완료한 퀘스트예요. 다시 진행할 수 없어요.');
@@ -441,7 +458,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     if (existingIndex >= 0) {
       active = _activeQuests[existingIndex];
     } else {
-      // 서버에도 수락을 남긴다. 목업 퀘스트(id가 정수가 아님)는 서버에 없으므로 건너뛴다.
       if (int.tryParse(quest.id) != null) {
         try {
           await QuestRepository.acceptQuest(quest.id);
@@ -474,7 +490,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     );
   }
 
-  /// 여러 지점짜리 퀘스트에서 한 지점을 인증했을 때 진행도만 갱신한다.
   void _updateActiveQuest(ActiveQuest updated) {
     final next = [
       for (final a in _activeQuests) a.quest.id == updated.quest.id ? updated : a,
@@ -484,7 +499,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   }
 
   Future<void> _abandonQuest(ActiveQuest abandoned) async {
-    // 서버 기록도 지운다. 실패해도 로컬에서는 빼준다 — 사용자가 포기를 눌렀으니까.
     if (int.tryParse(abandoned.quest.id) != null) {
       try {
         await QuestRepository.abandonQuest(abandoned.quest.id);
@@ -499,12 +513,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     await _persistActiveQuests(next);
   }
 
-  /// 마지막 지점까지 인증했을 때의 정산.
-  ///
-  /// **EXP는 서버가 진실이다.** 의뢰서 절대원칙 ①이 "EXP·난이도·배지 판정은
-  /// 100% 서버 계산, 클라이언트는 결과만 표시(조작 방지)"라고 못박고 있다.
-  /// [serverResult]가 있으면 그 값을 그대로 쓰고, 없을 때(목업 퀘스트·오프라인)만
-  /// 로컬 [ExpService]로 계산한다.
   Future<QuestCompletionResult> _completeQuest(
     ActiveQuest completed,
     Map<String, dynamic>? serverResult,
@@ -517,7 +525,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     final LevelUpResult levelResult;
 
     if (serverResult != null) {
-      // 멱등 재요청이면 모양이 다르다: {isAlreadyProcessed: true, completion: {...}}
       final payload = serverResult['isAlreadyProcessed'] == true
           ? Map<String, dynamic>.from(serverResult['completion'] as Map? ?? {})
           : serverResult;
@@ -546,7 +553,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
               gainedExp: breakdown.finalExp,
             );
     } else {
-      // 폴백. 4a가 감지한 속도 어뷰징을 여기서 처음으로 실제 반영한다.
       breakdown = ExpService.calculate(
         ExpService.factorsFor(quest: quest, user: user, now: now),
         dailyExpEarned: user.dailyExpEarnedOn(now),
@@ -574,8 +580,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       lastExpEarnedAt: now,
     );
 
-    // 서버가 완료 기록을 다시 세어 내려준 배지 진행도. 멱등 재요청이면
-    // payload 안쪽에 들어 있다.
     final serverBadge = serverResult == null
         ? null
         : VerifyBadgeProgress.pick(
@@ -585,7 +589,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
                     : null),
           );
 
-    // 서버가 없을 때만 쓰는 폴백. 완료한 퀘스트의 키워드 카운트로 로컬 적립한다.
     final completedQuests = [
       for (final id in completedIds)
         if (QuestRepository.findById(id) != null) QuestRepository.findById(id)!,
@@ -615,7 +618,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     );
   }
 
-  /// 홈 추천 목록에서 퀘스트를 고르면 지도의 해당 시트를 펼친다 (2a → 3b).
   void _focusQuestOnMap(QuestModel quest) {
     setState(() {
       _currentTab = AppTab.map;
@@ -626,6 +628,7 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   // ---------------------------------------------------------------------------
   // 빌드
   // ---------------------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -638,12 +641,10 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   }
 
   Widget _buildCurrentScreen() {
-    // 0. 스플래시 — 이 뒤에서 세션 복원이 돌고 있다.
     if (_showSplash) {
       return SplashScreen(progress: _splashProgress);
     }
 
-    // 1. 미가입 계정으로 로그인했다 → 온보딩(가입 모드)
     if (_pendingSignup != null) {
       return OnboardingScreen(
         mode: OnboardingMode.signup,
@@ -656,28 +657,25 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       );
     }
 
-    // 2. 가입 방법 고르기
     if (!_isLoggedIn && _authPhase == _AuthPhase.chooseProvider) {
       return SignupScreen(
         isBusy: _isAuthBusy,
         onPickProvider: _pickProvider,
-        onGuest: _devGuestLogin, // DEV-ONLY
+        onGuest: _devGuestLogin,
         onBack: () => setState(() => _authPhase = _AuthPhase.login),
       );
     }
 
-    // 3. 로그인
     if (!_isLoggedIn) {
       return LoginScreen(
         isBusy: _isAuthBusy,
         onPickProvider: _pickProvider,
-        onGuest: _devGuestLogin, // DEV-ONLY
+        onGuest: _devGuestLogin,
         onGoSignup: () =>
             setState(() => _authPhase = _AuthPhase.chooseProvider),
       );
     }
 
-    // 4. 취향 재설정
     if (_currentUser == null || _isEditingSurvey) {
       return OnboardingScreen(
         mode: OnboardingMode.editProfile,
@@ -691,7 +689,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     final activeIds = {for (final a in _activeQuests) a.quest.id};
     final completedIds = user.completedQuestIds.toSet();
 
-    // 5. 설정 (5d) — 탭 위에 겹친다
     if (_showSettings) {
       return SettingsScreen(
         onBack: () => setState(() => _showSettings = false),
@@ -707,10 +704,34 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
           setState(() => _showSettings = false);
           _logout();
         },
+        onDeleteAccount: () async{
+          showDialog(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('회원 탈퇴'),
+              content: const Text('정말 탈퇴하시겠습니까?\n모든 진행 기록과 데이터가 삭제됩니다.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('취소'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    _deleteAccount();
+                  },
+                  child: const Text(
+                    '탈퇴하기',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       );
     }
 
-    // 6. 프로필 (5c)
     if (_showProfile) {
       return ProfileScreen(
         user: user,
@@ -722,7 +743,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       );
     }
 
-    // 7. 배지 탭 (5a)
     if (_currentTab == AppTab.badges) {
       return BadgeScreen(
         user: user,
@@ -736,7 +756,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       );
     }
 
-    // 3. 지도 탭
     if (_currentTab == AppTab.map) {
       return MapScreen(
         user: user,
@@ -759,11 +778,9 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
         if (QuestRepository.findById(id) != null) QuestRepository.findById(id)!,
     ];
 
-    // 4. 홈 탭
     return HomeScreen(
       user: user,
       activeQuests: _activeQuests,
-      // 완료한 퀘스트는 추천하지 않는다. 눌러도 수락되지 않으니 자리만 차지한다.
       recommendedQuests:
           QuestRepository.nearby(excludeIds: {...activeIds, ...completedIds}),
       badges: BadgeRepository.progressFor(completedQuests),

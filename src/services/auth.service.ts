@@ -42,6 +42,11 @@ export class AuthService {
       targetUid = googleUser.sub;
       email = googleUser.email;
     } else if (provider === "GUEST") {
+      // 🔒 운영 환경에서 게스트 로그인 차단 (개발/테스트 환경은 유지)
+      if (process.env.NODE_ENV === "production") {
+        throw new AppError("FORBIDDEN", "운영 환경에서는 게스트 로그인을 이용할 수 없습니다.");
+      }
+
       if (!targetUid) {
         targetUid = `guest_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
       }
@@ -76,7 +81,7 @@ export class AuthService {
     };
   }
 
-  // 2. 닉네임 중복 확인 API (추가)
+  // 2. 닉네임 중복 확인 API
   static async checkNickname(nickname: string) {
     if (!nickname || nickname.trim().length === 0) {
       throw new AppError("BAD_REQUEST", "검사할 닉네임을 입력해 주세요.");

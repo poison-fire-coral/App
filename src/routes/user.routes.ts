@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { UserController } from "../controllers/user.controller";
 import { BadgeController } from "../controllers/badge.controller";
-import { authenticateToken } from "../middlewares/auth.middleware"; // authenticateJwt -> authenticateToken으로 변경
+import { authenticateToken } from "../middlewares/auth.middleware";
 
 const router = Router();
 
@@ -17,5 +17,8 @@ router.get("/me/profile", authenticateToken, UserController.getProfileSummary);
 // 대표 배지 (홈 3칸)
 router.get("/me/featured-badges", authenticateToken, BadgeController.featured);
 router.put("/me/featured-badges", authenticateToken, BadgeController.updateFeatured);
+
+// 💡 회원 탈퇴 (본인 계정 삭제)
+router.delete("/me", authenticateToken, UserController.deleteMe);
 
 export default router;
