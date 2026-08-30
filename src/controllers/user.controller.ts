@@ -55,7 +55,7 @@ export class UserController {
     }
   }
 
-  // 3. 프로필 화면(5c) — 통계 + 최근 발자국
+  // 4. 프로필 화면(5c) — 통계 + 최근 발자국
   static async getProfileSummary(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user?.id;
@@ -65,6 +65,24 @@ export class UserController {
 
       const summary = await UserService.getProfileSummary(userId);
       return res.status(200).json({ data: summary, error: null });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // 5. 회원 탈퇴 (본인 계정 삭제)
+  static async deleteMe(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        throw new AppError("UNAUTHORIZED", "인증 정보가 유효하지 않습니다.");
+      }
+
+      await UserService.deleteAccount(userId);
+      return res.status(200).json({
+        data: { message: "회원 탈퇴가 완료되었습니다." },
+        error: null,
+      });
     } catch (error) {
       next(error);
     }

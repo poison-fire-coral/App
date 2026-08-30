@@ -3,8 +3,11 @@ import { QuestType } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 import { CustomError } from "../utils/CustomError";
 import { calculateHaversineDistance, checkSpeedAbuse } from "../utils/geo.util";
+import { getKSTDateString, isOffPeakKST } from "../utils/date.util"; // 💡 date.util에서 불러옴
 import { calculateRewardExp, processLevelUp } from "./exp-engine.service";
 import { recalculateBadges } from "./badge.service";
+
+// ❌ 기존에 작성되어 있던 local getKSTDateString 및 isOffPeakKST 함수 선언부는 삭제되었습니다.
 
 /**
  * Place.congestionScore(0~100 백분위)를 EXP 엔진이 기대하는 1/2/3 등급으로 옮긴다.
@@ -54,8 +57,8 @@ interface TourApiPlace {
   addr2?: string;
   mapx: string; // lng
   mapy: string; // lat
-  firstimage?: string; // 대표 이미지 원본
-  firstimage2?: string; // 대표 이미지 썸네일
+  firstimage?: string;
+  firstimage2?: string;
   areacode?: string;
 }
 
@@ -64,11 +67,6 @@ export class QuestService {
     return status === "COMPLETED" || status === "done";
   }
 
-  // -------------------------------------------------------------
-  // [TourAPI Ver4.3 연동 헬퍼] 위치 기반 한국관광공사 데이터 조회
-  // -------------------------------------------------------------
-
-  /** TourAPI 위치 기반 관광정보 조회 API (locationBasedList2 - KorService2) */
   private static async searchTourApiPlaces(
     lat: number,
     lng: number,
@@ -86,7 +84,7 @@ export class QuestService {
 
       const response = await axios.get(`${baseUrl}?serviceKey=${encodedKey}`, {
         params: {
-          numOfRows: 50, // 💡 기존 30개에서 50개로 상향 (더 많은 장소 수집)
+          numOfRows: 50,
           pageNo: 1,
           MobileOS: "ETC",
           MobileApp: "LocalQuest",
@@ -110,13 +108,12 @@ export class QuestService {
     }
   }
 
-  /** TourAPI 관광지 카테고리(contentTypeId) 기반 다양한 퀘스트 메타데이터 자동 생성 규칙 */
   private static generateQuestMetadata(place: TourApiPlace) {
     const typeId = place.contenttypeid;
     const name = place.title;
 
     switch (typeId) {
-      case "12": // 관광지 -> 퀴즈형
+      case "12":
         return {
           title: `${name} 역사·문화 탐방`,
           story: `${name}에 도달하여 지역 고유의 특별한 매력을 발견해보세요!`,
@@ -129,7 +126,7 @@ export class QuestService {
           quizAnswer: "역사/문화 관광지",
           quizExplanation: "이곳은 주요 역사 및 문화 관광지입니다.",
         };
-      case "14": // 문화시설 -> 피사체 지정 사진형
+      case "14":
         return {
           title: `${name} 로컬 전시 인증`,
           story: `${name}에서 펼쳐지는 문화와 예술 공간을 조용히 관람해보세요.`,
@@ -139,7 +136,7 @@ export class QuestService {
           questType: "PHOTO_SINGLE" as QuestType,
           photoPrompt: `${name}의 건물 입구 또는 대표 안내판을 촬영하세요.`,
         };
-      case "15": // 축제/공연/행사 -> 수집 사진형
+      case "15":
         return {
           title: `${name} 현장 스냅 사진`,
           story: `${name} 축제 현장의 생생한 분위기를 담아보세요!`,
@@ -149,7 +146,7 @@ export class QuestService {
           questType: "PHOTO_COLLECT" as QuestType,
           requiredCount: 2,
         };
-      case "28": // 레포츠 -> 탐색형
+      case "28":
         return {
           title: `${name} 액티비티 도전`,
           story: `${name} 주변을 둘러보며 숨겨진 활동 장소를 탐색해 보세요.`,
@@ -158,7 +155,7 @@ export class QuestService {
           keywords: ["액티비티", "모험", "스포츠"],
           questType: "EXPLORATION" as QuestType,
         };
-      case "32": // 숙박 -> 기록형
+      case "32":
         return {
           title: `${name} 로컬 쉼터 한줄평`,
           story: `${name} 주변 공간을 거닐며 정겨운 소도시 휴식의 소감을 기록해보세요.`,
@@ -167,7 +164,7 @@ export class QuestService {
           keywords: ["휴식", "숙소", "힐링"],
           questType: "RECORD" as QuestType,
         };
-      case "38": // 쇼핑/전통시장 -> 피사체 지정 사진형
+      case "38":
         return {
           title: `${name} 전통시장 간판 찾기`,
           story: `${name}의 풍성한 로컬 정취와 가게 간판을 담아보세요.`,
@@ -177,7 +174,7 @@ export class QuestService {
           questType: "PHOTO_SINGLE" as QuestType,
           photoPrompt: `${name}의 정겨운 가게 간판 사진`,
         };
-      case "39": // 음식점 -> 기록형
+      case "39":
         return {
           title: `${name} NPC 맛집 방명록`,
           story: `${name}에서 느낀 분위기와 맛에 대한 생각을 한 줄로 남겨보세요.`,
@@ -186,7 +183,7 @@ export class QuestService {
           keywords: ["맛집", "음식", "로컬"],
           questType: "RECORD" as QuestType,
         };
-      default: // 기본 -> 방문형
+      default:
         return {
           title: `${name} 스팟 도달`,
           story: `${name} 목표 지점에 도달하여 로컬 인증을 완료해보세요.`,
@@ -198,7 +195,6 @@ export class QuestService {
     }
   }
 
-  /** 주변 TourAPI 장소를 실시간 수집 및 DB 동기화 */
   private static async syncNearbyTourQuests(lat: number, lng: number, radiusM: number) {
     const tourPlaces = await this.searchTourApiPlaces(lat, lng, radiusM);
 
@@ -252,19 +248,13 @@ export class QuestService {
               difficulty: meta.difficulty,
               baseExp: meta.baseExp,
               keywords: meta.keywords,
-              place: {
-                connect: { id: place.id },
-              },
+              place: { connect: { id: place.id } },
               active: true,
               radiusM: 50,
               halfStep: false,
               questType: meta.questType,
               photoPrompt: (meta as any).photoPrompt || null,
-              
-              // ⭕ [해결 핵심] requiredCount가 Int(non-null)이므로 null을 주면 Prisma 에러 발생!
-              // ?? 1 을 사용하여 null/undefined 시 기본값 1이 들어가게 함.
               requiredCount: (meta as any).requiredCount ?? 1,
-
               quizQuestion: (meta as any).quizQuestion || null,
               quizOptions: (meta as any).quizOptions || undefined,
               quizAnswer: (meta as any).quizAnswer || null,
@@ -341,7 +331,6 @@ export class QuestService {
     return { isClustered: false, zoom, totalQuests: quests.length, quests };
   }
 
-  // 2. 내 위치 기반 근처 퀘스트 조회 (TourAPI 실시간 연동)
   static async getNearbyQuests(dto: NearbyQueryDto) {
     const { lat, lng, radiusM = 3000, keywords } = dto;
 
@@ -421,6 +410,9 @@ export class QuestService {
     return quest;
   }
 
+  /**
+   * 💡 16. 퀘스트 수락 (재수행 조건 반영)
+   */
   static async acceptQuest(userId: number, questId: number) {
     const quest = await prisma.quest.findUnique({ where: { id: questId } });
 
@@ -433,12 +425,25 @@ export class QuestService {
     });
 
     if (existingUserQuest) {
+      // 이미 완료한 경우: 마지막 완료 시점으로부터 24시간이 넘었는지 검증
       if (this.isCompletedStatus(existingUserQuest.status)) {
-        throw new CustomError(
-          409,
-          "QUEST_ALREADY_DONE",
-          "이미 완료한 퀘스트입니다. 다시 진행할 수 없습니다."
-        );
+        const lastCompletedAt = existingUserQuest.completedAt || existingUserQuest.lastVerifiedAt || existingUserQuest.startedAt;;
+        const now = new Date();
+        const hoursDiff = (now.getTime() - lastCompletedAt.getTime()) / (1000 * 3600);
+
+        if (hoursDiff < 24) {
+          throw new CustomError(
+            409,
+            "QUEST_ALREADY_DONE",
+            "이미 완료한 퀘스트입니다. 완료 후 24시간이 지나야 재수행 가능합니다."
+          );
+        }
+
+        // 24시간이 지났으면 상태를 IN_PROGRESS로 업데이트하여 재수행 허용
+        return await prisma.userQuest.update({
+          where: { userId_questId: { userId, questId } },
+          data: { status: "IN_PROGRESS", startedAt: now },
+        });
       }
       throw new CustomError(409, "QUEST_ALREADY_ACCEPTED", "이미 수락한 퀘스트입니다.");
     }
@@ -470,7 +475,13 @@ export class QuestService {
     return { success: true, message: "퀘스트 수락을 취소했습니다." };
   }
 
+  /**
+   * 💡 14, 15, 16 반영: 퀘스트 검증 및 보상 지급
+   */
   static async verifyQuest(dto: VerifyQuestDto) {
+    const now = new Date();
+
+    // 멱등성 검증 (동일 Request ID 처리 방지)
     const existingCompletion = await prisma.questCompletion.findUnique({
       where: { requestId: dto.requestId },
     });
@@ -479,21 +490,35 @@ export class QuestService {
       return { isAlreadyProcessed: true, completion: existingCompletion };
     }
 
-    const [priorCompletion, userQuest] = await Promise.all([
-      prisma.questCompletion.findFirst({
-        where: { userId: dto.userId, questId: dto.questId },
-      }),
-      prisma.userQuest.findUnique({
-        where: { userId_questId: { userId: dto.userId, questId: dto.questId } },
-      }),
-    ]);
+    const quest = await prisma.quest.findUnique({
+      where: { id: dto.questId },
+      include: { place: true },
+    });
 
-    if (priorCompletion || this.isCompletedStatus(userQuest?.status)) {
-      throw new CustomError(
-        409,
-        "QUEST_ALREADY_DONE",
-        "이미 완료한 퀘스트입니다. 다시 진행할 수 없습니다."
-      );
+    if (!quest) {
+      throw new CustomError(404, "QUEST_NOT_FOUND", "존재하지 않는 퀘스트입니다.");
+    }
+
+    // 💡 16. 재수행(x0.3) 및 완료 제한 조건 판단
+    const latestCompletion = await prisma.questCompletion.findFirst({
+      where: { userId: dto.userId, questId: dto.questId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    let isRepeat = false;
+    if (latestCompletion) {
+      const hoursDiff = (now.getTime() - latestCompletion.createdAt.getTime()) / (1000 * 3600);
+      const isSameDayKST = getKSTDateString(latestCompletion.createdAt) === getKSTDateString(now);
+
+      // 24시간 미만이거나 당일 이미 완료했으면 차단 (멱등성 & 규칙 유지)
+      if (hoursDiff < 24 || isSameDayKST) {
+        throw new CustomError(
+          409,
+          "QUEST_ALREADY_DONE",
+          "이전에 완료한 퀘스트입니다. 24시간 경과 및 하루 1회 재수행 조건이 충족되지 않았습니다."
+        );
+      }
+      isRepeat = true;
     }
 
     if (dto.accuracyM > 100) {
@@ -509,15 +534,6 @@ export class QuestService {
       throw new CustomError(404, "USER_NOT_FOUND", "존재하지 않는 유저입니다.");
     }
 
-    const quest = await prisma.quest.findUnique({
-      where: { id: dto.questId },
-      include: { place: true },
-    });
-
-    if (!quest) {
-      throw new CustomError(404, "QUEST_NOT_FOUND", "존재하지 않는 퀘스트입니다.");
-    }
-
     const distance = calculateHaversineDistance(dto.lat, dto.lng, quest.place.lat, quest.place.lng);
 
     if (distance > quest.radiusM) {
@@ -528,9 +544,11 @@ export class QuestService {
       );
     }
 
-    const now = new Date();
-    let isAbused = false;
+    const userQuest = await prisma.userQuest.findUnique({
+      where: { userId_questId: { userId: dto.userId, questId: dto.questId } },
+    });
 
+    let isAbused = false;
     if (userQuest?.lastVerifiedAt && userQuest?.lastLat && userQuest?.lastLng) {
       isAbused = checkSpeedAbuse(
         userQuest.lastLat,
@@ -542,19 +560,39 @@ export class QuestService {
       );
     }
 
+    // 💡 14. 신규 지역 판정 (유저가 해당 regionCode에서 성공한 퀘스트 이력이 없는지 검사)
+    let isNewArea = false;
+    const regionCode = quest.place?.regionCode;
+
+    if (regionCode) {
+      const pastCompletionInRegion = await prisma.questCompletion.findFirst({
+        where: {
+          userId: dto.userId,
+          quest: {
+            place: { regionCode },
+          },
+        },
+      });
+      isNewArea = !pastCompletionInRegion;
+    }
+
+    // 💡 15. 비피크 시간대 계산 (KST 기준 평일 오전)
+    const isOffPeak = isOffPeakKST(now);
+
     let dailyExpEarned = user.dailyExpEarned;
-    const isSameDay = user.lastExpResetAt.toDateString() === now.toDateString();
-    if (!isSameDay) {
+    const isSameDayReset = getKSTDateString(user.lastExpResetAt) === getKSTDateString(now);
+    if (!isSameDayReset) {
       dailyExpEarned = 0;
     }
 
+    // 보상 EXP 계산 (재수행 x0.3 배율 적용 포함)
     const expResult = calculateRewardExp(
       {
         baseExp: quest.baseExp,
-        halfStep: quest.halfStep,
+        halfStep: isRepeat ? true : quest.halfStep, // 재수행 시 0.3배(또는 halfStep) 적용
         congestionScore: toCongestionTier(quest.place.congestionScore),
-        isNewArea: true,
-        isOffPeak: false,
+        isNewArea,
+        isOffPeak,
         streakDays: user.streakDays,
         isAbused,
       },
@@ -571,7 +609,7 @@ export class QuestService {
           level: levelResult.level,
           expCurrent: levelResult.expCurrent,
           expTotal: { increment: expResult.finalExp },
-          dailyExpEarned: isSameDay ? { increment: expResult.finalExp } : expResult.finalExp,
+          dailyExpEarned: isSameDayReset ? { increment: expResult.finalExp } : expResult.finalExp,
           lastExpResetAt: now,
           lastActiveAt: now,
         },

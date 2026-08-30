@@ -127,4 +127,10 @@ class AuthRepository {
 
   /// 서버에는 로그아웃 엔드포인트가 없다. 토큰만 버리면 된다.
   static Future<void> logout() => TokenStore.clear();
+
+  /// 회원 탈퇴: 서버 계정을 삭제하고 로컬 저장 토큰을 비운다.
+  static Future<void> deleteAccount() async {
+    await ApiClient.delete('/users/me');
+    await TokenStore.clear();
+  }
 }
