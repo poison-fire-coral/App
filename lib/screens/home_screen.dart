@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
-import '../dev/dev_tools.dart'; // DEV-ONLY
-import '../services/permission_service.dart';
-
 import '../data/badge_api.dart';
 import '../data/quest_repository.dart';
+import '../dev/dev_tools.dart'; // DEV-ONLY
 import '../models/active_quest.dart';
 import '../models/quest_model.dart';
 import '../models/user_model.dart';
 import '../services/geo.dart';
+import '../services/permission_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
@@ -17,7 +16,6 @@ import '../widgets/badge_widgets.dart';
 
 // -----------------------------------------------------------------------------
 // 분기 B · 홈 화면
-// 진행 중 퀘스트가 있으면 2a(캐러셀), 없으면 2b(빈 상태 CTA)로 갈린다.
 // -----------------------------------------------------------------------------
 class HomeScreen extends StatefulWidget {
   final UserModel user;
@@ -28,8 +26,6 @@ class HomeScreen extends StatefulWidget {
   final void Function(BuildContext context)? onOpenSettings;
   final VoidCallback? onOpenMap;
   final VoidCallback? onOpenBadges;
-
-  /// 좌상단 프로필 링을 눌렀을 때 (5c)
   final VoidCallback? onOpenProfile;
 
   const HomeScreen({
@@ -60,14 +56,7 @@ class _HomeScreenState extends State<HomeScreen> {
   double? _userLng;
 
   /// 홈 3칸에 세울 배지 — **서버가 진실이다** (체크리스트 21번).
-  ///
-  /// 예전에는 `BadgeRepository.progressFor(완료한 퀘스트)`로 앱이 직접 셌다.
-  /// 그 계산은 앱이 아는 완료 목록(`SharedPreferences`)에만 기대는데, 그건
-  /// 기기를 바꾸면 사라지고 서버의 배지 규칙과도 다르다. 그래서 프로필에서
-  /// 대표 배지를 지정해도 홈은 계속 빈 칸이었다.
   List<BadgeSummary> _badges = const [];
-
-  /// 아직 못 받았으면 빈 칸 대신 자리만 잡아 둔다. 로딩과 "정말 없음"은 다르다.
   bool _isLoadingBadges = true;
 
   @override
@@ -79,15 +68,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 대표 배지를 서버에서 받아 3칸을 채운다.
-  ///
-  /// **호출을 하나로 묶은 이유.** `GET /badges` 한 번이면 `isFeatured`와
-  /// 획득 여부가 같이 온다. `/users/me/featured-badges`를 따로 부르면 왕복이
-  /// 하나 더 늘어나는데, 홈은 가장 자주 열리는 화면이라 그 한 번이 체감으로 온다.
-  /// (20번에서 `GET /home`으로 합쳐지면 이 호출도 그리로 들어간다.)
-  ///
-  /// **고르는 순서:** 사용자가 지정한 대표 배지 → 그래도 모자라면 획득한 배지
-  /// 중 아무거나. 지정은 안 했지만 딴 배지는 있는 사람에게 빈 칸만 보이면
-  /// "획득한 게 없다"로 읽힌다.
   Future<void> _loadBadges() async {
     try {
       final result = await BadgeApi.list();
@@ -104,20 +84,15 @@ class _HomeScreenState extends State<HomeScreen> {
         _isLoadingBadges = false;
       });
     } catch (_) {
-      // 배지를 못 받아도 홈은 떠야 한다. 빈 슬롯이 배지 화면으로 가는
-      // 입구라서, 실패했을 때의 모습이 "아직 하나도 없음"과 같아도 해롭지 않다.
       if (!mounted) return;
       setState(() => _isLoadingBadges = false);
     }
   }
 
-/// 백엔드 API를 호출하여 내 위치 기준 가장 가까운 퀘스트 3개를 로드합니다.
+  /// 백엔드 API를 호출하여 내 위치 기준 가장 가까운 퀘스트 3개를 로드합니다.
   Future<void> _loadNearbyQuests() async {
     try {
-      // 1. 권한을 확인하고 현재 위치를 얻는다(팝업은 온보딩에서 이미 거쳤다).
       final pos = await PermissionService.currentPosition();
-
-      // DEV-ONLY: 위치 고정이 켜져 있으면 그 좌표를 쓴다.
       final override = DevTools.locationOverride;
 
       final lat = override?.latitude ??
@@ -127,15 +102,12 @@ class _HomeScreenState extends State<HomeScreen> {
           pos?.longitude ??
           QuestRepository.mockUserLocation.longitude;
 
-      // 2. 백엔드에서 거리순 정렬된 내 주변 퀘스트 수집
       final quests = await QuestRepository.fetchNearbyQuests(lat: lat, lng: lng);
 
       if (mounted) {
         setState(() {
           _userLat = lat;
           _userLng = lng;
-          // 가장 가까운 퀘스트 최대 3개만 추출.
-          // 이미 완료한 퀘스트는 다시 수락할 수 없으므로 추천에서도 뺀다.
           _nearbyQuests = quests
               .where((q) => !widget.user.hasCompleted(q.id))
               .take(3)
@@ -146,17 +118,16 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          // API 실패 시 기본 전달받은 추천 목록 중 3개 사용
           _nearbyQuests = widget.recommendedQuests.take(3).toList();
           _isLoadingNearby = false;
         });
       }
     }
   }
+
   @override
   void didUpdateWidget(HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 퀘스트를 완료·포기해 목록이 줄면 캐러셀 인덱스를 범위 안으로 되돌린다.
     final maxIndex = widget.activeQuests.length - 1;
     if (_carouselIndex > maxIndex) {
       _carouselIndex = maxIndex < 0 ? 0 : maxIndex;
@@ -191,7 +162,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final displayQuests = _nearbyQuests.isNotEmpty ? _nearbyQuests : widget.recommendedQuests.take(3).toList();
+    final displayQuests = _nearbyQuests.isNotEmpty
+        ? _nearbyQuests
+        : widget.recommendedQuests.take(3).toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -207,66 +180,80 @@ class _HomeScreenState extends State<HomeScreen> {
               onTapSettings: () => widget.onOpenSettings?.call(context),
             ),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.gutter,
-                  AppSpacing.lg,
-                  AppSpacing.gutter,
-                  AppSpacing.xxl,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (widget.activeQuests.isEmpty)
-                      _buildEmptyQuestCard()
-                    else
-                      _buildActiveQuestCarousel(),
-                    const SizedBox(height: AppSpacing.xxl),
-                    SectionHeader(
-                      title: '내 주변 추천 퀘스트',
-                      trailingText: '새로고침',
-                      onTapTrailing: () {
-                        setState(() => _isLoadingNearby = true);
-                        _loadNearbyQuests();
-                      },
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    if (_isLoadingNearby)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: AppColors.quest500),
+              child: RefreshIndicator(
+                color: AppColors.quest500,
+                onRefresh: () async {
+                  await Future.wait([
+                    _loadNearbyQuests(),
+                    _loadBadges(),
+                  ]);
+                },
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.gutter,
+                    AppSpacing.lg,
+                    AppSpacing.gutter,
+                    AppSpacing.xxl,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (widget.activeQuests.isEmpty)
+                        _buildEmptyQuestCard()
+                      else
+                        _buildActiveQuestCarousel(),
+                      const SizedBox(height: AppSpacing.xxl),
+                      SectionHeader(
+                        title: '내 주변 추천 퀘스트',
+                        trailingText: '새로고침',
+                        onTapTrailing: () {
+                          setState(() => _isLoadingNearby = true);
+                          _loadNearbyQuests();
+                        },
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      if (_isLoadingNearby)
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.quest500,
+                              ),
+                            ),
                           ),
-                        ),
-                      )
-                    else if (displayQuests.isEmpty)
-                      NoteBox.text('주변에 추천할 퀘스트가 없어요. 지도를 움직여 다른 지역을 살펴보세요.', fontSize: 12)
-                    else
-                      for (final quest in displayQuests) _buildRecommendedRow(quest),
-                    const SizedBox(height: AppSpacing.xxl),
-                    SectionHeader(
-                      title: '내 대표 배지',
-                      trailingText: '전체보기 ›',
-                      // 배지는 '완료'의 축이라 jade를 쓴다 (디자인 시스템 02 역할 색)
-                      accent: AppColors.jade500,
-                      onTapTrailing: widget.onOpenBadges ?? () => _notReady('배지'),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    if (_isLoadingBadges)
-                      _buildBadgeRow(const [])
-                    else if (_badges.isEmpty)
-                      NoteBox.text(
-                        '아직 획득한 배지가 없어요. 첫 퀘스트를 완료하면 배지가 생겨요',
-                        fontSize: 12,
-                        textAlign: TextAlign.center,
-                      )
-                    else
-                      _buildBadgeRow(_badges),
-                  ],
+                        )
+                      else if (displayQuests.isEmpty)
+                        NoteBox.text('주변에 추천할 퀘스트가 없어요. 지도를 움직여 다른 지역을 살펴보세요.',
+                            fontSize: 12)
+                      else
+                        for (final quest in displayQuests)
+                          _buildRecommendedRow(quest),
+                      const SizedBox(height: AppSpacing.xxl),
+                      SectionHeader(
+                        title: '내 대표 배지',
+                        trailingText: '전체보기 ›',
+                        accent: AppColors.jade500,
+                        onTapTrailing:
+                            widget.onOpenBadges ?? () => _notReady('배지'),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      if (_isLoadingBadges)
+                        _buildBadgeRow(const [])
+                      else if (_badges.isEmpty)
+                        NoteBox.text(
+                          '아직 획득한 배지가 없어요. 첫 퀘스트를 완료하면 배지가 생겨요',
+                          fontSize: 12,
+                          textAlign: TextAlign.center,
+                        )
+                      else
+                        _buildBadgeRow(_badges),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -286,14 +273,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // 2a · 진행 중 퀘스트 캐러셀
-  // ---------------------------------------------------------------------------
   Widget _buildActiveQuestCarousel() {
     final quests = widget.activeQuests;
 
-    // 디자인 시스템 11: 홈에서 e3를 쓰는 곳은 여기 하나뿐이다.
-    // 전부 떠 있으면 아무것도 떠 있지 않다 (01 원칙 3).
     return AppCard(
       gradient: AppSurface.highlight,
       shadow: AppElevation.e3,
@@ -313,19 +295,23 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: AppSpacing.md),
           Row(
             children: [
-              _buildCarouselArrow('‹', () => _moveCarousel(-1), quests.length > 1),
+              _buildCarouselArrow(
+                  '‹', () => _moveCarousel(-1), quests.length > 1),
               Expanded(
                 child: SizedBox(
                   height: 104,
                   child: PageView.builder(
                     controller: _carouselController,
                     itemCount: quests.length,
-                    onPageChanged: (index) => setState(() => _carouselIndex = index),
-                    itemBuilder: (context, index) => _buildActiveQuestCard(quests[index]),
+                    onPageChanged: (index) =>
+                        setState(() => _carouselIndex = index),
+                    itemBuilder: (context, index) =>
+                        _buildActiveQuestCard(quests[index]),
                   ),
                 ),
               ),
-              _buildCarouselArrow('›', () => _moveCarousel(1), quests.length > 1),
+              _buildCarouselArrow(
+                  '›', () => _moveCarousel(1), quests.length > 1),
             ],
           ),
           const SizedBox(height: 9),
@@ -341,7 +327,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       margin: const EdgeInsets.symmetric(horizontal: 2.5),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: i == _carouselIndex ? AppColors.quest500 : AppColors.ink300,
+                        color: i == _carouselIndex
+                            ? AppColors.quest500
+                            : AppColors.ink300,
                       ),
                     ),
                 ],
@@ -386,16 +374,15 @@ class _HomeScreenState extends State<HomeScreen> {
         active.currentSpot.point.longitude,
       );
     } else {
-      distanceMeters = Geo.distanceMeters(QuestRepository.mockUserLocation, active.currentSpot.point);
+      distanceMeters = Geo.distanceMeters(
+          QuestRepository.mockUserLocation, active.currentSpot.point);
     }
 
-    // 목표에 가까워질수록 진행바가 quest → jade 로 넘어간다 (디자인 시스템 11).
     final isNear = active.progress >= 0.85;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 대표사진 자리. 아직 이미지 소스가 없으므로 난이도 등급을 대신 세운다.
         Container(
           width: 76,
           alignment: Alignment.center,
@@ -448,9 +435,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // 2b · 진행 중 퀘스트 빈 상태 카드
-  // ---------------------------------------------------------------------------
   Widget _buildEmptyQuestCard() {
     return AppCard(
       gradient: AppSurface.highlight,
@@ -503,7 +487,6 @@ class _HomeScreenState extends State<HomeScreen> {
       distanceStr = QuestRepository.distanceFromUser(quest);
     }
 
-    // 목록에서 반복되는 표면은 e2 (디자인 시스템 03 · 11).
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: AppCard(
@@ -547,12 +530,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildBadgeRow(List<BadgeSummary> badges) {
     return Row(
       children: [
-        for (int i = 0; i < 3; i++) ...[
-          if (i > 0) const SizedBox(width: 10),
+        for (var i = 0; i < 3; i++) ...[
+          if (i > 0) const SizedBox(width: AppSpacing.md),
           Expanded(
             child: AspectRatio(
               aspectRatio: 1,
-              child: i < badges.length ? _buildBadgeSlot(badges[i]) : _buildEmptyBadgeSlot(),
+              child: i < badges.length
+                  ? _buildBadgeSlot(badges[i])
+                  : _buildEmptyBadgeSlot(),
             ),
           ),
         ],
@@ -560,10 +545,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// 획득한 배지는 '완료'의 축이라 jade로 칠한다 (디자인 시스템 02).
-  ///
-  /// 눌러 상세로 보낼 수 있지만 지금은 배지 화면으로만 보낸다 — 홈에서
-  /// 상세로 바로 뛰면 뒤로 가기가 홈으로 돌아와 목록을 건너뛴다.
   Widget _buildBadgeSlot(BadgeSummary badge) {
     return PressableScale(
       onTap: widget.onOpenBadges ?? () => _notReady('배지'),
@@ -578,8 +559,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 서버가 준 아트 키로 실제 배지 그림을 그린다. 키를 모르면
-            // BadgeArt가 자물쇠로 대신 그려서 칸이 비지 않는다.
             BadgeArt(artKey: badge.artKey, size: 26),
             const SizedBox(height: AppSpacing.xs),
             Text(
@@ -595,7 +574,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// 빈 칸은 눌러 새긴 면으로 내려간다. 볼록(획득)과 오목(미획득)이 짝을 이룬다.
   Widget _buildEmptyBadgeSlot() {
     return PressableScale(
       onTap: widget.onOpenBadges ?? () => _notReady('배지'),

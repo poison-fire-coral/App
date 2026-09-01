@@ -92,6 +92,24 @@ export class QuestController {
     }
   }
 
+  // 4-1. 어뷰징 탐지 로그 조회 (GET /api/v1/quests/abuse-logs)
+  static async getAbuseLogs(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: { code: "UNAUTHORIZED", message: "인증 정보가 없습니다." } });
+      }
+
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+
+      const result = await QuestService.getAbuseLogs({ page, limit });
+      res.status(200).json({ data: result, error: null });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // 5. 퀘스트 단건 상세 조회 (GET /api/v1/quests/:id)
   static async getQuestById(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {

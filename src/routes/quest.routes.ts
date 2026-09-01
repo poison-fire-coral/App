@@ -19,6 +19,9 @@ router.get("/recommended", authenticateToken, QuestController.getRecommendedQues
 // 4. 내 진행 중/완료 퀘스트 목록 조회 (JWT 인증 필요)
 router.get("/my", authenticateToken, QuestController.getMyQuests);
 
+// 4-1. 어뷰징 탐지 로그 조회 (32번 - JWT 인증 필요, /:id 보다 상단 배치)
+router.get("/abuse-logs", authenticateToken, QuestController.getAbuseLogs);
+
 // 5. 퀘스트 단건 상세 조회
 router.get("/:id", QuestController.getQuestById);
 
