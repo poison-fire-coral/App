@@ -51,3 +51,6 @@ node_modules
 
 # --dart-define 실제 값. dart_defines.example.json 을 복사해 만든다 (.env 와 같은 규칙)
 dart_defines.json
+
+# iOS 네이티브 빌드 설정으로만 닿는 키. ios/Flutter/Secrets.example.xcconfig 를 복사해 만든다 (체크리스트 03번)
+ios/Flutter/Secrets.xcconfig

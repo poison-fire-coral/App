@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 다크 모드 런치 스크린 바탕. ink900(#2A1512)에서 한 단 내린 값으로,
+         앱이 아직 다크 테마를 갖추지 않았으므로 브랜드 먹색에 맞춘다. -->
+    <color name="launch_background">#1C0F0D</color>
+</resources>

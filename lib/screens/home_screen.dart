@@ -4,7 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import '../dev/dev_tools.dart'; // DEV-ONLY
 import '../services/permission_service.dart';
 
-import '../data/badge_repository.dart';
+import '../data/badge_api.dart';
 import '../data/quest_repository.dart';
 import '../models/active_quest.dart';
 import '../models/quest_model.dart';
@@ -13,6 +13,7 @@ import '../services/geo.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/badge_widgets.dart';
 
 // -----------------------------------------------------------------------------
 // 분기 B · 홈 화면
@@ -22,7 +23,6 @@ class HomeScreen extends StatefulWidget {
   final UserModel user;
   final List<ActiveQuest> activeQuests;
   final List<QuestModel> recommendedQuests;
-  final List<BadgeProgress> badges;
   final ValueChanged<ActiveQuest> onContinueQuest;
   final ValueChanged<QuestModel> onSelectQuest;
   final void Function(BuildContext context)? onOpenSettings;
@@ -39,7 +39,6 @@ class HomeScreen extends StatefulWidget {
     required this.onSelectQuest,
     this.activeQuests = const [],
     this.recommendedQuests = const [],
-    this.badges = const [],
     this.onOpenSettings,
     this.onOpenMap,
     this.onOpenBadges,
@@ -60,11 +59,56 @@ class _HomeScreenState extends State<HomeScreen> {
   double? _userLat;
   double? _userLng;
 
+  /// 홈 3칸에 세울 배지 — **서버가 진실이다** (체크리스트 21번).
+  ///
+  /// 예전에는 `BadgeRepository.progressFor(완료한 퀘스트)`로 앱이 직접 셌다.
+  /// 그 계산은 앱이 아는 완료 목록(`SharedPreferences`)에만 기대는데, 그건
+  /// 기기를 바꾸면 사라지고 서버의 배지 규칙과도 다르다. 그래서 프로필에서
+  /// 대표 배지를 지정해도 홈은 계속 빈 칸이었다.
+  List<BadgeSummary> _badges = const [];
+
+  /// 아직 못 받았으면 빈 칸 대신 자리만 잡아 둔다. 로딩과 "정말 없음"은 다르다.
+  bool _isLoadingBadges = true;
+
   @override
   void initState() {
     super.initState();
     _carouselController = PageController();
     _loadNearbyQuests();
+    _loadBadges();
+  }
+
+  /// 대표 배지를 서버에서 받아 3칸을 채운다.
+  ///
+  /// **호출을 하나로 묶은 이유.** `GET /badges` 한 번이면 `isFeatured`와
+  /// 획득 여부가 같이 온다. `/users/me/featured-badges`를 따로 부르면 왕복이
+  /// 하나 더 늘어나는데, 홈은 가장 자주 열리는 화면이라 그 한 번이 체감으로 온다.
+  /// (20번에서 `GET /home`으로 합쳐지면 이 호출도 그리로 들어간다.)
+  ///
+  /// **고르는 순서:** 사용자가 지정한 대표 배지 → 그래도 모자라면 획득한 배지
+  /// 중 아무거나. 지정은 안 했지만 딴 배지는 있는 사람에게 빈 칸만 보이면
+  /// "획득한 게 없다"로 읽힌다.
+  Future<void> _loadBadges() async {
+    try {
+      final result = await BadgeApi.list();
+
+      final featured =
+          result.items.where((b) => b.isFeatured).toList(growable: false);
+      final achieved = result.items
+          .where((b) => b.state == BadgeState.achieved && !b.isFeatured)
+          .toList(growable: false);
+
+      if (!mounted) return;
+      setState(() {
+        _badges = [...featured, ...achieved].take(3).toList();
+        _isLoadingBadges = false;
+      });
+    } catch (_) {
+      // 배지를 못 받아도 홈은 떠야 한다. 빈 슬롯이 배지 화면으로 가는
+      // 입구라서, 실패했을 때의 모습이 "아직 하나도 없음"과 같아도 해롭지 않다.
+      if (!mounted) return;
+      setState(() => _isLoadingBadges = false);
+    }
   }
 
 /// 백엔드 API를 호출하여 내 위치 기준 가장 가까운 퀘스트 3개를 로드합니다.
@@ -147,7 +191,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final earnedBadges = widget.badges.where((b) => b.isEarned).take(3).toList();
     final displayQuests = _nearbyQuests.isNotEmpty ? _nearbyQuests : widget.recommendedQuests.take(3).toList();
 
     return Scaffold(
@@ -213,14 +256,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       onTapTrailing: widget.onOpenBadges ?? () => _notReady('배지'),
                     ),
                     const SizedBox(height: AppSpacing.md),
-                    if (earnedBadges.isEmpty)
+                    if (_isLoadingBadges)
+                      _buildBadgeRow(const [])
+                    else if (_badges.isEmpty)
                       NoteBox.text(
                         '아직 획득한 배지가 없어요. 첫 퀘스트를 완료하면 배지가 생겨요',
                         fontSize: 12,
                         textAlign: TextAlign.center,
                       )
                     else
-                      _buildBadgeRow(earnedBadges),
+                      _buildBadgeRow(_badges),
                   ],
                 ),
               ),
@@ -499,7 +544,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 대표 배지는 3칸 고정. 아직 못 채운 칸은 배지 화면으로 가는 빈 슬롯으로 둔다.
-  Widget _buildBadgeRow(List<BadgeProgress> badges) {
+  Widget _buildBadgeRow(List<BadgeSummary> badges) {
     return Row(
       children: [
         for (int i = 0; i < 3; i++) ...[
@@ -516,29 +561,36 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 획득한 배지는 '완료'의 축이라 jade로 칠한다 (디자인 시스템 02).
-  Widget _buildBadgeSlot(BadgeProgress badge) {
-    return Container(
-      alignment: Alignment.center,
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: AppColors.jade50,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        boxShadow: AppElevation.e1,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.workspace_premium_outlined,
-              size: 22, color: AppColors.jade500),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            badge.rule.name,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: AppType.micro.copyWith(color: AppColors.jade700),
-          ),
-        ],
+  ///
+  /// 눌러 상세로 보낼 수 있지만 지금은 배지 화면으로만 보낸다 — 홈에서
+  /// 상세로 바로 뛰면 뒤로 가기가 홈으로 돌아와 목록을 건너뛴다.
+  Widget _buildBadgeSlot(BadgeSummary badge) {
+    return PressableScale(
+      onTap: widget.onOpenBadges ?? () => _notReady('배지'),
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        decoration: BoxDecoration(
+          color: AppColors.jade50,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          boxShadow: AppElevation.e1,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 서버가 준 아트 키로 실제 배지 그림을 그린다. 키를 모르면
+            // BadgeArt가 자물쇠로 대신 그려서 칸이 비지 않는다.
+            BadgeArt(artKey: badge.artKey, size: 26),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              badge.displayName,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: AppType.micro.copyWith(color: AppColors.jade700),
+            ),
+          ],
+        ),
       ),
     );
   }

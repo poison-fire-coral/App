@@ -1,3 +1,11 @@
+@Tags(['live'])
+// 체크리스트 27번 — 실서버가 필요한 테스트. `flutter test`(CI 포함)는 dart_test.yaml
+// 설정에 따라 이 태그를 건너뛴다. 서버를 띄워 놓고 직접 돌릴 때는:
+//
+//   npm run dev                                   # 다른 터미널에서 5001에 서버
+//   flutter test --run-skipped test/quest_cycle_live_test.dart
+library;
+
 import 'dart:io';
 
 import 'package:flutter/services.dart';

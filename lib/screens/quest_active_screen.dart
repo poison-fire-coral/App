@@ -11,6 +11,7 @@ import '../models/quest_completion.dart';
 import '../models/quest_model.dart';
 import '../services/geo.dart';
 import '../services/location_service.dart';
+import '../services/verify_queue.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
@@ -253,10 +254,43 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
           photoVisibility: verifyResult.isPhotoPublic ? 'PUBLIC' : 'PRIVATE',
         );
       } on ApiException catch (e) {
+        // 체크리스트 29번 — 연결이 없어서 못 보낸 것은 **실패가 아니라 지연**이다.
+        //
+        // 현장까지 걸어가 반경 안에 들어온 사람에게 "네트워크 오류"만 띄우고
+        // 되돌리면, 다시 오라는 말이 된다. 산·해안 퀘스트가 있는 서비스에서
+        // 신호 없음은 예외가 아니라 정상 경로다.
+        //
+        // 서버가 판단해서 거절한 것(반경 밖·이미 완료 등)은 여기 해당하지
+        // 않는다. 그건 다시 보내도 같은 답이라 그대로 사용자에게 알린다.
+        if (!e.isNetwork) {
+          if (!mounted) return;
+          setState(() => _isSettling = false);
+          _showVerifyFailure(e);
+          return;
+        }
+
+        await VerifyQueue.enqueue(PendingVerification(
+          requestId: requestId,
+          questId: questId,
+          lat: sample.point.latitude,
+          lng: sample.point.longitude,
+          accuracyM: sample.accuracyMeters,
+          isMocked: sample.isMocked,
+          photoUrl: verifyResult.photoUrl,
+          photoVisibility: verifyResult.isPhotoPublic ? 'PUBLIC' : 'PRIVATE',
+          queuedAt: DateTime.now(),
+        ));
+
         if (!mounted) return;
-        setState(() => _isSettling = false);
-        _showVerifyFailure(e);
-        return;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(
+            content: Text('연결이 끊겨 인증을 저장해 뒀어요. 신호가 잡히면 자동으로 보냅니다.'),
+            duration: Duration(seconds: 4),
+          ));
+
+        // serverResult 는 null 인 채로 진행한다. 앱이 로컬 계산으로 EXP를
+        // 보여 주고, 큐가 실제로 보내진 뒤 사용자 정보를 서버 값으로 덮는다.
       }
     }
 

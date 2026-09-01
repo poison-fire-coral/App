@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  체크리스트 33번 — 런치 스크린(다크).
+
+  라이트와 같은 로고를 쓰고 바탕색만 갈린다. 로고 안쪽 인장이 이미 밝은
+  크림색이라 어두운 바탕에서도 그대로 읽힌다.
+
+  values-night/styles.xml 의 LaunchTheme 이 이 파일을 가리킨다.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/launch_background" />
+
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/splash_logo" />
+    </item>
+</layer-list>

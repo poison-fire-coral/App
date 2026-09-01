@@ -24,6 +24,8 @@ export class QuestController {
         zoom: parsedZoom,
         keywords: parsedKeywords,
         search: search as string,
+        // optionalAuth 가 채운다. 비로그인이면 undefined.
+        userId: req.user?.id,
       });
 
       res.status(200).json({ data: result, error: null });
@@ -50,6 +52,7 @@ export class QuestController {
         lng: parseFloat(lng as string),
         radiusM: radiusM ? parseInt(radiusM as string, 10) : 3000,
         keywords: parsedKeywords,
+        userId: req.user?.id,
       });
 
       res.status(200).json({ data: result, error: null });

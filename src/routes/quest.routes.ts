@@ -1,14 +1,17 @@
 import { Router } from "express";
 import { QuestController } from "../controllers/quest.controller";
-import { authenticateToken } from "../middlewares/auth.middleware";
+import { authenticateToken, optionalAuth } from "../middlewares/auth.middleware";
 
 const router = Router();
 
 // 1. 전체 / 지도 뷰포트 / 클러스터링 조회
-router.get("/", QuestController.getQuests);
+//
+// optionalAuth: 로그인 없이도 지도는 보여야 하지만, 로그인했다면 각 퀘스트에
+// isCompleted 를 붙여 준다(체크리스트 22번). 토큰이 없거나 깨져도 통과한다.
+router.get("/", optionalAuth, QuestController.getQuests);
 
-// 2. 근처 퀘스트 거리순 조회
-router.get("/nearby", QuestController.getNearbyQuests);
+// 2. 근처 퀘스트 거리순 조회 (로그인했다면 완료한 퀘스트를 뺀다)
+router.get("/nearby", optionalAuth, QuestController.getNearbyQuests);
 
 // 3. 내 맞춤 추천 퀘스트 조회 (JWT 인증 필요)
 router.get("/recommended", authenticateToken, QuestController.getRecommendedQuests);
