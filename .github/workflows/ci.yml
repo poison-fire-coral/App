@@ -1,60 +1,57 @@
-name: R5 Stabilization CI
+# 체크리스트 27번 — PR마다 앱과 서버가 여전히 컴파일되고 테스트가 도는지 본다.
+
+name: CI
 
 on:
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, develop, master ]
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, master ]
+
+# 같은 브랜치에 연달아 푸시하면 앞의 실행을 취소합니다.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # 1. Frontend (Flutter) CI
-  flutter-ci:
-    name: Flutter Analyze & Test
+  app:
+    name: Flutter (analyze + test)
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - uses: subosito/flutter-action@v2
         with:
-          distribution: 'zulu'
-          java-version: '17'
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
+          # 로컬 개발 환경과 동일한 버전으로 고정
+          flutter-version: 3.24.0
           channel: 'stable'
           cache: true
 
-      - name: Install Dependencies
-        run: flutter pub get
+      - run: flutter pub get
 
-      - name: Run Flutter Analyze
-        run: flutter analyze
+      # analysis_options.yaml 의 규칙 위반 검사
+      - run: flutter analyze
 
-      - name: Run Unit & Widget Tests (Exclude Live)
-        # live 태그가 달린 실서버 통합 테스트는 제외
-        run: flutter test --exclude-tags live
+      # 단위 테스트 및 위젯 테스트 실행
+      - run: flutter test --reporter=compact
 
   # 2. Backend (Node.js / Express) CI
-  backend-ci:
-    name: Backend Build & Check
+  server:
+    name: Node (typecheck & build)
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install Dependencies
-        run: npm ci
+      - run: npm ci
 
-      - name: Run Build
-        run: npm run build
+      # Prisma client 생성 및 TypeScript 컴파일 검사
+      # CI에 실 DB를 띄우지 않으므로 prisma generate용 가짜 DATABASE_URL 주입
+      - run: npm run build
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public

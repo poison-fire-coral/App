@@ -34,8 +34,11 @@
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>com.googleusercontent.apps.830613840669-6c50r7ua2lmh1ddf1r39iqhctamkfp08</string>
-                <!-- 아래 kakao 뒤에 본인의 카카오 네이티브 앱키를 붙여주세요 -->
-                <string>kakaobddd99905a1b4d3731ed3b0f370aa8da</string>
+                <!-- 체크리스트 03번 — 키를 소스에 두지 않는다.
+                     ios/Flutter/Secrets.xcconfig 의 KAKAO_NATIVE_APP_KEY 가
+                     빌드할 때 여기로 치환된다. 파일이 없으면 스킴이 "kakao"로
+                     남아 카카오 로그인 콜백이 돌아오지 않는다. -->
+                <string>kakao$(KAKAO_NATIVE_APP_KEY)</string>
             </array>
         </dict>
     </array>

@@ -4,6 +4,7 @@ import '../config/app_config.dart';
 import '../data/terms.dart';
 import '../dev/dev_tools.dart'; // DEV-ONLY
 import '../services/permission_service.dart';
+import '../services/push_service.dart';
 import '../services/token_store.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
@@ -38,12 +39,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _dataSaver = false;
   bool _photoPublic = true;
   bool _isDeleting = false;
+
+  /// 스위치를 누른 뒤 권한 팝업과 서버 등록이 끝날 때까지. 그 사이에 또
+  /// 누르면 요청이 겹쳐 서로 다른 답이 돌아온다.
+  bool _isTogglingPush = false;
+
   LocationAccess? _locationState;
 
   @override
   void initState() {
     super.initState();
     _checkLocation();
+    _loadPushSetting();
+  }
+
+  Future<void> _loadPushSetting() async {
+    final enabled = await PushService.isEnabled();
+    if (!mounted) return;
+    setState(() => _notifications = enabled);
+  }
+
+  /// 알림 스위치 — 체크리스트 24번.
+  ///
+  /// **낙관적으로 먼저 켜지 않는다.** OS 권한을 거절당하면 스위치는 켜졌는데
+  /// 알림은 안 오는 상태가 되고, 사용자는 앱이 고장 났다고 생각한다.
+  /// 실제로 켜진 뒤에 스위치를 옮긴다.
+  Future<void> _togglePush(bool value) async {
+    if (_isTogglingPush) return;
+    setState(() => _isTogglingPush = true);
+
+    final result = await PushService.setEnabled(value);
+
+    if (!mounted) return;
+    setState(() {
+      _notifications = result;
+      _isTogglingPush = false;
+    });
+
+    if (value && !result) {
+      _toast('휴대폰 설정에서 알림을 허용해 주세요.');
+    }
   }
 
   Future<void> _checkLocation() async {
@@ -187,8 +222,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         icon: Icons.notifications_none_rounded,
                         title: '주변 퀘스트 알림',
                         value: _notifications,
-                        subtitle: '푸시 발송은 아직 준비 중이에요',
-                        onChanged: (v) => setState(() => _notifications = v),
+                        subtitle: '내 지역에 새 퀘스트가 있으면 하루 한 번 알려드려요',
+                        onChanged: _isTogglingPush ? null : _togglePush,
                       ),
                       _Row(
                         icon: Icons.my_location_rounded,
@@ -390,7 +425,9 @@ class _SwitchRow extends StatelessWidget {
   final String title;
   final String? subtitle;
   final bool value;
-  final ValueChanged<bool> onChanged;
+
+  /// null이면 스위치가 잠긴다 — 켜는 중(권한 팝업·서버 등록)일 때 쓴다.
+  final ValueChanged<bool>? onChanged;
 
   const _SwitchRow({
     required this.icon,

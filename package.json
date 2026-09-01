@@ -9,6 +9,8 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "typecheck": "tsc",
+    "build": "prisma generate && tsc",
     "dev": "node scripts/free-port.js 5001 && tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "prisma:generate": "prisma generate",
@@ -38,6 +40,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "firebase-admin": "^14.3.0",
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^4.6.0",
     "pg": "^8.23.0"
@@ -50,7 +53,8 @@
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.21.0",
     "prisma": "^7.9.1",
-    "tsx": "^4.23.11"
+    "tsx": "^4.23.11",
+    "typescript": "^5.9.3"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

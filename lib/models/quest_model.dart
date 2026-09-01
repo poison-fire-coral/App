@@ -64,6 +64,16 @@ class QuestModel {
   final List<QuestSpot> spots;
   final bool requiresPhoto;
 
+  /// 이 사람이 이미 끝낸 퀘스트인지 — 체크리스트 22번.
+  ///
+  /// **서버가 판단한다.** 앱도 `user.completedQuestIds`로 알기는 하지만 그건
+  /// SharedPreferences라 기기를 바꾸면 사라진다. 서버가 `quest_completions`를
+  /// 보고 채워 주는 값이 진실이고, 비로그인이면 늘 false다.
+  ///
+  /// 완료해도 목록에서 **빼지 않는다.** 지도에서 사라지면 "여기 뭐 있었는데"가
+  /// 되고, 재방문(x0.3, 16번)으로 가는 길도 막힌다. 흐리게 그릴 뿐이다.
+  final bool isCompleted;
+
   QuestModel({
     required this.id,
     required this.title,
@@ -81,6 +91,7 @@ class QuestModel {
     required this.keywords,
     this.crowdMultiplier = 1.0,
     this.spots = const [],
+    this.isCompleted = false,
     bool? requiresPhoto,
   }) : requiresPhoto = requiresPhoto ?? difficulty != QuestDifficulty.star1;
 
@@ -135,6 +146,7 @@ class QuestModel {
         'keywords': keywords,
         'requiresPhoto': requiresPhoto,
         'crowdMultiplier': crowdMultiplier,
+        'isCompleted': isCompleted,
         'spots': [
           for (final spot in spots)
             {
@@ -207,6 +219,7 @@ class QuestModel {
       imageUrl: parsedImageUrl,
       keywords: List<String>.from(json['keywords'] ?? []),
       crowdMultiplier: crowdMult,
+      isCompleted: json['isCompleted'] == true,
       requiresPhoto: json['requiresPhoto'] as bool?,
       spots: [
         if (json['spots'] is List)

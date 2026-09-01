@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../data/badge_api.dart';
-import '../data/badge_repository.dart';
 import '../data/quest_repository.dart';
 import '../dev/dev_tools.dart'; // DEV-ONLY
 import '../models/active_quest.dart';
@@ -22,7 +21,6 @@ class HomeScreen extends StatefulWidget {
   final UserModel user;
   final List<ActiveQuest> activeQuests;
   final List<QuestModel> recommendedQuests;
-  final List<BadgeProgress> badges;
   final ValueChanged<ActiveQuest> onContinueQuest;
   final ValueChanged<QuestModel> onSelectQuest;
   final void Function(BuildContext context)? onOpenSettings;
@@ -37,7 +35,6 @@ class HomeScreen extends StatefulWidget {
     required this.onSelectQuest,
     this.activeQuests = const [],
     this.recommendedQuests = const [],
-    this.badges = const [],
     this.onOpenSettings,
     this.onOpenMap,
     this.onOpenBadges,
@@ -58,8 +55,8 @@ class _HomeScreenState extends State<HomeScreen> {
   double? _userLat;
   double? _userLng;
 
-  // 서버 API 기반 대표 배지 상태 (ProfileScreen과 동일 방식)
-  List<FeaturedBadge> _featuredBadges = [];
+  /// 홈 3칸에 세울 배지 — **서버가 진실이다** (체크리스트 21번).
+  List<BadgeSummary> _badges = const [];
   bool _isLoadingBadges = true;
 
   @override
@@ -67,7 +64,29 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _carouselController = PageController();
     _loadNearbyQuests();
-    _loadFeaturedBadges();
+    _loadBadges();
+  }
+
+  /// 대표 배지를 서버에서 받아 3칸을 채운다.
+  Future<void> _loadBadges() async {
+    try {
+      final result = await BadgeApi.list();
+
+      final featured =
+          result.items.where((b) => b.isFeatured).toList(growable: false);
+      final achieved = result.items
+          .where((b) => b.state == BadgeState.achieved && !b.isFeatured)
+          .toList(growable: false);
+
+      if (!mounted) return;
+      setState(() {
+        _badges = [...featured, ...achieved].take(3).toList();
+        _isLoadingBadges = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingBadges = false);
+    }
   }
 
   /// 백엔드 API를 호출하여 내 위치 기준 가장 가까운 퀘스트 3개를 로드합니다.
@@ -101,25 +120,6 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _nearbyQuests = widget.recommendedQuests.take(3).toList();
           _isLoadingNearby = false;
-        });
-      }
-    }
-  }
-
-  /// 서버 API에서 대표 배지 목록을 가져옵니다.
-  Future<void> _loadFeaturedBadges() async {
-    try {
-      final badges = await BadgeApi.featured();
-      if (mounted) {
-        setState(() {
-          _featuredBadges = badges;
-          _isLoadingBadges = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoadingBadges = false;
         });
       }
     }
@@ -162,6 +162,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final displayQuests = _nearbyQuests.isNotEmpty
+        ? _nearbyQuests
+        : widget.recommendedQuests.take(3).toList();
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -181,7 +185,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onRefresh: () async {
                   await Future.wait([
                     _loadNearbyQuests(),
-                    _loadFeaturedBadges(),
+                    _loadBadges(),
                   ]);
                 },
                 child: SingleChildScrollView(
@@ -217,45 +221,37 @@ class _HomeScreenState extends State<HomeScreen> {
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: AppColors.quest500),
+                                strokeWidth: 2,
+                                color: AppColors.quest500,
+                              ),
                             ),
                           ),
                         )
-                      else if (_nearbyQuests.isEmpty && widget.recommendedQuests.isEmpty)
-                        NoteBox.text('주변에 추천할 퀘스트가 없어요. 지도를 움직여 다른 지역을 살펴보세요.', fontSize: 12)
+                      else if (displayQuests.isEmpty)
+                        NoteBox.text('주변에 추천할 퀘스트가 없어요. 지도를 움직여 다른 지역을 살펴보세요.',
+                            fontSize: 12)
                       else
-                        for (final quest in (_nearbyQuests.isNotEmpty ? _nearbyQuests : widget.recommendedQuests.take(3)))
+                        for (final quest in displayQuests)
                           _buildRecommendedRow(quest),
                       const SizedBox(height: AppSpacing.xxl),
                       SectionHeader(
                         title: '내 대표 배지',
                         trailingText: '전체보기 ›',
                         accent: AppColors.jade500,
-                        onTapTrailing: widget.onOpenBadges ?? () => _notReady('배지'),
+                        onTapTrailing:
+                            widget.onOpenBadges ?? () => _notReady('배지'),
                       ),
                       const SizedBox(height: AppSpacing.md),
                       if (_isLoadingBadges)
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(vertical: 16),
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppColors.jade500,
-                              ),
-                            ),
-                          ),
-                        )
-                      else if (_featuredBadges.isEmpty)
+                        _buildBadgeRow(const [])
+                      else if (_badges.isEmpty)
                         NoteBox.text(
-                          '아직 설정한 대표 배지가 없어요. 프로필에서 대표 배지를 설정해보세요.',
+                          '아직 획득한 배지가 없어요. 첫 퀘스트를 완료하면 배지가 생겨요',
                           fontSize: 12,
                           textAlign: TextAlign.center,
                         )
                       else
-                        _buildFeaturedBadgeRow(),
+                        _buildBadgeRow(_badges),
                     ],
                   ),
                 ),
@@ -299,19 +295,23 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: AppSpacing.md),
           Row(
             children: [
-              _buildCarouselArrow('‹', () => _moveCarousel(-1), quests.length > 1),
+              _buildCarouselArrow(
+                  '‹', () => _moveCarousel(-1), quests.length > 1),
               Expanded(
                 child: SizedBox(
                   height: 104,
                   child: PageView.builder(
                     controller: _carouselController,
                     itemCount: quests.length,
-                    onPageChanged: (index) => setState(() => _carouselIndex = index),
-                    itemBuilder: (context, index) => _buildActiveQuestCard(quests[index]),
+                    onPageChanged: (index) =>
+                        setState(() => _carouselIndex = index),
+                    itemBuilder: (context, index) =>
+                        _buildActiveQuestCard(quests[index]),
                   ),
                 ),
               ),
-              _buildCarouselArrow('›', () => _moveCarousel(1), quests.length > 1),
+              _buildCarouselArrow(
+                  '›', () => _moveCarousel(1), quests.length > 1),
             ],
           ),
           const SizedBox(height: 9),
@@ -327,7 +327,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       margin: const EdgeInsets.symmetric(horizontal: 2.5),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: i == _carouselIndex ? AppColors.quest500 : AppColors.ink300,
+                        color: i == _carouselIndex
+                            ? AppColors.quest500
+                            : AppColors.ink300,
                       ),
                     ),
                 ],
@@ -372,7 +374,8 @@ class _HomeScreenState extends State<HomeScreen> {
         active.currentSpot.point.longitude,
       );
     } else {
-      distanceMeters = Geo.distanceMeters(QuestRepository.mockUserLocation, active.currentSpot.point);
+      distanceMeters = Geo.distanceMeters(
+          QuestRepository.mockUserLocation, active.currentSpot.point);
     }
 
     final isNear = active.progress >= 0.85;
@@ -523,8 +526,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// ProfileScreen과 완벽히 일치하도록 구성된 대표 배지 영역
-  Widget _buildFeaturedBadgeRow() {
+  /// 대표 배지는 3칸 고정. 아직 못 채운 칸은 배지 화면으로 가는 빈 슬롯으로 둔다.
+  Widget _buildBadgeRow(List<BadgeSummary> badges) {
     return Row(
       children: [
         for (var i = 0; i < 3; i++) ...[
@@ -532,46 +535,57 @@ class _HomeScreenState extends State<HomeScreen> {
           Expanded(
             child: AspectRatio(
               aspectRatio: 1,
-              child: i < _featuredBadges.length
-                  ? Container(
-                      alignment: Alignment.center,
-                      padding: const EdgeInsets.all(AppSpacing.sm),
-                      decoration: BoxDecoration(
-                        gradient: AppSurface.paper,
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                        boxShadow: AppElevation.e1,
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          BadgeArt(artKey: _featuredBadges[i].artKey, size: 44),
-                          const SizedBox(height: AppSpacing.xs),
-                          Text(
-                            _featuredBadges[i].name,
-                            maxLines: 2,
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppType.micro,
-                          ),
-                        ],
-                      ),
-                    )
-                  : PressableScale(
-                      onTap: widget.onOpenBadges ?? () => _notReady('배지'),
-                      child: Container(
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          gradient: AppSurface.sunken,
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                        ),
-                        child: const Icon(Icons.add_rounded,
-                            size: 20, color: AppColors.textDisabled),
-                      ),
-                    ),
+              child: i < badges.length
+                  ? _buildBadgeSlot(badges[i])
+                  : _buildEmptyBadgeSlot(),
             ),
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildBadgeSlot(BadgeSummary badge) {
+    return PressableScale(
+      onTap: widget.onOpenBadges ?? () => _notReady('배지'),
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        decoration: BoxDecoration(
+          color: AppColors.jade50,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          boxShadow: AppElevation.e1,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            BadgeArt(artKey: badge.artKey, size: 26),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              badge.displayName,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: AppType.micro.copyWith(color: AppColors.jade700),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyBadgeSlot() {
+    return PressableScale(
+      onTap: widget.onOpenBadges ?? () => _notReady('배지'),
+      child: Container(
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          gradient: AppSurface.sunken,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+        child: const Icon(Icons.add_rounded,
+            size: 20, color: AppColors.textDisabled),
+      ),
     );
   }
 }

@@ -1,6 +1,16 @@
 import { prisma } from "../utils/prisma";
 import { AppError } from "../utils/CustomError";
 
+/**
+ * `/users` 라우트가 쓰는 서비스.
+ *
+ * **주의 — 이 파일은 한 번 통째로 날아간 적이 있다.** 커밋 a411a9a에서
+ * `quest.service.ts`의 내용이 여기 덮어써지면서 `UserService`가 사라졌고,
+ * 컨트롤러가 부르는 대상이 `undefined`가 되어 프로필·탈퇴가 전부 500이 됐다.
+ * `tsx`는 타입을 보지 않아 서버가 멀쩡히 뜨는 바람에 아무도 눈치채지 못했다.
+ * CI의 `npm run typecheck`(체크리스트 27번)가 이제 이런 걸 잡는다.
+ */
+
 interface UpdateProfileDTO {
   userId: number;
   nickname?: string;
@@ -142,18 +152,28 @@ export class UserService {
     };
   }
 
-  // 💡 회원 탈퇴 (Prisma Cascade에 의해 연관 데이터 자동 삭제)
+  /**
+   * 회원 탈퇴 — 체크리스트 06번, 스토어 심사 요건.
+   *
+   * **자식 레코드를 손으로 지우지 않는다.** `UserKeyword`·`UserQuest`·
+   * `QuestCompletion`·`UserBadge` 네 관계가 스키마에서 모두
+   * `onDelete: Cascade`라 사용자 한 줄을 지우면 DB가 함께 정리한다.
+   * 여기서 또 지우면 순서를 잘못 잡았을 때 외래키로 막히기만 하고
+   * 얻는 게 없다.
+   *
+   * **되돌릴 수 없다.** 유예 기간을 두는 편이 친절하지만 그러려면
+   * `deletedAt` 컬럼과 그걸 걸러 주는 모든 쿼리의 수정이 필요하다.
+   * 앱이 "즉시 삭제되며 복구할 수 없습니다"라고 고지하고 있으므로
+   * 지금은 고지대로 동작하는 쪽을 택한다.
+   */
   static async deleteAccount(userId: number) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      throw new AppError("NOT_FOUND", "사용자를 찾을 수 없습니다.");
+    try {
+      await prisma.user.delete({ where: { id: userId } });
+    } catch (error: any) {
+      // P2025 = 지울 레코드가 없다. 이미 지운 계정의 토큰으로 다시 부른
+      // 경우라 실패로 볼 이유가 없다 — 원하는 상태(계정 없음)는 같다.
+      if (error?.code === "P2025") return;
+      throw error;
     }
-
-    await prisma.user.delete({
-      where: { id: userId },
-    });
   }
 }
