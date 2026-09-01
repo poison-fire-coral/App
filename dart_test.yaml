@@ -1,0 +1,17 @@
+# 체크리스트 27·28번 — 테스트 분류.
+#
+# `flutter test`(그리고 CI)는 여기 적힌 skip 때문에 실서버가 필요한 테스트를
+# 건너뛴다. 실행 자체를 막는 게 아니라 "기본으로는 안 돈다"는 뜻이고,
+# 돌릴 때는 --run-skipped 로 명시한다.
+
+tags:
+  live:
+    # 5001에 뜬 서버와 실제 DB가 있어야 통과한다. 서버가 없는 CI에서 돌면
+    # 실패가 아니라 소음이 된다 — 코드가 깨진 건지 서버가 없는 건지 구별이 안 된다.
+    #
+    #   npm run dev
+    #   flutter test --run-skipped test/auth_flow_live_test.dart
+    skip: "실서버(npm run dev)가 필요하다. --run-skipped 로 명시해 돌린다."
+
+# 마커 PNG 생성기는 태그가 아니라 위치로 뺐다 — tool/generate_marker_icons.dart.
+# 이름에 _test 가 없고 test/ 밖이라 자동 수집에 걸리지 않는다.

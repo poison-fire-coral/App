@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert' show base64Encode;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:geolocator/geolocator.dart';
 import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 
@@ -639,19 +642,84 @@ class _MapScreenState extends State<MapScreen> {
     _refreshViewport();
   }
 
+  /// 키는 에셋 경로. 흐린 변형은 [_dimmedKeyPrefix]를 붙여 따로 담는다.
   final Map<String, MarkerIcon> _iconCache = {};
 
-  Future<MarkerIcon?> _icon(String assetPath) async {
-    final cached = _iconCache[assetPath];
+  static const String _dimmedKeyPrefix = 'dim:';
+
+  /// 완료한 퀘스트 핀을 얼마나 죽일지 — 체크리스트 22번.
+  ///
+  /// 0.5는 "눈에 걸리지만 먼저 읽히지는 않는" 지점이다. 더 내리면 지도 배경에
+  /// 묻혀 완료한 자리를 다시 못 찾고, 더 올리면 안 한 퀘스트와 구별이 안 된다.
+  /// 채도까지 빼는 이유는 배지 미획득 표시(`BadgeArt.dimmed`)와 같다 —
+  /// 투명도만으로는 색약 사용자에게 차이가 약하다.
+  static const double _dimmedOpacity = 0.5;
+
+  Future<MarkerIcon?> _icon(String assetPath, {bool dimmed = false}) async {
+    final key = dimmed ? '$_dimmedKeyPrefix$assetPath' : assetPath;
+    final cached = _iconCache[key];
     if (cached != null) return cached;
     try {
-      final icon = await MarkerIcon.fromAsset(assetPath);
-      _iconCache[assetPath] = icon;
+      final icon = dimmed
+          ? await _dimmedIcon(assetPath)
+          : await MarkerIcon.fromAsset(assetPath);
+      _iconCache[key] = icon;
       return icon;
     } catch (e) {
-      debugPrint('마커 아이콘 로드 실패($assetPath): $e');
+      debugPrint('마커 아이콘 로드 실패($key): $e');
       return null;
     }
+  }
+
+  /// 마커 PNG를 흑백으로 눕히고 반투명하게 만들어 돌려준다.
+  ///
+  /// **왜 에셋을 따로 굽지 않는가.** 유형 7 × 난이도 5 × 배율 3 = 108장이
+  /// 그대로 두 배가 된다. 실제로 필요한 건 화면에 뜬 완료 퀘스트의 종류뿐이라
+  /// 한 번 만들어 캐시하면 최대 35장이고, 그마저도 대부분 안 만들어진다.
+  ///
+  /// **왜 `fromNetwork`인가.** `MarkerIcon`의 생성자는 private이고 공개된
+  /// 입구는 `fromAsset`(에셋 경로)과 `fromNetwork`(URL) 둘뿐이다. 우리가 만든
+  /// 바이트를 넣을 자리는 `data:` URL밖에 없다. 플러그인은 이 문자열을
+  /// `new kakao.maps.MarkerImage(src, ...)`에 그대로 넘기고, WebView는
+  /// data URL을 보통 이미지처럼 읽는다.
+  Future<MarkerIcon> _dimmedIcon(String assetPath) async {
+    final data = await rootBundle.load(assetPath);
+    final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+    final frame = await codec.getNextFrame();
+    final source = frame.image;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawImage(
+      source,
+      Offset.zero,
+      Paint()
+        // 앞 세 줄이 회색조(BT.709 휘도), 마지막 줄이 알파를 통째로 줄인다.
+        // 한 행렬로 처리해야 반투명 픽셀의 가장자리가 두 번 곱해지지 않는다.
+        ..colorFilter = const ColorFilter.matrix(<double>[
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0, 0, 0, _dimmedOpacity, 0,
+        ]),
+    );
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(source.width, source.height);
+    final png = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    source.dispose();
+    picture.dispose();
+    image.dispose();
+
+    if (png == null) {
+      // 인코딩이 실패하면 흐리게 만드는 것만 포기하고 원본을 쓴다.
+      // 완료 표시가 빠질 뿐 지도는 그대로 뜬다.
+      return MarkerIcon.fromAsset(assetPath);
+    }
+
+    final base64 = base64Encode(png.buffer.asUint8List());
+    return MarkerIcon.fromNetwork('data:image/png;base64,$base64');
   }
 
   Future<List<Marker>> _buildKakaoMarkers() async {
@@ -663,16 +731,27 @@ class _MapScreenState extends State<MapScreen> {
       // 5성 핀도 같은 색이므로, 크기와 zIndex로 한 번 더 갈라 놓는다.
       final isActive = widget.activeQuestIds.contains(q.id);
 
-      final icon = await _icon(isActive
-          ? AppAssets.activeQuestMarker(
-              questType: q.questType,
-              devicePixelRatio: dpr,
-            )
-          : AppAssets.questMarker(
-              questType: q.questType,
-              stars: q.difficulty.stars,
-              devicePixelRatio: dpr,
-            ));
+      // 체크리스트 22번 — 완료한 퀘스트는 **지우지 않고** 흐리게 그린다.
+      //
+      // 서버가 준 `isCompleted`를 먼저 믿고, 없으면(비로그인이거나 서버가
+      // 아직 안 채운 응답이면) 앱이 들고 있는 목록으로 떨어진다. 진행 중인
+      // 퀘스트는 완료 표시보다 우선한다 — 재방문으로 다시 잡은 경우다.
+      final isDone = !isActive &&
+          (q.isCompleted || widget.completedQuestIds.contains(q.id));
+
+      final icon = await _icon(
+        isActive
+            ? AppAssets.activeQuestMarker(
+                questType: q.questType,
+                devicePixelRatio: dpr,
+              )
+            : AppAssets.questMarker(
+                questType: q.questType,
+                stars: q.difficulty.stars,
+                devicePixelRatio: dpr,
+              ),
+        dimmed: isDone,
+      );
 
       // 논리 크기 36×46. 끝점(아래 중앙)이 좌표에 꽂히도록 오프셋을 준다.
       final width = isActive ? 43 : 36;
@@ -688,7 +767,13 @@ class _MapScreenState extends State<MapScreen> {
           offsetX: (width / 2).round(),
           // 원본 36×46에서 끝점은 y=40 — 높이의 40/46 지점이다.
           offsetY: (height * 40 / 46).round(),
-          zIndex: isActive ? 5 : 0,
+          // 완료한 핀은 아래로 깔아 안 한 퀘스트가 위에 오게 한다.
+          // 겹쳤을 때 먼저 눌리는 쪽이 아직 할 수 있는 퀘스트여야 한다.
+          zIndex: isActive
+              ? 5
+              : isDone
+                  ? -1
+                  : 0,
         ),
       );
     }
@@ -1123,11 +1208,15 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Widget _acceptButton(QuestModel quest) {
-    if (widget.completedQuestIds.contains(quest.id)) {
+    final isActive = widget.activeQuestIds.contains(quest.id);
+
+    // 마커를 흐리게 만든 판정과 **같은 근거**를 쓴다(22번). 마커는 흐린데
+    // 시트는 '수락하기'가 떠 있으면 어느 쪽이 맞는지 알 수 없다.
+    if (!isActive &&
+        (quest.isCompleted || widget.completedQuestIds.contains(quest.id))) {
       return const PrimaryButton(label: '완료한 퀘스트', enabled: false);
     }
 
-    final isActive = widget.activeQuestIds.contains(quest.id);
     return PrimaryButton(
       label: isActive ? '이어서 하기' : '퀘스트 수락',
       onTap: () => _acceptQuest(quest),

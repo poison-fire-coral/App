@@ -1,0 +1,72 @@
+# 체크리스트 27번 — PR마다 앱과 서버가 여전히 컴파일되고 테스트가 도는지 본다.
+#
+# **여기서 하지 않는 것**
+#  - 실서버가 필요한 테스트: dart_test.yaml 의 `live` 태그가 기본 skip이라
+#    별도 설정 없이 빠진다. 서버·DB를 CI에 띄우는 건 이 단계의 몫이 아니다.
+#  - 마커 PNG 생성: tool/generate_marker_icons.dart 로 나가 있어(28번)
+#    `flutter test` 자동 수집에 걸리지 않는다.
+#  - 릴리스 빌드·서명: 35번에서 Play Console을 잡을 때 붙인다.
+#
+# **키를 넣지 않는 이유**
+# analyze 와 test 는 카카오 키 없이 통과한다. AppConfig 가 빈 문자열이면
+# 경고만 찍고 넘어가도록 만들어져 있어서다. 키가 필요한 건 실기기 빌드뿐이고,
+# 그때는 저장소 시크릿에서 꺼내 --dart-define 으로 넘긴다.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+# 같은 브랜치에 연달아 푸시하면 앞의 실행을 취소한다. 어차피 볼 건 마지막 결과다.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: Flutter (analyze + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # 로컬 개발 환경과 같은 버전으로 못 박는다. channel: stable 로 두면
+          # Flutter가 올라갈 때마다 아무도 건드리지 않은 PR이 빨개진다.
+          flutter-version: 3.44.8
+          cache: true
+
+      - run: flutter pub get
+
+      # analysis_options.yaml 의 규칙 위반을 실패로 본다.
+      - run: flutter analyze
+
+      # live 태그는 dart_test.yaml 에서 skip 이라 여기서 자동으로 빠진다.
+      - run: flutter test --reporter=compact
+
+  server:
+    name: Node (typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # `npm run build` = prisma generate + tsc.
+      #
+      # **prisma generate 가 먼저여야 한다.** @prisma/client 의 타입은 스키마에서
+      # 생성되는 것이라, 이게 빠지면 node_modules 에 남아 있던 옛 타입으로 검사해
+      # 스키마를 고친 PR이 통과하거나 멀쩡한 PR이 깨진다. 실제로 그런 적이 있다.
+      #
+      # DATABASE_URL 은 generate 가 형식만 확인하고 접속하지는 않는다.
+      # CI에 DB를 띄우지 않으므로 형식만 맞는 가짜 값을 준다.
+      - run: npm run build
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public

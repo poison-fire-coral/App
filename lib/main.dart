@@ -1,5 +1,7 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
@@ -34,6 +36,8 @@ import 'services/auth_service.dart';
 import 'services/exp_service.dart';
 import 'services/geolocator_location_service.dart';
 import 'services/token_store.dart';
+import 'services/push_service.dart';
+import 'services/verify_queue.dart';
 import 'theme/app_theme.dart';
 import 'widgets/app_widgets.dart';
 
@@ -53,9 +57,13 @@ void main() async {
   // 2~3. 카카오 SDK 초기화
   AppConfig.warnIfIncomplete();
 
-  // 💡 디버그 로그 추가로 키 로드 여부 직접 확인
-  debugPrint("🔑 Kakao Native Key: '${AppConfig.kakaoNativeAppKey}'");
-  debugPrint("🔑 Kakao JS Key: '${AppConfig.kakaoJavaScriptKey}'");
+  // 키가 실렸는지만 본다. **값 자체를 찍지 않는다** — debugPrint는 릴리스에서도
+  // 살아 있어서 logcat에 그대로 남고, 그건 03번에서 키를 소스 밖으로 뺀 이유를
+  // 통째로 무효로 만든다. 값이 필요하면 `kDebugMode`로 감싼 자리에서 본다.
+  if (kDebugMode) {
+    debugPrint("🔑 Kakao Native Key: '${AppConfig.kakaoNativeAppKey}'");
+    debugPrint("🔑 Kakao JS Key: '${AppConfig.kakaoJavaScriptKey}'");
+  }
 
   if (AppConfig.kakaoNativeAppKey.isNotEmpty) {
     kakao.KakaoSdk.init(nativeAppKey: AppConfig.kakaoNativeAppKey);
@@ -203,6 +211,19 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     if (TokenStore.hasSession) {
       if (mounted) setState(() => _splashProgress = 0.55);
       try {
+        // 체크리스트 29번 — 오프라인에서 쌓인 도달 인증을 먼저 털어 낸다.
+        //
+        // **me() 앞에 둔다.** 순서가 반대면 방금 보낸 인증이 반영되기 전의
+        // EXP·레벨을 받아 놓고, 서버에는 반영된 상태가 되어 다음 실행까지
+        // 어긋난 채로 보인다. 큐가 비어 있으면 아무 일도 하지 않고 즉시 끝난다.
+        //
+        // 실패해도 무시한다 — 큐가 알아서 다음 기회에 다시 본다.
+        try {
+          await VerifyQueue.flush();
+        } catch (e) {
+          debugPrint('대기 인증 전송 실패(무시하고 계속): $e');
+        }
+
         final user = await _withCompletedQuests(await AuthRepository.me());
         await _persistUser(user);
 
@@ -219,6 +240,11 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
             _splashProgress = 0.9;
           });
         }
+
+        // 체크리스트 24번 — FCM 토큰은 앱을 지웠다 깔거나 데이터를 지우면
+        // 바뀐다. 켜 둔 사람만, 세션이 살아 있을 때마다 다시 등록한다.
+        // await 하지 않는다 — 알림 등록 때문에 스플래시가 길어질 이유가 없다.
+        unawaited(PushService.registerIfEnabled());
       } on ApiException {
         await TokenStore.clear();
         if (mounted) {
@@ -384,12 +410,23 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       _isEditingSurvey = false;
       _pendingSignup = null;
     });
+
+    // 방금 로그인한 계정으로 이 기기를 붙인다(24번). 같은 폰을 다른 사람이
+    // 쓰던 경우 서버의 upsert 가 소유자를 여기로 옮긴다.
+    unawaited(PushService.registerIfEnabled());
   }
 
   /// 로그아웃 — 서버 토큰 · 소셜 세션 · 로컬 캐시를 모두 비운다.
   Future<void> _logout() async {
+    // 토큰이 아직 살아 있을 때 먼저 뺀다 — 로그아웃 뒤에는 이 호출이
+    // 401로 튕겨서 이 기기가 계정에 붙은 채로 남는다(24번).
+    await PushService.unregisterOnLogout();
+
     await AuthRepository.logout();
     await AuthService.signOutSocial();
+    // 남은 대기 인증은 이 계정의 것이다. 다음 사람이 로그인했을 때
+    // 앞사람의 인증이 그 계정으로 나가면 안 된다(29번).
+    await VerifyQueue.clear();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_profile');
     await prefs.remove(_activeQuestsPrefsKey);
@@ -410,8 +447,13 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
   /// 회원 탈퇴 — 백엔드 계정 삭제 API 호출 및 소셜 세션/캐시 완전 정리
   Future<void> _deleteAccount() async {
     try {
+      // 계정이 사라지면 UserDevice 도 Cascade 로 함께 지워지지만, 이 기기가
+      // 들고 있는 등록 상태까지 지우려면 여기서 한 번 정리해야 한다.
+      await PushService.unregisterOnLogout();
+
       await AuthRepository.deleteAccount();
       await AuthService.signOutSocial();
+      await VerifyQueue.clear();
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('user_profile');
@@ -773,17 +815,13 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       );
     }
 
-    final completedQuests = [
-      for (final id in user.completedQuestIds)
-        if (QuestRepository.findById(id) != null) QuestRepository.findById(id)!,
-    ];
-
+    // 홈의 배지 3칸은 HomeScreen이 서버에서 직접 받아 온다(체크리스트 21번).
+    // 여기서 로컬 계산을 넘겨 주던 자리다.
     return HomeScreen(
       user: user,
       activeQuests: _activeQuests,
       recommendedQuests:
           QuestRepository.nearby(excludeIds: {...activeIds, ...completedIds}),
-      badges: BadgeRepository.progressFor(completedQuests),
       onContinueQuest: _openQuestFlow,
       onSelectQuest: _focusQuestOnMap,
       onOpenSettings: (_) => setState(() => _showSettings = true),

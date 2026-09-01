@@ -9,10 +9,20 @@ import 'package:local_quest/theme/app_colors.dart';
 
 /// 지도 마커 PNG 생성기 — 4단계.
 ///
-/// **왜 테스트 파일인가:** Flutter의 캔버스를 쓰려면 바인딩이 필요한데,
-/// `flutter test`가 그걸 가장 간단히 제공한다. 런타임이 아니라 **빌드 전 한 번** 굽는다.
+///   flutter test tool/generate_marker_icons.dart
 ///
-///   flutter test test/generate_marker_icons_test.dart
+/// **왜 test/ 밖에 있나 (체크리스트 28번):** `flutter test`를 인자 없이 부르면
+/// `test/**_test.dart`만 모은다. 이 파일이 거기 있으면 전체 테스트를 돌릴 때마다
+/// PNG 108장이 다시 구워져 CI가 느려지고 작업 트리가 매번 더러워졌다.
+/// `tool/`로 나오고 이름에서 `_test`를 떼면 자동 수집에서 빠지고,
+/// 위처럼 **경로를 직접 주면 그대로 실행된다.**
+///
+/// **왜 그래도 `flutter test`로 부르나:** Flutter 캔버스(`ui.PictureRecorder`)를
+/// 쓰려면 바인딩이 필요한데 `flutter test`가 그걸 가장 간단히 제공한다.
+/// 런타임이 아니라 **빌드 전 한 번** 굽는 도구다.
+///
+/// 결과물이 제대로 있는지는 `test/marker_assets_test.dart`가 지킨다 —
+/// 그쪽은 굽지 않고 존재와 디코딩만 확인해서 늘 돌아도 싸다.
 ///
 /// **왜 PNG인가:** `kakao_map_plugin`이 에셋 바이트를 base64로 감싼 뒤 WebView에서
 /// `new Blob([...], { type: 'image/png' })`로 되살린다 — MIME이 PNG로 고정이라

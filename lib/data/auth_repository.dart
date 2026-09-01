@@ -133,4 +133,33 @@ class AuthRepository {
     await ApiClient.delete('/users/me');
     await TokenStore.clear();
   }
+
+  // ---------------------------------------------------------------------------
+  // 푸시 기기 (체크리스트 24번)
+  //
+  // 부르는 쪽은 `PushService` 하나다. 여기 두는 이유는 이것도 결국
+  // "내 계정에 무언가를 붙이는" 호출이고, 인증 헤더 처리를 같이 타야 해서다.
+  // ---------------------------------------------------------------------------
+
+  /// FCM 토큰을 내 계정에 붙인다. 같은 토큰을 다시 보내면 갱신된다.
+  static Future<void> registerPushDevice({
+    required String fcmToken,
+    required String platform,
+  }) async {
+    await ApiClient.post('/users/me/devices', body: {
+      'fcmToken': fcmToken,
+      'platform': platform,
+    });
+  }
+
+  /// 이 기기를 발송 대상에서 뺀다. 로그아웃할 때 부른다.
+  ///
+  /// **DELETE가 아니라 POST인 이유.** 어느 기기인지 알려면 토큰을 실어야
+  /// 하는데, DELETE에 body를 싣는 건 프록시·서버마다 다르게 다뤄서 조용히
+  /// 빈 body가 도착하는 일이 있다.
+  static Future<void> unregisterPushDevice({required String fcmToken}) async {
+    await ApiClient.post('/users/me/devices/unregister', body: {
+      'fcmToken': fcmToken,
+    });
+  }
 }

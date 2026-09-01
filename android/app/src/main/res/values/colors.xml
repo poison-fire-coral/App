@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 적응형 런처 아이콘 뒷면. flutter_launcher_icons.yaml 이 같은 값을 들고 있다. -->
+    <color name="ic_launcher_background">#FBF6F3</color>
+
+    <!-- 런치 스크린 바탕 (체크리스트 33번).
+         AppColors.ink50 과 같은 값이어야 한다 — 다르면 앱이 뜨는 순간 색이 튄다. -->
+    <color name="launch_background">#FBF6F3</color>
+</resources>

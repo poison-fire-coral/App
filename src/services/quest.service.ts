@@ -40,9 +40,19 @@ export interface ViewportQueryDto {
   zoom?: number;
   keywords?: string[];
   search?: string;
+
+  /**
+   * 보고 있는 사람. 비로그인이면 undefined다 (`optionalAuth`).
+   *
+   * 있으면 각 퀘스트에 `isCompleted`가 붙는다 - 체크리스트 22번.
+   * 지도에서 완료한 퀘스트를 **지우지 않고 흐리게** 그리기 위한 값이다.
+   */
+  userId?: number;
 }
 
 export interface NearbyQueryDto {
+  /** 보고 있는 사람. 있으면 완료한 퀘스트를 목록에서 뺀다 (22번). */
+  userId?: number;
   lat: number;
   lng: number;
   radiusM?: number; // 기본값 3000m (3km)
@@ -65,6 +75,31 @@ interface TourApiPlace {
 export class QuestService {
   private static isCompletedStatus(status?: string | null) {
     return status === "COMPLETED" || status === "done";
+  }
+
+  /**
+   * 이 사용자가 이미 끝낸 퀘스트 id 집합 - 체크리스트 22번.
+   *
+   * **어뷰징으로 걸린 완료는 세지 않는다.** `isAbused: true`인 줄은 EXP도
+   * 못 받은 기록이라 "완료했다"고 보면 다시 시도할 길이 막힌다.
+   *
+   * questIds를 주면 그 범위만 본다 - 뷰포트에 100개가 떠 있는데 전국의
+   * 완료 이력을 다 긁어올 이유가 없다.
+   */
+  private static async completedQuestIds(
+    userId: number,
+    questIds?: number[]
+  ): Promise<Set<number>> {
+    const rows = await prisma.questCompletion.findMany({
+      where: {
+        userId,
+        isAbused: false,
+        ...(questIds && questIds.length > 0 && { questId: { in: questIds } }),
+      },
+      select: { questId: true },
+      distinct: ["questId"],
+    });
+    return new Set(rows.map((r) => r.questId));
   }
 
   private static async searchTourApiPlaces(
@@ -273,7 +308,7 @@ export class QuestService {
   // -------------------------------------------------------------
 
   static async getQuestsByViewport(dto: ViewportQueryDto) {
-    const { swLat, swLng, neLat, neLng, zoom = 15, keywords, search } = dto;
+    const { swLat, swLng, neLat, neLng, zoom = 15, keywords, search, userId } = dto;
     const whereClause: any = { active: true };
 
     if (swLat !== undefined && swLng !== undefined && neLat !== undefined && neLng !== undefined) {
@@ -325,14 +360,30 @@ export class QuestService {
         count: c.count,
       }));
 
+      // 클러스터는 원 안의 개수만 보여 준다. 완료 여부는 개별 마커의 성질이라
+      // 여기서는 붙일 자리가 없다 - 확대해서 마커가 갈라지면 그때 붙는다.
       return { isClustered: true, zoom, totalQuests: quests.length, clusters };
     }
 
-    return { isClustered: false, zoom, totalQuests: quests.length, quests };
+    // 체크리스트 22번 - 완료한 퀘스트를 **지우지 않고** 표시만 다르게 한다.
+    // 지도에서 사라지면 "여기 뭐 있었는데" 하고 다시 찾게 되고, 16번에서
+    // 재방문(x0.3)을 열어 둔 것과도 어긋난다.
+    const completed = userId
+      ? await this.completedQuestIds(userId, quests.map((q) => q.id))
+      : null;
+
+    return {
+      isClustered: false,
+      zoom,
+      totalQuests: quests.length,
+      quests: completed
+        ? quests.map((q) => ({ ...q, isCompleted: completed.has(q.id) }))
+        : quests,
+    };
   }
 
   static async getNearbyQuests(dto: NearbyQueryDto) {
-    const { lat, lng, radiusM = 3000, keywords } = dto;
+    const { lat, lng, radiusM = 3000, keywords, userId } = dto;
 
     await this.syncNearbyTourQuests(lat, lng, radiusM);
 
@@ -352,7 +403,15 @@ export class QuestService {
       .filter((quest) => quest.distanceM <= radiusM)
       .sort((a, b) => a.distanceM - b.distanceM);
 
-    return nearbyQuests;
+    // 체크리스트 22번. 홈의 "가까운 퀘스트 3개"는 지도와 달리 **권유**라서,
+    // 이미 끝낸 걸 다시 권하면 목록 3칸을 낭비한다. 여기서는 뺀다.
+    if (!userId) return nearbyQuests;
+
+    const completed = await this.completedQuestIds(
+      userId,
+      nearbyQuests.map((q) => q.id)
+    );
+    return nearbyQuests.filter((q) => !completed.has(q.id));
   }
 
   static async getRecommendedQuests(userId: number) {
@@ -374,6 +433,15 @@ export class QuestService {
           ...(userKeywordIds.length > 0 ? [{ keywords: { hasSome: userKeywordIds } }] : []),
           ...(user.homeRegion ? [{ place: { regionCode: user.homeRegion } }] : []),
         ],
+
+        // 체크리스트 22번 - 이미 완료한 퀘스트는 추천하지 않는다.
+        //
+        // Prisma의 `none`이 SQL `NOT EXISTS`로 내려간다. 앱에서 받아 놓고
+        // 거르면 `take: 10`이 완료한 것들로 채워져 실제로는 3개만 남는 일이
+        // 생긴다 - 자르기 전에 DB에서 빼야 10개가 10개다.
+        //
+        // 어뷰징으로 걸린 완료(`isAbused`)는 완료로 보지 않는다.
+        completions: { none: { userId, isAbused: false } },
       },
       include: { place: true },
       take: 10,

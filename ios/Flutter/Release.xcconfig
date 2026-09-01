@@ -1,2 +1,6 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
 #include "Generated.xcconfig"
+
+// 체크리스트 03번 — 카카오 네이티브 앱키. Secrets.example.xcconfig 를 복사해 만든다.
+// 없어도 빌드는 되지만(#include? 라서) 카카오 로그인 콜백이 돌아오지 않는다.
+#include? "Secrets.xcconfig"

@@ -19,8 +19,10 @@ import 'package:flutter/foundation.dart';
 /// CI·스토어 빌드에서는 시크릿에서 꺼내 같은 플래그로 넘긴다.
 ///
 /// **여기 없는 것**
-/// iOS `Runner/Info.plist`의 `kakao{네이티브키}` URL 스킴은 네이티브 빌드
-/// 설정이라 `--dart-define`이 닿지 않는다. xcconfig 변수로 빼는 건 별도 작업이다.
+/// iOS `Runner/Info.plist`의 `kakao{네이티브키}` URL 스킴은 앱이 시작하기 전에
+/// iOS가 읽으므로 `--dart-define`이 닿지 않는다. 그쪽은 xcconfig로 뺐다 —
+/// `ios/Flutter/Secrets.example.xcconfig`를 `Secrets.xcconfig`로 복사해 채운다.
+/// 서버 몫은 `.env.example`이다.
 class AppConfig {
   const AppConfig._();
 

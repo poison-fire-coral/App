@@ -8,46 +8,80 @@ generator client {
 
 // PDF 퀘스트 확정 유형 7종
 enum QuestType {
-  VISIT         // 01 방문형
-  TIME_WINDOW   // 05 시간대 제한형
-  PHOTO_SINGLE  // 06 피사체 지정형
+  VISIT // 01 방문형
+  TIME_WINDOW // 05 시간대 제한형
+  PHOTO_SINGLE // 06 피사체 지정형
   PHOTO_COLLECT // 08 수집 사진형
-  QUIZ          // 09 퀴즈형
-  EXPLORATION   // 10 탐색형
-  RECORD        // 13 기록형
+  QUIZ // 09 퀴즈형
+  EXPLORATION // 10 탐색형
+  RECORD // 13 기록형
 }
 
 model User {
-  id              Int               @id @default(autoincrement())
-  provider        String
-  providerUid     String            @map("provider_uid")
-  email           String?
-  nickname        String            @unique
-  avatarId        String?           @map("avatar_id")
-  homeRegion      String?           @map("home_region")
-  activityLevel   String?           @map("activity_level")
-  refreshToken    String?           @map("refresh_token")
-  termsAgreed     Boolean           @default(false) @map("terms_agreed")
-  termsAgreedAt   DateTime?         @map("terms_agreed_at")
-  termsVersion    String?           @map("terms_version")
-  level           Int               @default(1)
-  expTotal        Int               @default(0) @map("exp_total")
-  expCurrent      Int               @default(0) @map("exp_current")
-  
+  id            Int       @id @default(autoincrement())
+  provider      String
+  providerUid   String    @map("provider_uid")
+  email         String?
+  nickname      String    @unique
+  avatarId      String?   @map("avatar_id")
+  homeRegion    String?   @map("home_region")
+  activityLevel String?   @map("activity_level")
+  refreshToken  String?   @map("refresh_token")
+  termsAgreed   Boolean   @default(false) @map("terms_agreed")
+  termsAgreedAt DateTime? @map("terms_agreed_at")
+  termsVersion  String?   @map("terms_version")
+  level         Int       @default(1)
+  expTotal      Int       @default(0) @map("exp_total")
+  expCurrent    Int       @default(0) @map("exp_current")
+
   // 3. EXP 일일 상한선(3,000 EXP) 검증용 필드 추가
-  dailyExpEarned  Int               @default(0) @map("daily_exp_earned")
-  lastExpResetAt  DateTime          @default(now()) @map("last_exp_reset_at")
-  
-  streakDays      Int               @default(0) @map("streak_days")
-  lastActiveAt    DateTime?         @map("last_active_at")
-  createdAt       DateTime          @default(now()) @map("created_at")
-  
-  keywords        UserKeyword[]
-  quests          UserQuest[]
-  completions     QuestCompletion[]
-  badges          UserBadge[]
+  dailyExpEarned Int      @default(0) @map("daily_exp_earned")
+  lastExpResetAt DateTime @default(now()) @map("last_exp_reset_at")
+
+  streakDays   Int       @default(0) @map("streak_days")
+  lastActiveAt DateTime? @map("last_active_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  keywords    UserKeyword[]
+  quests      UserQuest[]
+  completions QuestCompletion[]
+  badges      UserBadge[]
+  devices     UserDevice[]
 
   @@map("users")
+}
+
+/// 푸시를 받을 기기 하나 — 체크리스트 24번.
+///
+/// **왜 User에 컬럼 하나로 두지 않았나.** 한 사람이 폰과 태블릿을 같이 쓰면
+/// 나중에 로그인한 기기가 앞의 토큰을 덮어써서, 먼저 쓰던 기기는 조용히
+/// 알림을 못 받게 된다. 원인을 찾기 아주 어려운 종류의 버그다.
+///
+/// **fcmToken이 유니크인 이유.** 기기 하나의 토큰은 전 세계에서 하나뿐이다.
+/// 한 폰에서 A가 로그아웃하고 B가 로그인하면 같은 토큰이 B에게 옮겨 가야
+/// 하는데, 유니크가 걸려 있어야 upsert 한 번으로 그 이전이 끝난다.
+/// 유니크가 없으면 두 사람에게 같은 토큰이 남아 A의 알림이 B의 폰에 뜬다.
+model UserDevice {
+  id     Int @id @default(autoincrement())
+  userId Int @map("user_id")
+
+  /// FCM 등록 토큰. 앱을 지웠다 깔거나 데이터를 지우면 새로 발급된다.
+  fcmToken String @unique @map("fcm_token")
+
+  /// "android" | "ios". 발송 실패를 어느 쪽에서 겪는지 나눠 보려고 남긴다.
+  platform String?
+
+  /// 사용자가 설정에서 끄면 false. 토큰은 지우지 않는다 —
+  /// 다시 켤 때 권한 팝업을 또 띄우지 않으려면 값이 남아 있어야 한다.
+  enabled Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_devices")
 }
 
 model UserKeyword {
@@ -64,8 +98,8 @@ model Place {
   name            String
   regionCode      String   @map("region_code")
   address         String?
-  lat             Float    // WGS84 위도
-  lng             Float    // WGS84 경도
+  lat             Float // WGS84 위도
+  lng             Float // WGS84 경도
   imageUrl        String?  @map("image_url") // 💡 photoUrl -> imageUrl 로 변경
   congestionScore Int      @default(1) @map("congestion_score") // 1: 하위30%(x1.4), 2: 보통(x1.0), 3: 상위10%(x0.7)
   updatedAt       DateTime @updatedAt @map("updated_at")
@@ -76,96 +110,96 @@ model Place {
 }
 
 model Quest {
-  id              Int               @id @default(autoincrement())
-  placeId         Int               @map("place_id")
-  place           Place             @relation(fields: [placeId], references: [id])
-  title           String
-  story           String?
-  questType       QuestType         @default(VISIT) @map("quest_type") // 7종 유형 Enum
-  difficulty      Int               @default(1) // 난이도 (★1 ~ ★5)
-  halfStep        Boolean           @default(false) @map("half_step") // 반개(★½) 여부 (EXP x1.15)
-  baseExp         Int               @map("base_exp") // 50, 110, 220, 400, 700
-  radiusM         Int               @default(50) @map("radius_m") // 기본 50m, 탐색형은 300~500m
-  keywords        String[]
-  active          Boolean           @default(true)
+  id         Int       @id @default(autoincrement())
+  placeId    Int       @map("place_id")
+  place      Place     @relation(fields: [placeId], references: [id])
+  title      String
+  story      String?
+  questType  QuestType @default(VISIT) @map("quest_type") // 7종 유형 Enum
+  difficulty Int       @default(1) // 난이도 (★1 ~ ★5)
+  halfStep   Boolean   @default(false) @map("half_step") // 반개(★½) 여부 (EXP x1.15)
+  baseExp    Int       @map("base_exp") // 50, 110, 220, 400, 700
+  radiusM    Int       @default(50) @map("radius_m") // 기본 50m, 탐색형은 300~500m
+  keywords   String[]
+  active     Boolean   @default(true)
 
   // PDF 6개 축 난이도 평가 점수 (기록/검증용)
-  scoreA          Int               @default(0) @map("score_a") // A. 탐색 불확정성 (0-4)
-  scoreB          Int               @default(0) @map("score_b") // B. 대상 확실성 (0-3)
-  scoreC          Int               @default(0) @map("score_c") // C. 접근 부담 (0-2)
-  scoreD          Int               @default(0) @map("score_d") // D. 시간 제약 (0-2)
-  scoreE          Int               @default(0) @map("score_e") // E. 행동량 (0-2)
-  scoreF          Int               @default(0) @map("score_f") // F. 반복 횟수 (0-2)
+  scoreA Int @default(0) @map("score_a") // A. 탐색 불확정성 (0-4)
+  scoreB Int @default(0) @map("score_b") // B. 대상 확실성 (0-3)
+  scoreC Int @default(0) @map("score_c") // C. 접근 부담 (0-2)
+  scoreD Int @default(0) @map("score_d") // D. 시간 제약 (0-2)
+  scoreE Int @default(0) @map("score_e") // E. 행동량 (0-2)
+  scoreF Int @default(0) @map("score_f") // F. 반복 횟수 (0-2)
 
   // 퀘스트 유형별 상세 속성
-  timeWindowStart String?           @map("time_window_start") // 05 시간대형 (예: "04:00", "SUNSET-40")
-  timeWindowEnd   String?           @map("time_window_end")   // 05 시간대형 (예: "06:00", "SUNSET+20")
-  photoPrompt     String?           @map("photo_prompt")     // 06 피사체형 촬영 가이드 문구
-  requiredCount   Int               @default(1) @map("required_count") // 08 수집형 목표 개수 (n개)
-  quizQuestion    String?           @map("quiz_question")    // 09 퀴즈형/10 탐색형 질문
-  quizOptions     Json?             @map("quiz_options")     // 09 퀴즈형 3택 선택지 목록
-  quizAnswer      String?           @map("quiz_answer")      // 09 퀴즈형/10 탐색형 정답
-  quizExplanation String?           @map("quiz_explanation") // 09 퀴즈형 해설
+  timeWindowStart String? @map("time_window_start") // 05 시간대형 (예: "04:00", "SUNSET-40")
+  timeWindowEnd   String? @map("time_window_end") // 05 시간대형 (예: "06:00", "SUNSET+20")
+  photoPrompt     String? @map("photo_prompt") // 06 피사체형 촬영 가이드 문구
+  requiredCount   Int     @default(1) @map("required_count") // 08 수집형 목표 개수 (n개)
+  quizQuestion    String? @map("quiz_question") // 09 퀴즈형/10 탐색형 질문
+  quizOptions     Json?   @map("quiz_options") // 09 퀴즈형 3택 선택지 목록
+  quizAnswer      String? @map("quiz_answer") // 09 퀴즈형/10 탐색형 정답
+  quizExplanation String? @map("quiz_explanation") // 09 퀴즈형 해설
 
-  userQuests      UserQuest[]
-  completions     QuestCompletion[]
+  userQuests  UserQuest[]
+  completions QuestCompletion[]
 
   @@map("quests")
 }
 
 model UserQuest {
-  id              Int       @id @default(autoincrement())
-  userId          Int       @map("user_id")
-  questId         Int       @map("quest_id")
-  status          String    @default("accepted") // accepted, in_progress, done, abandoned
-  
-  // 08 수집형 퀘스트 진행률 (예: 3/5일 때 3)
-  currentProgress Int       @default(0) @map("current_progress")
-  
-  // 6. 어뷰징 검사(속도 > 40km/h)용 직전 인증 기록
-  lastLat         Float?    @map("last_lat")
-  lastLng         Float?    @map("last_lng")
-  lastVerifiedAt  DateTime? @map("last_verified_at")
+  id      Int    @id @default(autoincrement())
+  userId  Int    @map("user_id")
+  questId Int    @map("quest_id")
+  status  String @default("accepted") // accepted, in_progress, done, abandoned
 
-  startedAt       DateTime  @default(now()) @map("started_at")
-  completedAt     DateTime? @map("completed_at")
-  
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  quest           Quest     @relation(fields: [questId], references: [id])
+  // 08 수집형 퀘스트 진행률 (예: 3/5일 때 3)
+  currentProgress Int @default(0) @map("current_progress")
+
+  // 6. 어뷰징 검사(속도 > 40km/h)용 직전 인증 기록
+  lastLat        Float?    @map("last_lat")
+  lastLng        Float?    @map("last_lng")
+  lastVerifiedAt DateTime? @map("last_verified_at")
+
+  startedAt   DateTime  @default(now()) @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quest Quest @relation(fields: [questId], references: [id])
 
   @@unique([userId, questId])
   @@map("user_quests")
 }
 
 model QuestCompletion {
-  id              Int      @id @default(autoincrement())
-  userId          Int      @map("user_id")
-  questId         Int      @map("quest_id")
-  expAwarded      Int      @map("exp_awarded")
-  multipliersJson Json?    @map("multipliers_json")
-  
+  id              Int   @id @default(autoincrement())
+  userId          Int   @map("user_id")
+  questId         Int   @map("quest_id")
+  expAwarded      Int   @map("exp_awarded")
+  multipliersJson Json? @map("multipliers_json")
+
   // 5. 사진 Presigned URL 및 공개범위
-  photoUrl        String?  @map("photo_url")
-  photoVisibility String   @default("PUBLIC") @map("photo_visibility") // PUBLIC, PRIVATE, COMMUNITY_HINT
-  
+  photoUrl        String? @map("photo_url")
+  photoVisibility String  @default("PUBLIC") @map("photo_visibility") // PUBLIC, PRIVATE, COMMUNITY_HINT
+
   // 13 기록형 한 줄 감상(20자 이상) 및 감정 태그
-  userText        String?  @map("user_text")
-  emotionTag      String?  @map("emotion_tag")
+  userText   String? @map("user_text")
+  emotionTag String? @map("emotion_tag")
 
   // 도달 인증 당시 위치 정보
-  lat             Float
-  lng             Float
-  accuracyM       Float    @map("accuracy_m")
+  lat       Float
+  lng       Float
+  accuracyM Float @map("accuracy_m")
 
   // 6. 어뷰징(시속 40km/h 초과) 판정 여부
-  isAbused        Boolean  @default(false) @map("is_abused")
+  isAbused Boolean @default(false) @map("is_abused")
 
   // 7. 멱등성 검증용 UUID
-  requestId       String   @unique @map("request_id")
-  createdAt       DateTime @default(now()) @map("created_at")
+  requestId String   @unique @map("request_id")
+  createdAt DateTime @default(now()) @map("created_at")
 
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  quest           Quest    @relation(fields: [questId], references: [id])
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quest Quest @relation(fields: [questId], references: [id])
 
   @@map("quest_completions")
 }
