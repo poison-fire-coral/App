@@ -166,7 +166,7 @@ model QuestCompletion {
 
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   quest           Quest    @relation(fields: [questId], references: [id])
-
+  @@index([isAbused, createdAt])
   @@map("quest_completions")
 }
 

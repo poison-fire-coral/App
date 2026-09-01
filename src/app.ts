@@ -4,6 +4,7 @@ import authRoutes from "./routes/auth.routes";
 import userRoutes from "./routes/user.routes";
 import questRoutes from "./routes/quest.routes";
 import badgeRoutes from "./routes/badge.routes";
+import privacyRouter from "./routes/privacy.router";
 import { errorHandler } from "./middlewares/errorHandler";
 
 const app = express();
@@ -15,6 +16,9 @@ app.use(express.json());
 app.get("/", (req, res) => {
   res.json({ status: "OK", message: "Local Quest API Server is running!" });
 });
+
+// 공개 약관 라우터 (Google Play Console 제출용 /privacy)
+app.use(privacyRouter);
 
 // API 라우터 연결
 app.use("/api/v1/auth", authRoutes);

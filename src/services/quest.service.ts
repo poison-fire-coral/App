@@ -3,11 +3,9 @@ import { QuestType } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 import { CustomError } from "../utils/CustomError";
 import { calculateHaversineDistance, checkSpeedAbuse } from "../utils/geo.util";
-import { getKSTDateString, isOffPeakKST } from "../utils/date.util"; // 💡 date.util에서 불러옴
+import { getKSTDateString, isOffPeakKST } from "../utils/date.util";
 import { calculateRewardExp, processLevelUp } from "./exp-engine.service";
 import { recalculateBadges } from "./badge.service";
-
-// ❌ 기존에 작성되어 있던 local getKSTDateString 및 isOffPeakKST 함수 선언부는 삭제되었습니다.
 
 /**
  * Place.congestionScore(0~100 백분위)를 EXP 엔진이 기대하는 1/2/3 등급으로 옮긴다.
@@ -117,10 +115,10 @@ export class QuestService {
         return {
           title: `${name} 역사·문화 탐방`,
           story: `${name}에 도달하여 지역 고유의 특별한 매력을 발견해보세요!`,
-          difficulty: 3,
+          difficulty: 5,
           baseExp: 220,
           keywords: ["명소", "탐험", "관광"],
-          questType: "QUIZ" as QuestType,
+          questType: "VISIT" as QuestType,
           quizQuestion: `${name} 방문 인증: 이곳은 어떤 유형의 명소일까요?`,
           quizOptions: ["역사/문화 관광지", "대형 백화점", "첨단 연구소"],
           quizAnswer: "역사/문화 관광지",
@@ -130,10 +128,10 @@ export class QuestService {
         return {
           title: `${name} 로컬 전시 인증`,
           story: `${name}에서 펼쳐지는 문화와 예술 공간을 조용히 관람해보세요.`,
-          difficulty: 2,
+          difficulty: 4,
           baseExp: 150,
           keywords: ["문화", "전시", "힐링"],
-          questType: "PHOTO_SINGLE" as QuestType,
+          questType: "VISIT" as QuestType,
           photoPrompt: `${name}의 건물 입구 또는 대표 안내판을 촬영하세요.`,
         };
       case "15":
@@ -143,7 +141,7 @@ export class QuestService {
           difficulty: 2,
           baseExp: 180,
           keywords: ["축제", "이벤트", "체험"],
-          questType: "PHOTO_COLLECT" as QuestType,
+          questType: "VISIT" as QuestType,
           requiredCount: 2,
         };
       case "28":
@@ -153,7 +151,7 @@ export class QuestService {
           difficulty: 3,
           baseExp: 200,
           keywords: ["액티비티", "모험", "스포츠"],
-          questType: "EXPLORATION" as QuestType,
+          questType: "VISIT" as QuestType,
         };
       case "32":
         return {
@@ -162,7 +160,7 @@ export class QuestService {
           difficulty: 1,
           baseExp: 50,
           keywords: ["휴식", "숙소", "힐링"],
-          questType: "RECORD" as QuestType,
+          questType: "VISIT" as QuestType,
         };
       case "38":
         return {
@@ -171,7 +169,7 @@ export class QuestService {
           difficulty: 2,
           baseExp: 110,
           keywords: ["시장", "탐방", "쇼핑"],
-          questType: "PHOTO_SINGLE" as QuestType,
+          questType: "VISIT" as QuestType,
           photoPrompt: `${name}의 정겨운 가게 간판 사진`,
         };
       case "39":
@@ -181,7 +179,7 @@ export class QuestService {
           difficulty: 1,
           baseExp: 60,
           keywords: ["맛집", "음식", "로컬"],
-          questType: "RECORD" as QuestType,
+          questType: "VISIT" as QuestType,
         };
       default:
         return {
@@ -397,6 +395,43 @@ export class QuestService {
     return userQuests;
   }
 
+  /**
+   * 💡 32번: 어뷰징 탐지 로그 목록 조회
+   */
+  static async getAbuseLogs({ page = 1, limit = 20 }: { page: number; limit: number }) {
+    const skip = (page - 1) * limit;
+
+    const [items, totalCount] = await Promise.all([
+      prisma.questCompletion.findMany({
+        where: { isAbused: true },
+        include: {
+          user: {
+            select: { id: true, nickname: true, providerUid: true },
+          },
+          quest: {
+            select: { id: true, title: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.questCompletion.count({
+        where: { isAbused: true },
+      }),
+    ]);
+
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+      },
+    };
+  }
+
   static async getQuestById(questId: number) {
     const quest = await prisma.quest.findUnique({
       where: { id: questId },
@@ -425,9 +460,11 @@ export class QuestService {
     });
 
     if (existingUserQuest) {
-      // 이미 완료한 경우: 마지막 완료 시점으로부터 24시간이 넘었는지 검증
       if (this.isCompletedStatus(existingUserQuest.status)) {
-        const lastCompletedAt = existingUserQuest.completedAt || existingUserQuest.lastVerifiedAt || existingUserQuest.startedAt;;
+        const lastCompletedAt =
+          existingUserQuest.completedAt ||
+          existingUserQuest.lastVerifiedAt ||
+          existingUserQuest.startedAt;
         const now = new Date();
         const hoursDiff = (now.getTime() - lastCompletedAt.getTime()) / (1000 * 3600);
 
@@ -439,7 +476,6 @@ export class QuestService {
           );
         }
 
-        // 24시간이 지났으면 상태를 IN_PROGRESS로 업데이트하여 재수행 허용
         return await prisma.userQuest.update({
           where: { userId_questId: { userId, questId } },
           data: { status: "IN_PROGRESS", startedAt: now },
@@ -481,7 +517,6 @@ export class QuestService {
   static async verifyQuest(dto: VerifyQuestDto) {
     const now = new Date();
 
-    // 멱등성 검증 (동일 Request ID 처리 방지)
     const existingCompletion = await prisma.questCompletion.findUnique({
       where: { requestId: dto.requestId },
     });
@@ -499,7 +534,6 @@ export class QuestService {
       throw new CustomError(404, "QUEST_NOT_FOUND", "존재하지 않는 퀘스트입니다.");
     }
 
-    // 💡 16. 재수행(x0.3) 및 완료 제한 조건 판단
     const latestCompletion = await prisma.questCompletion.findFirst({
       where: { userId: dto.userId, questId: dto.questId },
       orderBy: { createdAt: "desc" },
@@ -510,7 +544,6 @@ export class QuestService {
       const hoursDiff = (now.getTime() - latestCompletion.createdAt.getTime()) / (1000 * 3600);
       const isSameDayKST = getKSTDateString(latestCompletion.createdAt) === getKSTDateString(now);
 
-      // 24시간 미만이거나 당일 이미 완료했으면 차단 (멱등성 & 규칙 유지)
       if (hoursDiff < 24 || isSameDayKST) {
         throw new CustomError(
           409,
@@ -560,7 +593,6 @@ export class QuestService {
       );
     }
 
-    // 💡 14. 신규 지역 판정 (유저가 해당 regionCode에서 성공한 퀘스트 이력이 없는지 검사)
     let isNewArea = false;
     const regionCode = quest.place?.regionCode;
 
@@ -576,7 +608,6 @@ export class QuestService {
       isNewArea = !pastCompletionInRegion;
     }
 
-    // 💡 15. 비피크 시간대 계산 (KST 기준 평일 오전)
     const isOffPeak = isOffPeakKST(now);
 
     let dailyExpEarned = user.dailyExpEarned;
@@ -585,11 +616,10 @@ export class QuestService {
       dailyExpEarned = 0;
     }
 
-    // 보상 EXP 계산 (재수행 x0.3 배율 적용 포함)
     const expResult = calculateRewardExp(
       {
         baseExp: quest.baseExp,
-        halfStep: isRepeat ? true : quest.halfStep, // 재수행 시 0.3배(또는 halfStep) 적용
+        halfStep: isRepeat ? true : quest.halfStep,
         congestionScore: toCongestionTier(quest.place.congestionScore),
         isNewArea,
         isOffPeak,
