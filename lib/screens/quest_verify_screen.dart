@@ -7,6 +7,7 @@ import '../models/api_exception.dart';
 import '../models/quest_model.dart';
 import '../services/app_settings.dart';
 import '../services/geo.dart';
+import '../services/permission_service.dart';
 import '../services/photo_uploader.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
@@ -19,8 +20,11 @@ class QuestVerifyResult {
   /// 사진 공개 범위 (기획서 4b · 5d "사진 공개 범위")
   final bool isPhotoPublic;
 
-  /// 업로드가 끝난 사진의 공개 URL.
+  /// 업로드가 끝난 사진의 공개 URL. 수집형이면 그중 첫 장이다.
   final String? photoUrl;
+
+  /// 08 수집형이 모은 사진들의 공개 URL. 단일 사진 유형에서는 비어 있다.
+  final List<String> photoUrls;
 
   /// 방금 찍은 사진의 기기 내 경로. 미리보기에만 쓴다.
   final String? localPhotoPath;
@@ -35,6 +39,7 @@ class QuestVerifyResult {
     required this.hasPhoto,
     this.isPhotoPublic = true,
     this.photoUrl,
+    this.photoUrls = const [],
     this.localPhotoPath,
     this.userText,
     this.answer,
@@ -62,8 +67,26 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
   /// 설정 5d의 '사진 기본 공개'로 시작한다. 이 화면에서 매번 바꿀 수 있고,
   /// 여기서 바꾼 것은 이번 인증에만 적용된다 — 기본값 자체는 설정에서 바꾼다.
   bool _isPublic = AppSettings.photoPublicByDefault;
-  XFile? _photo;
+
+  /// 고른 사진들. 단일 사진 유형에서는 길이가 0 또는 1이다.
+  ///
+  /// 수집형과 단일형이 서로 다른 필드를 쓰면 업로드·결과 조립이 두 벌이 된다.
+  /// 목록 하나로 두고, 단일형은 "한 장만 담기는 목록"으로 다룬다.
+  final List<XFile> _photos = [];
+
+  XFile? get _photo => _photos.isEmpty ? null : _photos.first;
+
   bool _isPicking = false;
+
+  /// 08 수집형인가. 목표 장수가 1이면 단일형과 다를 게 없어 그대로 단일로 다룬다.
+  bool get _isCollect =>
+      widget.quest.questType == 'PHOTO_COLLECT' && widget.quest.requiredCount > 1;
+
+  /// 이 인증이 요구하는 사진 장수.
+  int get _requiredPhotos => _isCollect ? widget.quest.requiredCount : 1;
+
+  /// 목표 장수를 채웠는지. 서버도 같은 수를 센다(`PHOTO_COUNT_NOT_MET`).
+  bool get _hasEnoughPhotos => _photos.length >= _requiredPhotos;
 
   /// 13 기록형에서만 쓰는 한 줄 입력.
   final TextEditingController _noteController = TextEditingController();
@@ -91,6 +114,10 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
   /// S3 업로드가 도는 중. 이 동안 버튼을 잠근다.
   bool _isUploading = false;
 
+  /// 지금까지 올라간 장수. 수집형은 여러 장이라 "2/3 올리는 중"을 보여준다 —
+  /// 한 장짜리와 달리 몇 초 이상 걸려서, 진행이 안 보이면 멈춘 줄 안다.
+  int _uploadedCount = 0;
+
   // 💡 ImagePicker 인스턴스를 상태 객체에서 싱글톤처럼 유지하여 메모리 누수 및 크래시 방지
   final ImagePicker _picker = ImagePicker();
 
@@ -112,13 +139,32 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
 
       if (picked != null && mounted) {
         setState(() {
-          _photo = picked;
+          if (_isCollect) {
+            // 목표를 넘겨 담지 않는다. 넘치면 무엇이 세어졌는지 알기 어렵다.
+            if (_photos.length < _requiredPhotos) _photos.add(picked);
+          } else {
+            _photos
+              ..clear()
+              ..add(picked);
+          }
         });
       }
     } catch (e) {
       if (mounted) {
+        // 사진 자체가 인증 조건인 유형에서는 "위치만으로 완료"가 거짓말이 된다.
+        final canSkip = !_isCollect && widget.quest.questType != 'PHOTO_SINGLE';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('사진을 가져오지 못했어요. 위치만으로도 완료할 수 있어요. ($e)')),
+          SnackBar(
+            content: Text(
+              canSkip
+                  ? '사진을 가져오지 못했어요. 위치만으로도 완료할 수 있어요.'
+                  : '사진을 가져오지 못했어요. 카메라 권한을 확인해 주세요.',
+            ),
+            action: SnackBarAction(
+              label: '설정 열기',
+              onPressed: PermissionService.openAppSettings,
+            ),
+          ),
         );
       }
     } finally {
@@ -134,32 +180,50 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
   /// 현장까지 가서 인증을 못 하면 손해가 너무 크다. 실패하면 사진만 빼고
   /// 계속할지 물어본다.
   Future<void> _completeWithPhoto() async {
-    final photo = _photo;
-    if (photo == null || _isUploading) return;
+    if (_photos.isEmpty || _isUploading) return;
 
     if (!_isRemoteQuest) {
       // 목업 퀘스트 — 올릴 곳이 없다. 미리보기 경로만 들고 돌아간다.
       Navigator.of(context).pop(QuestVerifyResult(
         hasPhoto: true,
         isPhotoPublic: _isPublic,
-        localPhotoPath: photo.path,
+        localPhotoPath: _photos.first.path,
         userText: _noteOrNull,
         answer: _pickedAnswer,
       ));
       return;
     }
 
-    setState(() => _isUploading = true);
+    setState(() {
+      _isUploading = true;
+      _uploadedCount = 0;
+    });
 
-    String? publicUrl;
+    final urls = <String>[];
     try {
-      publicUrl = await PhotoUploader.upload(
-        questId: widget.quest.id,
-        file: File(photo.path),
-      );
+      // 한 장씩 순서대로 올린다. 동시에 던지면 실패했을 때 몇 장이 올라갔는지
+      // 알 수 없고, 현장 네트워크에서는 병렬이 오히려 느리다.
+      for (final photo in _photos) {
+        final url = await PhotoUploader.upload(
+          questId: widget.quest.id,
+          file: File(photo.path),
+        );
+        urls.add(url);
+        if (!mounted) return;
+        setState(() => _uploadedCount = urls.length);
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _isUploading = false);
+
+      // 수집형은 사진이 인증 조건이라 "사진 없이"가 성립하지 않는다.
+      // 서버가 장수를 세어 거절하므로 물어봐야 헛걸음이 된다.
+      if (_isCollect || widget.quest.questType == 'PHOTO_SINGLE') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.displayMessage)),
+        );
+        return;
+      }
 
       final proceed = await _askProceedWithoutPhoto(e);
       if (proceed != true || !mounted) return;
@@ -167,7 +231,7 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
       Navigator.of(context).pop(QuestVerifyResult(
         hasPhoto: false,
         isPhotoPublic: _isPublic,
-        localPhotoPath: photo.path,
+        localPhotoPath: _photos.first.path,
         userText: _noteOrNull,
         answer: _pickedAnswer,
       ));
@@ -180,8 +244,9 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
     Navigator.of(context).pop(QuestVerifyResult(
       hasPhoto: true,
       isPhotoPublic: _isPublic,
-      photoUrl: publicUrl,
-      localPhotoPath: photo.path,
+      photoUrl: urls.first,
+      photoUrls: urls,
+      localPhotoPath: _photos.first.path,
       userText: _noteOrNull,
       answer: _pickedAnswer,
     ));
@@ -231,6 +296,8 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
   }
 
   Widget _buildPhotoArea() {
+    if (_isCollect) return _buildCollectGrid();
+
     final photo = _photo;
     if (photo == null) {
       return NoteBox(
@@ -238,17 +305,19 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.photo_camera_outlined,
+            const Icon(Icons.photo_camera_outlined,
                 size: 36, color: AppColors.textDisabled),
             const SizedBox(height: 10),
             Text(
-              '이곳의 사진을 한 장 남겨보세요',
+              widget.quest.photoPrompt ?? '이곳의 사진을 한 장 남겨보세요',
               style: AppType.bodyMuted,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 4),
             Text(
-              '사진 없이 위치만으로도 완료할 수 있어요',
+              widget.quest.questType == 'PHOTO_SINGLE'
+                  ? '이 퀘스트는 사진이 있어야 완료돼요'
+                  : '사진 없이 위치만으로도 완료할 수 있어요',
               style: AppType.caption.copyWith(color: AppColors.textTertiary),
               textAlign: TextAlign.center,
             ),
@@ -257,28 +326,12 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
       );
     }
 
-    final imageFile = File(photo.path);
-
     return Stack(
       fit: StackFit.expand,
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          child: Image.file(
-            imageFile,
-            fit: BoxFit.cover,
-            // 💡 파일 읽기 실패 시 화면이 튕기는 현상 예방
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                color: AppColors.surface,
-                alignment: Alignment.center,
-                child: const Text(
-                  '이미지를 불러올 수 없습니다.',
-                  style: TextStyle(color: AppColors.textDisabled),
-                ),
-              );
-            },
-          ),
+          child: _photoImage(photo, fit: BoxFit.cover),
         ),
         Positioned(
           right: AppSpacing.sm,
@@ -289,6 +342,139 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 08 수집형 — 목표 장수만큼 칸을 깔고 채워 나간다.
+  ///
+  /// **빈 칸을 먼저 보여준다.** "3장 필요"라고 글로만 쓰면 몇 장을 더 찍어야
+  /// 하는지 매번 세어야 한다. 칸이 비어 있으면 남은 수가 그대로 보인다.
+  Widget _buildCollectGrid() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                widget.quest.photoPrompt ?? '서로 다른 장면을 담아보세요',
+                style: AppType.bodyMuted,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(
+              '${_photos.length} / $_requiredPhotos',
+              style: AppType.numeric.copyWith(
+                fontSize: 13,
+                color: _hasEnoughPhotos
+                    ? AppColors.jade500
+                    : AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // 한 줄에 3칸. 목표가 4장 이상이면 자연히 여러 줄이 된다.
+              const columns = 3;
+              const gap = AppSpacing.sm;
+              final side =
+                  (constraints.maxWidth - gap * (columns - 1)) / columns;
+
+              return SingleChildScrollView(
+                child: Wrap(
+                  spacing: gap,
+                  runSpacing: gap,
+                  children: [
+                    for (var i = 0; i < _requiredPhotos; i++)
+                      SizedBox(
+                        width: side,
+                        height: side,
+                        child: i < _photos.length
+                            ? _buildFilledSlot(i)
+                            : _buildEmptySlot(isNext: i == _photos.length),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFilledSlot(int index) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: _photoImage(_photos[index], fit: BoxFit.cover),
+        ),
+        // 지우기 — 잘못 찍은 장을 빼지 못하면 목표를 채우고도 다시 못 한다.
+        Positioned(
+          right: 2,
+          top: 2,
+          child: GestureDetector(
+            onTap: _isUploading
+                ? null
+                : () => setState(() => _photos.removeAt(index)),
+            child: Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: AppColors.ink700.withValues(alpha: 0.62),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.close_rounded,
+                  size: 15, color: Colors.white),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptySlot({required bool isNext}) {
+    return GestureDetector(
+      onTap: _isPicking || _isUploading || !isNext
+          ? null
+          : () => _pickPhoto(fromGallery: false),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          border: Border.all(
+            // 다음에 채울 칸만 진하게. 나머지는 자리만 알려 준다.
+            color: isNext ? AppColors.quest500 : AppColors.hairline,
+            width: isNext ? 1.4 : 1,
+          ),
+        ),
+        child: Icon(
+          Icons.add_rounded,
+          color: isNext ? AppColors.quest500 : AppColors.textDisabled,
+        ),
+      ),
+    );
+  }
+
+  /// 미리보기 이미지. 파일을 못 읽어도 화면이 죽지 않게 한다.
+  Widget _photoImage(XFile photo, {required BoxFit fit}) {
+    return Image.file(
+      File(photo.path),
+      fit: fit,
+      errorBuilder: (context, error, stackTrace) => Container(
+        color: AppColors.surface,
+        alignment: Alignment.center,
+        child: const Text(
+          '이미지를 불러올 수 없습니다.',
+          style: TextStyle(color: AppColors.textDisabled, fontSize: 12),
+          textAlign: TextAlign.center,
+        ),
+      ),
     );
   }
 
@@ -368,29 +554,20 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
                         Expanded(
                           flex: 2,
                           child: PrimaryButton(
-                            label: _isUploading
-                                ? '사진 올리는 중…'
-                                : _needsAnswer
-                                    ? '이 답으로 완료'
-                                    : _photo == null
-                                        ? '촬영하기'
-                                        : '이 사진으로 완료',
+                            label: _primaryLabel(),
                             enabled: !_isPicking &&
                                 !_isUploading &&
                                 (!_needsNote || _noteOrNull != null) &&
                                 (!_needsAnswer || _pickedAnswer != null),
-                            onTap: _needsAnswer
-                                ? _completeWithoutPhoto
-                                : _photo == null
-                                    ? () => _pickPhoto(fromGallery: false)
-                                    : _completeWithPhoto,
+                            onTap: _onPrimaryTap(),
                           ),
                         ),
                       ],
                     ),
-                    // 사진형은 서버가 사진을 요구하므로 이 지름길을 열면
+                    // 사진형·수집형은 서버가 사진을 요구하므로 이 지름길을 열면
                     // 눌러 놓고 400을 맞는다. 퀴즈형은 사진 자체가 없다.
                     if (!_needsAnswer &&
+                        !_isCollect &&
                         widget.quest.questType != 'PHOTO_SINGLE') ...[
                       const SizedBox(height: AppSpacing.md),
                       Center(
@@ -409,6 +586,38 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
         ),
       ),
     );
+  }
+
+  /// 지금 무엇을 눌러야 하는지 한 줄로 말한다.
+  ///
+  /// 유형마다 다음 할 일이 달라서, 예전에는 삼항 연산자가 build 한가운데
+  /// 네 겹으로 쌓여 있었다. 여기로 뺀다.
+  String _primaryLabel() {
+    if (_isUploading) {
+      return _isCollect
+          ? '사진 올리는 중… ($_uploadedCount / ${_photos.length})'
+          : '사진 올리는 중…';
+    }
+    if (_needsAnswer) return '이 답으로 완료';
+    if (_isCollect) {
+      if (!_hasEnoughPhotos) {
+        return '사진 찍기 (${_photos.length} / $_requiredPhotos)';
+      }
+      return '이 ${_photos.length}장으로 완료';
+    }
+    return _photo == null ? '촬영하기' : '이 사진으로 완료';
+  }
+
+  VoidCallback? _onPrimaryTap() {
+    if (_needsAnswer) return _completeWithoutPhoto;
+    if (_isCollect) {
+      return _hasEnoughPhotos
+          ? _completeWithPhoto
+          : () => _pickPhoto(fromGallery: false);
+    }
+    return _photo == null
+        ? () => _pickPhoto(fromGallery: false)
+        : _completeWithPhoto;
   }
 
   Widget _buildTopBar() {

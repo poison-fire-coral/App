@@ -290,6 +290,8 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
           // 그건 어뷰징이 아니라 우리 테스트다.
           isMocked: sample.isMocked,
           photoUrl: verifyResult.photoUrl,
+          // 08 수집형이 모은 사진들. 서버가 장수를 세어 판정한다.
+          photoUrls: verifyResult.photoUrls,
           photoVisibility: verifyResult.isPhotoPublic ? 'PUBLIC' : 'PRIVATE',
           // 13 기록형이 남긴 한 줄. 다른 유형에서는 null이다.
           userText: verifyResult.userText,
@@ -320,9 +322,11 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
           accuracyM: sample.accuracyMeters,
           isMocked: sample.isMocked,
           photoUrl: verifyResult.photoUrl,
+          photoUrls: verifyResult.photoUrls,
           photoVisibility: verifyResult.isPhotoPublic ? 'PUBLIC' : 'PRIVATE',
-          // 큐에 넣을 때도 한 줄과 답을 함께 보관한다. 빠뜨리면 신호가 돌아온 뒤
-          // 재전송이 서버에서 NOTE_REQUIRED·ANSWER_REQUIRED로 튕긴다.
+          // 큐에 넣을 때도 사진 목록·한 줄·답을 함께 보관한다. 빠뜨리면 신호가
+          // 돌아온 뒤 재전송이 서버에서 PHOTO_COUNT_NOT_MET·NOTE_REQUIRED·
+          // ANSWER_REQUIRED로 튕긴다.
           userText: verifyResult.userText,
           answer: verifyResult.answer,
           queuedAt: DateTime.now(),

@@ -192,6 +192,7 @@ export class QuestController {
         lng,
         accuracyM,
         photoUrl,
+        photoUrls,
         photoVisibility,
         userText,
         emotionTag,
@@ -215,6 +216,11 @@ export class QuestController {
         lng: Number(lng),
         accuracyM: Number(accuracyM),
         photoUrl,
+        // 08 수집형이 모은 사진들. 배열이 아닌 것이 오면 없는 것으로 본다 —
+        // 검증에서 장수를 세므로 형태가 어긋나면 그대로 거절된다.
+        photoUrls: Array.isArray(photoUrls)
+          ? photoUrls.filter((u: unknown): u is string => typeof u === "string")
+          : undefined,
         photoVisibility,
         userText,
         emotionTag,

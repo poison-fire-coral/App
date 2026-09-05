@@ -298,6 +298,7 @@ class QuestRepository {
     required double accuracyM,
     bool isMocked = false,
     String? photoUrl,
+    List<String> photoUrls = const [],
     String? photoVisibility,
     String? userText,
     String? emotionTag,
@@ -309,13 +310,11 @@ class QuestRepository {
       'lng': lng,
       'accuracyM': accuracyM,
       // 체크리스트 18번 — 운영체제가 모의 위치라고 표시한 표본인지.
-      //
-      // **서버는 아직 이 값을 읽지 않는다.** `VerifyQuestDto`에 자리가 없고
-      // `quest_completions`에도 컬럼이 없어서 지금은 버려진다. BE가 필드와
-      // 컬럼을 만들면(EXP 0 처리 + `is_abused` 기록) 앱 배포 없이 곧바로
-      // 값이 흘러 들어간다.
+      // 서버가 참이면 EXP 0으로 처리하고 `is_abused`에 남긴다.
       'isMocked': isMocked,
       'photoUrl': ?photoUrl,
+      // 08 수집형이 모은 사진들. 단일 사진 유형에서는 비어 있어 보내지 않는다.
+      if (photoUrls.isNotEmpty) 'photoUrls': photoUrls,
       'photoVisibility': ?photoVisibility,
       'userText': ?userText,
       'emotionTag': ?emotionTag,

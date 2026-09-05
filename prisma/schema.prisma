@@ -188,6 +188,13 @@ model QuestCompletion {
   photoUrl        String? @map("photo_url")
   photoVisibility String  @default("PUBLIC") @map("photo_visibility") // PUBLIC, PRIVATE, COMMUNITY_HINT
 
+  /// 08 수집형이 모은 사진들의 공개 URL 목록.
+  ///
+  /// `photoUrl`에는 그중 첫 장을 같이 넣는다 — 목록·상세처럼 대표 한 장만
+  /// 필요한 자리가 이미 그 칼럼을 읽고 있어서, 유형마다 다른 칼럼을 보게 하면
+  /// 읽는 쪽이 전부 분기를 갖게 된다.
+  photoUrls Json? @map("photo_urls")
+
   // 13 기록형 한 줄 감상(20자 이상) 및 감정 태그
   userText   String? @map("user_text")
   emotionTag String? @map("emotion_tag")

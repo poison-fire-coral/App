@@ -67,6 +67,13 @@ export interface VerifyQuestDto {
   lng: number;
   accuracyM: number;
   photoUrl?: string;
+
+  /**
+   * 08 수집형이 모은 사진들. 유형이 PHOTO_COLLECT일 때만 본다.
+   * 단일 사진 유형은 `photoUrl`을 그대로 쓴다.
+   */
+  photoUrls?: string[];
+
   photoVisibility?: string;
   userText?: string;
   emotionTag?: string;
@@ -214,10 +221,9 @@ export class QuestService {
    * 실사용자가 앱을 켜면 그 자리에서 퀘스트가 만들어진다. 그래서 이 표가 곧
    * "처음 온 사람이 보게 될 퀘스트 구성"이다. 세 가지를 지키도록 짰다.
    *
-   * 1. **인증할 수 없는 유형은 만들지 않는다.** 퀴즈·탐색(정답 입력)과 수집형
-   *    (사진 N장)은 4b 인증 화면에 입력 자리가 없어, 지금 만들면 걸어가기만 해도
-   *    완료된다. 이름만 퀴즈인 퀘스트를 실사용자에게 뿌릴 수는 없다.
-   *    화면이 생기면(체크리스트 26번) 여기 `special`만 바꾸면 된다.
+   * 1. **인증할 수 없는 유형은 만들지 않는다.** 퀴즈·탐색은 정답을 사람이 써야
+   *    하는데 자동 생성으로는 그 답을 만들 수 없다 — 아무 답이나 넣으면 현장에
+   *    다녀온 사람이 틀린다. 수집형(사진 N장)은 인증 화면이 생겨서 이제 만든다.
    *
    * 2. **방문형이 다수여야 한다.** 처음 쓰는 사람이 처음 받는 퀘스트가 타이핑이나
    *    촬영을 요구하면 이탈한다. 도달만으로 끝나는 것이 기본값이고,
@@ -226,20 +232,43 @@ export class QuestService {
    * 3. **특수 유형은 장소 성격에 맞아야 한다.** 식당에서 한 줄 남기기(기록),
    *    시장·전시에서 사진 한 장은 자연스럽지만 뒤바뀌면 어색하다.
    *
-   * `sharePercent`는 그 장소 유형 중 특수 유형이 될 비율이다. 나머지는 방문형.
+   * `sharePercent`는 그 장소 유형 중 각 특수 유형이 될 비율이고, 합이 100에
+   * 못 미치는 나머지가 전부 방문형이다. 어느 장소 유형에서도 방문형이 과반이다.
    */
   private static readonly TYPE_MIX: Record<
     string,
-    { special: QuestType; sharePercent: number }
+    Array<{ type: QuestType; sharePercent: number }>
   > = {
-    "12": { special: "PHOTO_SINGLE", sharePercent: 20 }, // 관광지
-    "14": { special: "PHOTO_SINGLE", sharePercent: 35 }, // 문화시설
-    "15": { special: "PHOTO_SINGLE", sharePercent: 35 }, // 축제·행사
-    "28": { special: "VISIT", sharePercent: 0 }, // 레포츠 — 도달 자체가 목표
-    "32": { special: "RECORD", sharePercent: 25 }, // 숙박·쉼터
-    "38": { special: "PHOTO_SINGLE", sharePercent: 30 }, // 쇼핑 — 간판
-    "39": { special: "RECORD", sharePercent: 25 }, // 음식점 — 한줄평
+    // 관광지 — 한 장으로 담기도 하고, 넓은 곳은 여러 각도로 모으기도 한다.
+    "12": [
+      { type: "PHOTO_SINGLE", sharePercent: 20 },
+      { type: "PHOTO_COLLECT", sharePercent: 10 },
+    ],
+    // 문화시설 — 실내라 돌아다니며 여러 장을 찍기 어렵다. 한 장만.
+    "14": [{ type: "PHOTO_SINGLE", sharePercent: 35 }],
+    // 축제·행사 — 현장은 장면이 여럿이라 모으기가 가장 잘 맞는다.
+    "15": [
+      { type: "PHOTO_SINGLE", sharePercent: 25 },
+      { type: "PHOTO_COLLECT", sharePercent: 15 },
+    ],
+    // 레포츠 — 도달 자체가 목표라 늘 방문형.
+    "28": [],
+    // 숙박·쉼터 — 머무는 곳이라 한 줄이 남는다.
+    "32": [{ type: "RECORD", sharePercent: 25 }],
+    // 쇼핑 — 간판 한 장, 또는 시장을 걸으며 가게 여러 곳.
+    "38": [
+      { type: "PHOTO_SINGLE", sharePercent: 20 },
+      { type: "PHOTO_COLLECT", sharePercent: 15 },
+    ],
+    // 음식점 — 한줄평.
+    "39": [{ type: "RECORD", sharePercent: 25 }],
   };
+
+  /// 수집형이 요구하는 사진 장수.
+  ///
+  /// 3장인 이유는 "한 장 더"가 아니라 "돌아다녀야 한다"를 만들되, 현장에서
+  /// 지치지 않는 선이기 때문이다. 5장이면 축제 인파 속에서 포기하는 쪽이 많아진다.
+  private static readonly COLLECT_PHOTO_COUNT = 3;
 
   /**
    * 장소마다 **늘 같은** 0~99 값. 유형을 여기에 걸어 둔다.
@@ -261,11 +290,17 @@ export class QuestService {
   }
 
   private static resolveQuestType(place: TourApiPlace): QuestType {
-    const mix = QuestService.TYPE_MIX[place.contenttypeid];
-    if (!mix || mix.sharePercent <= 0) return "VISIT";
-    return QuestService.bucketOf(place.contentid) < mix.sharePercent
-      ? mix.special
-      : "VISIT";
+    const bands = QuestService.TYPE_MIX[place.contenttypeid];
+    if (!bands || bands.length === 0) return "VISIT";
+
+    // 0~99 한 칸을 비율만큼씩 잘라 앞에서부터 나눠 준다. 남는 칸은 방문형이다.
+    const bucket = QuestService.bucketOf(place.contentid);
+    let edge = 0;
+    for (const band of bands) {
+      edge += band.sharePercent;
+      if (bucket < edge) return band.type;
+    }
+    return "VISIT";
   }
 
   /**
@@ -291,6 +326,19 @@ export class QuestService {
 
     switch (place.contenttypeid) {
       case "12": // 관광지
+        if (questType === "PHOTO_COLLECT") {
+          return {
+            ...visitOf(
+              `${name} 세 장면`,
+              `${name}을(를) 서로 다른 자리에서 ${QuestService.COLLECT_PHOTO_COUNT}장 담아보세요.`,
+              3,
+              280,
+              ["명소", "사진", "탐험"]
+            ),
+            photoPrompt: `${name}의 서로 다른 장면 ${QuestService.COLLECT_PHOTO_COUNT}장`,
+            requiredCount: QuestService.COLLECT_PHOTO_COUNT,
+          };
+        }
         return questType === "PHOTO_SINGLE"
           ? {
               ...visitOf(
@@ -331,6 +379,19 @@ export class QuestService {
             );
 
       case "15": // 축제·행사
+        if (questType === "PHOTO_COLLECT") {
+          return {
+            ...visitOf(
+              `${name} 현장 ${QuestService.COLLECT_PHOTO_COUNT}컷`,
+              `${name}에서 눈에 밟힌 장면 ${QuestService.COLLECT_PHOTO_COUNT}가지를 담아보세요.`,
+              3,
+              240,
+              ["축제", "사진", "기록"]
+            ),
+            photoPrompt: `${name} 현장의 서로 다른 장면 ${QuestService.COLLECT_PHOTO_COUNT}장`,
+            requiredCount: QuestService.COLLECT_PHOTO_COUNT,
+          };
+        }
         return questType === "PHOTO_SINGLE"
           ? {
               ...visitOf(
@@ -377,6 +438,19 @@ export class QuestService {
             );
 
       case "38": // 쇼핑
+        if (questType === "PHOTO_COLLECT") {
+          return {
+            ...visitOf(
+              `${name} 간판 ${QuestService.COLLECT_PHOTO_COUNT}곳`,
+              `${name}을(를) 걸으며 마음에 드는 가게 ${QuestService.COLLECT_PHOTO_COUNT}곳을 담아보세요.`,
+              3,
+              180,
+              ["시장", "사진", "탐방"]
+            ),
+            photoPrompt: `${name} 안의 서로 다른 가게 ${QuestService.COLLECT_PHOTO_COUNT}곳`,
+            requiredCount: QuestService.COLLECT_PHOTO_COUNT,
+          };
+        }
         return questType === "PHOTO_SINGLE"
           ? {
               ...visitOf(
@@ -558,6 +632,17 @@ export class QuestService {
    *
    * 문제와 선택지는 화면에 그려야 하므로 남긴다. 해설은 채점 응답에서 준다.
    */
+  /**
+   * 이번 인증으로 올라온 사진 URL들. 중복과 빈 값을 걷어낸 목록이다.
+   *
+   * 같은 사진을 여러 번 골라 장수를 채우는 것을 막으려고 중복을 지운다 —
+   * 수집형의 뜻이 "여러 곳을 찍는다"이지 "같은 것을 여러 번 보낸다"가 아니다.
+   */
+  private static collectedPhotoUrls(dto: VerifyQuestDto): string[] {
+    const raw = [...(dto.photoUrls ?? []), ...(dto.photoUrl ? [dto.photoUrl] : [])];
+    return Array.from(new Set(raw.map((u) => u?.trim()).filter((u): u is string => !!u)));
+  }
+
   static toClientQuest<T extends { quizAnswer?: string | null; quizExplanation?: string | null }>(
     quest: T
   ): Omit<T, "quizAnswer" | "quizExplanation"> {
@@ -966,6 +1051,22 @@ export class QuestService {
       );
     }
 
+    // 08 수집형 — 목표 장수를 채워야 인증이다.
+    //
+    // `requiredCount`가 1이면 사진 한 장으로 끝나므로 단일 사진과 같게 다룬다.
+    // 앱이 아직 목록을 안 보내는 옛 버전일 수 있어 `photoUrl` 한 장도 세어 준다.
+    if (quest.questType === "PHOTO_COLLECT") {
+      const collected = QuestService.collectedPhotoUrls(dto);
+      const required = Math.max(1, quest.requiredCount);
+      if (collected.length < required) {
+        throw new CustomError(
+          400,
+          "PHOTO_COUNT_NOT_MET",
+          `사진 ${required}장이 필요합니다. 지금은 ${collected.length}장입니다.`
+        );
+      }
+    }
+
     // 09 퀴즈형 · 10 탐색형 — 정답을 맞혀야 인증이다.
     //
     // 정답이 비어 있는 퀘스트(자동 생성분)는 채점할 것이 없으므로 통과시킨다.
@@ -1147,7 +1248,12 @@ export class QuestService {
           requestId: dto.requestId,
           expAwarded: expResult.finalExp,
           multipliersJson: expResult.breakdown,
-          photoUrl: dto.photoUrl,
+          // 대표 한 장은 늘 photoUrl에 둔다 — 읽는 쪽이 유형을 몰라도 되게.
+          photoUrl: dto.photoUrl ?? QuestService.collectedPhotoUrls(dto)[0],
+          photoUrls:
+            quest.questType === "PHOTO_COLLECT"
+              ? QuestService.collectedPhotoUrls(dto)
+              : undefined,
           photoVisibility: dto.photoVisibility || "PUBLIC",
           userText: dto.userText,
           emotionTag: dto.emotionTag,
