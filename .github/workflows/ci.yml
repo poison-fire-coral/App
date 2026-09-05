@@ -5,7 +5,8 @@
 #    별도 설정 없이 빠진다. 서버·DB를 CI에 띄우는 건 이 단계의 몫이 아니다.
 #  - 마커 PNG 생성: tool/generate_marker_icons.dart 로 나가 있어(28번)
 #    `flutter test` 자동 수집에 걸리지 않는다.
-#  - 릴리스 빌드·서명: 35번에서 Play Console을 잡을 때 붙인다.
+#  - 릴리스 빌드·서명: 키스토어가 저장소에 없다(그리고 있어서도 안 된다).
+#    로컬에서 `flutter build appbundle --dart-define-from-file=...` 로 낸다.
 #
 # **키를 넣지 않는 이유**
 # analyze 와 test 는 카카오 키 없이 통과한다. AppConfig 가 빈 문자열이면
@@ -59,7 +60,7 @@ jobs:
 
       - run: npm ci
 
-      # `npm run build` = prisma generate + tsc.
+      # `npm run build` = prisma generate + tsc (dist/ 로 실제 산출).
       #
       # **prisma generate 가 먼저여야 한다.** @prisma/client 의 타입은 스키마에서
       # 생성되는 것이라, 이게 빠지면 node_modules 에 남아 있던 옛 타입으로 검사해
