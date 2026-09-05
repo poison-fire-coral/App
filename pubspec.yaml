@@ -1,5 +1,5 @@
 name: local_quest
-description: "A new Flutter project."
+description: "로컬 퀘스트 — 걸어서 닿는 곳에서 시작하는 장소 기반 퀘스트 앱"
 publish_to: 'none'
 
 version: 1.0.0+1

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      안드로이드 12(API 31)부터 시스템이 스플래시를 직접 그린다.
+      windowBackground 에 그려 둔 launch_background 는 **무시되고**,
+      아무것도 지정하지 않으면 런처 아이콘이 기본 바탕 위에 뜬다.
+      targetSdk 36 이므로 지금 파는 기기는 거의 전부 이 경로를 탄다.
+
+      앱 배경색(ink50)과 같은 바탕에 브랜드 마크를 올려, 스플래시에서
+      첫 화면으로 넘어갈 때 색이 튀지 않게 한다.
+    -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowSplashScreenBackground">@color/launch_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+    </style>
+
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+    </style>
+</resources>

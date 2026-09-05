@@ -6,4 +6,7 @@
     <!-- 런치 스크린 바탕 (체크리스트 33번).
          AppColors.ink50 과 같은 값이어야 한다 — 다르면 앱이 뜨는 순간 색이 튄다. -->
     <color name="launch_background">#FBF6F3</color>
+    <!-- 알림 강조색. 인장 붉은색(디자인 시스템의 seal). 아이콘 배경색(#FBF6F3)을
+         그대로 쓰면 흰 바탕에 흰 강조가 되어 보이지 않는다. -->
+    <color name="notification_accent">#9E2B1E</color>
 </resources>

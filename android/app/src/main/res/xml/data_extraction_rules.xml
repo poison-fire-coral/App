@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  백업·기기 이전에서 무엇을 내보낼지.
+
+  이 앱이 기기에 두는 것은 인증 토큰(보안 저장소)과 프로필·진행중 퀘스트 캐시다.
+  토큰이 백업에 실려 다른 기기로 복원되면 그 기기가 로그인된 상태가 된다.
+  전부 제외하고, 다시 로그인하게 한다 — 소셜 로그인이라 몇 초면 끝난다.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+    </device-transfer>
+</data-extraction-rules>

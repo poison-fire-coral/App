@@ -118,6 +118,9 @@ Future<void> _startApp() async {
   try {
     await Firebase.initializeApp();
     debugPrint("✅ Firebase 초기화 성공!");
+    // 메시지가 도착할 자리를 만들어 둔다. 권한·토큰은 사용자가 스위치를
+    // 켤 때 처리한다.
+    await PushService.initialize();
   } catch (e) {
     debugPrint("❌ Firebase 초기화 실패 에러: $e");
   }
