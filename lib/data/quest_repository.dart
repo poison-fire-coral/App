@@ -9,112 +9,23 @@ import '../services/geo.dart';
 import '../services/photo_uploader.dart';
 
 class QuestRepository {
-  /// 가상 내 위치 (수원화성/행궁동 시드 데이터 위치)
-  static const GeoPoint mockUserLocation = GeoPoint(37.2882, 127.0163);
+  /// GPS를 아직 못 잡았을 때 지도를 놓을 자리 (수원화성/행궁동, 시드 데이터가 있는 곳).
+  ///
+  /// **가짜 위치가 아니라 기본 중심점이다.** 권한을 받기 전이나 실내에서 첫 표본을
+  /// 기다리는 동안 지도가 바다 한가운데를 보여주지 않게 하려는 것뿐이고,
+  /// 실제 좌표가 들어오는 순간 [currentUserLocation]이 덮어쓴다.
+  static const GeoPoint defaultMapCenter = GeoPoint(37.2882, 127.0163);
 
   /// KakaoMap LatLng 포맷이 필요한 경우
-  static final LatLng mockUserLatLng = LatLng(37.2882, 127.0163);
+  static final LatLng defaultMapCenterLatLng = LatLng(37.2882, 127.0163);
 
-  /// 앱 전역에서 사용할 실시간 사용자 GPS 위치 (기본값은 목업 위치)
-  static GeoPoint currentUserLocation = mockUserLocation;
+  /// 앱 전역에서 사용할 실시간 사용자 GPS 위치.
+  static GeoPoint currentUserLocation = defaultMapCenter;
 
   /// 위치 업데이트용 메서드
   static void updateUserLocation(double lat, double lng) {
     currentUserLocation = GeoPoint(lat, lng);
   }
-
-  /// 💡 models/quest_model.dart의 정의와 100% 일치하도록 구성한 목업 데이터
-  static final List<QuestModel> mockQuests = [
-    QuestModel(
-      id: 'q_01',
-      title: '화성행궁 골목 탐방',
-      summary: '행궁동 골목길의 숨은 명소를 찾아 떠나는 여행',
-      description: '아름다운 행궁동 골목길의 숨은 명소를 찾아보세요.',
-      difficulty: QuestDifficulty.star3,
-      latitude: 37.2882,
-      longitude: 127.0163,
-      spotName: '화성행궁 정문 (신풍루)',
-      regionLabel: '수원 행궁동',
-      keywords: const ['역사', '산책', '카페'],
-      spots: const [
-        QuestSpot(
-          name: '화성행궁 정문 (신풍루)',
-          latitude: 37.2882,
-          longitude: 127.0163,
-        ),
-        QuestSpot(
-          name: '행리단길 카페거리',
-          latitude: 37.2890,
-          longitude: 127.0170,
-        ),
-      ],
-    ),
-    QuestModel(
-      id: 'q_02',
-      title: '방화수류정 성곽길 산책',
-      summary: '수원화성의 탁 트인 절경을 감상하는 코스',
-      description: '수원화성에서 가장 경치가 뛰어난 방화수류정을 거닐어 보세요.',
-      difficulty: QuestDifficulty.star4,
-      latitude: 37.2850,
-      longitude: 127.0180,
-      spotName: '방화수류정 연못',
-      regionLabel: '수원 성곽길',
-      keywords: const ['풍경', '힐링', '야경'],
-      spots: const [
-        QuestSpot(
-          name: '방화수류정 연못',
-          latitude: 37.2850,
-          longitude: 127.0180,
-        ),
-      ],
-    ),
-    QuestModel(
-      id: 'q_03',
-      title: '장안문 역사 기행',
-      summary: '수원화성 북문 장안문 탐방',
-      description: '수원화성의 북문인 장안문의 웅장함을 느껴보세요.',
-      difficulty: QuestDifficulty.star2,
-      latitude: 37.2910,
-      longitude: 127.0145,
-      spotName: '장안문 성곽 입구',
-      regionLabel: '수원 장안문',
-      keywords: const ['역사', '문화재'],
-      spots: const [
-        QuestSpot(
-          name: '장안문 성곽 입구',
-          latitude: 37.2910,
-          longitude: 127.0145,
-        ),
-      ],
-    ),
-  ];
-
-  /// ID로 퀘스트 단건 조회 (main.dart에서 사용)
-  static QuestModel? findById(String id) {
-    try {
-      return mockQuests.firstWhere((q) => q.id == id);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// 동기 방식 추천 퀘스트 목록 조회 (main.dart에서 사용)
-  static List<QuestModel> nearby({Set<String>? excludeIds}) {
-    if (excludeIds == null || excludeIds.isEmpty) {
-      return List.unmodifiable(mockQuests);
-    }
-    return mockQuests.where((q) => !excludeIds.contains(q.id)).toList();
-  }
-
-  /// .env 백엔드 설정에 맞춘 5001번 포트 Base URL
-  static String get baseUrl {
-    if (kIsWeb) return 'http://localhost:5001/api/v1';
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:5001/api/v1'; // 안드로이드 에뮬레이터
-    }
-    return 'http://192.168.219.198:5001/api/v1';// ios 실제 기기
-  }
-
 
   /// 사용자 위치 기준 거리를 '350m', '1.2km' 형식 문자열로 반환
   static String distanceFromUser(

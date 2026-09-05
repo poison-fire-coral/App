@@ -180,7 +180,7 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
     // 시드 데이터 중심지(수원/서울) 초기 위치 설정
-    _initialCenter = QuestRepository.mockUserLatLng;
+    _initialCenter = QuestRepository.defaultMapCenterLatLng;
 
     // 나침반이 없는 기기·에뮬레이터면 값이 영영 안 온다. 그때는 방향 표시만
     // 빠지고 현위치 점은 그대로 찍힌다.
@@ -219,10 +219,7 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
 
-    // 목업 퀘스트(id가 정수가 아님)는 서버에 없으므로 로컬에서 찾는다.
-    quest ??= int.tryParse(id) == null
-        ? QuestRepository.findById(id)
-        : await QuestRepository.fetchQuestById(id);
+    quest ??= await QuestRepository.fetchQuestById(id);
 
     if (quest == null || !mounted) return;
 
@@ -643,8 +640,8 @@ class _MapScreenState extends State<MapScreen> {
       double lng = position.longitude;
 
       if (!_isKoreaLatLng(lat, lng)) {
-        lat = QuestRepository.mockUserLocation.latitude;
-        lng = QuestRepository.mockUserLocation.longitude;
+        lat = QuestRepository.defaultMapCenter.latitude;
+        lng = QuestRepository.defaultMapCenter.longitude;
       }
 
       final userLatLng = LatLng(lat, lng);

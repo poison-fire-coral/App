@@ -21,7 +21,6 @@ import '../widgets/badge_widgets.dart';
 class HomeScreen extends StatefulWidget {
   final UserModel user;
   final List<ActiveQuest> activeQuests;
-  final List<QuestModel> recommendedQuests;
   final ValueChanged<ActiveQuest> onContinueQuest;
   final ValueChanged<QuestModel> onSelectQuest;
   final void Function(BuildContext context)? onOpenSettings;
@@ -35,7 +34,6 @@ class HomeScreen extends StatefulWidget {
     required this.onContinueQuest,
     required this.onSelectQuest,
     this.activeQuests = const [],
-    this.recommendedQuests = const [],
     this.onOpenSettings,
     this.onOpenMap,
     this.onOpenBadges,
@@ -59,6 +57,12 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 홈 3칸에 세울 배지 — **서버가 진실이다** (체크리스트 21번).
   List<BadgeSummary> _badges = const [];
   bool _isLoadingBadges = true;
+
+  /// 서버를 못 불렀을 때. null이면 정상이다.
+  ///
+  /// 예전에는 실패하면 하드코딩된 목업 퀘스트로 갈아 끼웠다. 화면은 멀쩡해 보이지만
+  /// 존재하지 않는 퀘스트가 뜨고, 누르면 그 id로 수락을 시도한다. 실패는 실패라고 말한다.
+  bool _loadFailed = false;
 
   @override
   void initState() {
@@ -104,6 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
             .take(3)
             .toList();
         _badges = summary.badges;
+        _loadFailed = false;
         _isLoadingNearby = false;
         _isLoadingBadges = false;
       });
@@ -112,7 +117,8 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _userLat = lat;
         _userLng = lng;
-        _nearbyQuests = widget.recommendedQuests.take(3).toList();
+        _nearbyQuests = const [];
+        _loadFailed = true;
         _isLoadingNearby = false;
         _isLoadingBadges = false;
       });
@@ -156,9 +162,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final displayQuests = _nearbyQuests.isNotEmpty
-        ? _nearbyQuests
-        : widget.recommendedQuests.take(3).toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -219,11 +222,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         )
-                      else if (displayQuests.isEmpty)
+                      else if (_loadFailed)
+                        _buildLoadError()
+                      else if (_nearbyQuests.isEmpty)
                         NoteBox.text('주변에 추천할 퀘스트가 없어요. 지도를 움직여 다른 지역을 살펴보세요.',
                             fontSize: 12)
                       else
-                        for (final quest in displayQuests)
+                        for (final quest in _nearbyQuests)
                           _buildRecommendedRow(quest),
                       const SizedBox(height: AppSpacing.xxl),
                       SectionHeader(
@@ -367,7 +372,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     } else {
       distanceMeters = Geo.distanceMeters(
-          QuestRepository.mockUserLocation, active.currentSpot.point);
+          QuestRepository.defaultMapCenter, active.currentSpot.point);
     }
 
     final isNear = active.progress >= 0.85;
@@ -462,6 +467,33 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 추천을 못 받아 왔을 때. 조용히 넘어가지 않고 다시 시도할 길을 준다.
+  Widget _buildLoadError() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        NoteBox.text(
+          '주변 퀘스트를 불러오지 못했어요. 네트워크를 확인해 주세요.',
+          fontSize: 12,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        TextButton(
+          onPressed: () {
+            setState(() {
+              _isLoadingNearby = true;
+              _isLoadingBadges = true;
+            });
+            _loadHome();
+          },
+          child: const Text(
+            '다시 시도',
+            style: TextStyle(color: AppColors.quest500, fontSize: 13),
+          ),
+        ),
+      ],
     );
   }
 

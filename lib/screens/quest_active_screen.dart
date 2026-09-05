@@ -70,7 +70,7 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
 
   /// **첫 실측 표본**의 거리. 진행바 비율(1 - 남은거리/최초거리)의 분모다.
   ///
-  /// 예전에는 목업 좌표(`QuestRepository.mockUserLocation`)로 잡았다. 실기기가
+  /// 예전에는 목업 좌표(`QuestRepository.defaultMapCenter`)로 잡았다. 실기기가
   /// 목업에서 수십 km 떨어져 있으면 분모가 그만큼 커져서 83m를 남기고도
   /// 진행바가 가득 찼다 — 실기기 테스트에서 잡았다.
   /// 첫 표본이 오기 전에는 거리를 **모르는 것이지 0이 아니다.**
@@ -141,7 +141,7 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     if (verified > 0 && verified <= quest.spotCount - 1) {
       return quest.visitSpots[verified - 1].point;
     }
-    return QuestRepository.mockUserLocation;
+    return QuestRepository.defaultMapCenter;
   }
 
   void _startTracking() {

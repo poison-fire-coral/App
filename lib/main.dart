@@ -122,12 +122,7 @@ List<ActiveQuest> _loadActiveQuests(SharedPreferences prefs) {
     final restored = <ActiveQuest>[];
     for (final entry in decoded) {
       final map = Map<String, dynamic>.from(entry as Map);
-      final legacyId = map['questId'] as String?;
-      final active = ActiveQuest.fromJson(
-        map,
-        fallbackQuest:
-            legacyId == null ? null : QuestRepository.findById(legacyId),
-      );
+      final active = ActiveQuest.fromJson(map);
       if (active != null) restored.add(active);
     }
     return restored;
@@ -631,14 +626,10 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
                     : null),
           );
 
-    final completedQuests = [
-      for (final id in completedIds)
-        if (QuestRepository.findById(id) != null) QuestRepository.findById(id)!,
-    ];
-    final badge = BadgeRepository.highlightFor(
-      completedQuests: completedQuests,
-      justCompleted: quest,
-    );
+    // 배지는 서버만 셀 수 있다. 예전에는 서버 응답이 없으면 로컬 목업 저장소에서
+    // 완료 이력을 찾아 직접 계산했는데, 실제 퀘스트는 그 목록에 없어서 늘 0건이
+    // 나왔고 그 결과 "0 / 5"짜리 배지 카드가 떴다. 모르면 안 띄우는 편이 낫다.
+    const BadgeProgress? badge = null;
 
     final remaining =
         _activeQuests.where((a) => a.quest.id != quest.id).toList();
@@ -815,13 +806,11 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       );
     }
 
-    // 홈의 배지 3칸은 HomeScreen이 서버에서 직접 받아 온다(체크리스트 21번).
-    // 여기서 로컬 계산을 넘겨 주던 자리다.
+    // 홈의 추천과 배지는 HomeScreen이 서버에서 직접 받아 온다(체크리스트 20·21번).
+    // 여기서 로컬 목록을 넘겨 주던 자리다 — 그게 서버 실패 시의 가짜 퀘스트 출처였다.
     return HomeScreen(
       user: user,
       activeQuests: _activeQuests,
-      recommendedQuests:
-          QuestRepository.nearby(excludeIds: {...activeIds, ...completedIds}),
       onContinueQuest: _openQuestFlow,
       onSelectQuest: _focusQuestOnMap,
       onOpenSettings: (_) => setState(() => _showSettings = true),
