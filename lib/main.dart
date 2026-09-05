@@ -12,7 +12,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'config/app_config.dart';
 import 'data/auth_repository.dart';
 import 'data/badge_api.dart';
-import 'data/badge_repository.dart';
 import 'data/quest_repository.dart';
 import 'dev/dev_tools.dart'; // DEV-ONLY
 import 'models/api_exception.dart';
@@ -32,6 +31,7 @@ import 'screens/settings_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/api_client.dart';
+import 'services/app_settings.dart';
 import 'services/auth_service.dart';
 import 'services/exp_service.dart';
 import 'services/geolocator_location_service.dart';
@@ -82,8 +82,10 @@ void main() async {
     debugPrint("❌ [경고] KakaoJavaScriptKey가 비어있어 지도 초기화를 스킵했습니다.");
   }
 
-  // 4. 토큰과 개발자 모드 설정을 메모리로 올린다.
+  // 4. 토큰과 설정을 메모리로 올린다. 지도 카메라가 멈출 때마다 디스크를
+  //    읽을 수는 없어서, 설정은 여기서 한 번 읽어 둔다.
   await TokenStore.load();
+  await AppSettings.load();
   // DEV-ONLY — 릴리스에서는 상수가 false라 이 호출째로 트리쉐이킹된다.
   if (AppConfig.devToolsEnabled) {
     await DevTools.load();
@@ -422,6 +424,8 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     // 남은 대기 인증은 이 계정의 것이다. 다음 사람이 로그인했을 때
     // 앞사람의 인증이 그 계정으로 나가면 안 된다(29번).
     await VerifyQueue.clear();
+    // 다음 사람이 앞사람의 설정을 물려받으면 안 된다.
+    await AppSettings.clear();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_profile');
     await prefs.remove(_activeQuestsPrefsKey);
@@ -439,43 +443,40 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     });
   }
 
-  /// 회원 탈퇴 — 백엔드 계정 삭제 API 호출 및 소셜 세션/캐시 완전 정리
+  /// 회원 탈퇴 — 백엔드 계정 삭제 API 호출 및 소셜 세션/캐시 완전 정리.
+  ///
+  /// **실패를 삼키지 않는다.** 확인 다이얼로그와 진행 표시는 설정 화면이 들고
+  /// 있으므로, 여기서 잡아 토스트만 띄우면 그쪽은 성공한 줄 알고 스피너를 내린다.
+  /// 던져 올려서 부른 쪽이 판단하게 한다.
   Future<void> _deleteAccount() async {
-    try {
-      // 계정이 사라지면 UserDevice 도 Cascade 로 함께 지워지지만, 이 기기가
-      // 들고 있는 등록 상태까지 지우려면 여기서 한 번 정리해야 한다.
-      await PushService.unregisterOnLogout();
+    // 계정이 사라지면 UserDevice 도 Cascade 로 함께 지워지지만, 이 기기가
+    // 들고 있는 등록 상태까지 지우려면 여기서 한 번 정리해야 한다.
+    await PushService.unregisterOnLogout();
 
-      await AuthRepository.deleteAccount();
-      await AuthService.signOutSocial();
-      await VerifyQueue.clear();
+    await AuthRepository.deleteAccount();
+    await AuthService.signOutSocial();
+    await VerifyQueue.clear();
+    await AppSettings.clear();
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('user_profile');
-      await prefs.remove(_activeQuestsPrefsKey);
-      await prefs.remove('is_logged_in');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('user_profile');
+    await prefs.remove(_activeQuestsPrefsKey);
+    await prefs.remove('is_logged_in');
 
-      if (!mounted) return;
-      setState(() {
-        _isLoggedIn = false;
-        _currentUser = null;
-        _isEditingSurvey = false;
-        _pendingSignup = null;
-        _showSettings = false;
-        _showProfile = false;
-        _authPhase = _AuthPhase.login;
-        _activeQuests = [];
-        _currentTab = AppTab.home;
-      });
+    if (!mounted) return;
+    setState(() {
+      _isLoggedIn = false;
+      _currentUser = null;
+      _isEditingSurvey = false;
+      _pendingSignup = null;
+      _showSettings = false;
+      _showProfile = false;
+      _authPhase = _AuthPhase.login;
+      _activeQuests = [];
+      _currentTab = AppTab.home;
+    });
 
-      _toast('회원 탈퇴가 완료되었습니다.');
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      _toast(e.displayMessage);
-    } catch (e) {
-      if (!mounted) return;
-      _toast('회원 탈퇴 처리 중 오류가 발생했습니다.');
-    }
+    _toast('회원 탈퇴가 완료되었습니다.');
   }
 
   // ---------------------------------------------------------------------------
@@ -626,10 +627,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
                     : null),
           );
 
-    // 배지는 서버만 셀 수 있다. 예전에는 서버 응답이 없으면 로컬 목업 저장소에서
-    // 완료 이력을 찾아 직접 계산했는데, 실제 퀘스트는 그 목록에 없어서 늘 0건이
-    // 나왔고 그 결과 "0 / 5"짜리 배지 카드가 떴다. 모르면 안 띄우는 편이 낫다.
-    const BadgeProgress? badge = null;
 
     final remaining =
         _activeQuests.where((a) => a.quest.id != quest.id).toList();
@@ -645,8 +642,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       quest: quest,
       breakdown: breakdown,
       levelResult: levelResult,
-      badge: badge,
-      badgeJustEarned: badge != null && badge.count == badge.rule.requiredCount,
       serverBadge: serverBadge,
     );
   }

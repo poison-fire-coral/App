@@ -22,6 +22,8 @@ interface SignupDTO {
   keywords?: string[];
   termsAgreed: boolean;
   termsVersion: string;
+  /** 선택 동의. 안 보내면 동의하지 않은 것으로 본다. */
+  marketingAgreed?: boolean;
 }
 
 export class AuthService {
@@ -110,6 +112,7 @@ export class AuthService {
       keywords,
       termsAgreed,
       termsVersion,
+      marketingAgreed,
     } = dto;
 
     if (!termsAgreed) {
@@ -144,6 +147,10 @@ export class AuthService {
         termsAgreed,
         termsAgreedAt: new Date(),
         termsVersion,
+        // 동의했을 때만 시각을 남긴다. 거절도 기록이지만, 시각까지 남기면
+        // "언제 동의했나"를 묻는 자리에서 거절 시각이 섞여 읽힌다.
+        marketingAgreed: marketingAgreed === true,
+        marketingAgreedAt: marketingAgreed === true ? new Date() : null,
         level: 1,
         expTotal: 0,
         expCurrent: 0,

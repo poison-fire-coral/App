@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../data/badge_api.dart';
-import '../data/badge_repository.dart';
 import '../models/quest_completion.dart';
 import '../services/exp_service.dart';
 import '../theme/app_colors.dart';
@@ -61,16 +60,11 @@ class QuestRewardScreen extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xl),
                 _LevelStrip(level: level),
 
-                // 서버가 내려준 진행도가 있으면 그쪽이 진실이다.
+                // 배지는 서버가 센 것만 보여준다. 오프라인이면 칸을 비운다 —
+                // 앱이 직접 세면 완료 이력을 몰라서 늘 "0 / N"이 나왔다.
                 if (result.serverBadge != null) ...[
                   const SizedBox(height: AppSpacing.lg),
                   _ServerBadgeCard(badge: result.serverBadge!),
-                ] else if (result.badge != null) ...[
-                  const SizedBox(height: AppSpacing.lg),
-                  _BadgeCard(
-                    badge: result.badge!,
-                    justEarned: result.badgeJustEarned,
-                  ),
                 ],
 
                 if (breakdown.isSingleCapped || breakdown.isDailyCapped) ...[
@@ -160,65 +154,10 @@ class _LevelStrip extends StatelessWidget {
     );
   }
 }
-
-class _BadgeCard extends StatelessWidget {
-  final BadgeProgress badge;
-  final bool justEarned;
-  const _BadgeCard({required this.badge, required this.justEarned});
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      color: AppColors.jade50,
-      shadow: AppElevation.e2,
-      child: Row(
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: AppSurface.paper,
-              boxShadow: AppElevation.e1,
-            ),
-            child: Icon(
-              justEarned
-                  ? Icons.workspace_premium_rounded
-                  : Icons.workspace_premium_outlined,
-              color: AppColors.jade500,
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  justEarned ? '배지 획득! ${badge.rule.name}' : badge.rule.name,
-                  style: AppType.h3.copyWith(color: AppColors.jade700),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                ProgressBar(value: badge.progress, accent: AppColors.jade500),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  badge.progressLabel,
-                  style: AppType.caption.copyWith(color: AppColors.jade700),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// 서버 `badgeProgress` 기반 카드.
 ///
-/// 로컬 카드와 달리 **실제 배지 아트**를 쓴다. 트로피 아이콘 하나로 13종을
-/// 다 대신하면 어떤 배지를 땄는지 알 수 없다.
+/// **실제 배지 아트**를 쓴다. 트로피 아이콘 하나로 13종을 다 대신하면
+/// 어떤 배지를 땄는지 알 수 없다.
 class _ServerBadgeCard extends StatelessWidget {
   final VerifyBadgeProgress badge;
   const _ServerBadgeCard({required this.badge});

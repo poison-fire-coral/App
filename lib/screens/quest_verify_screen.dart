@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models/api_exception.dart';
 import '../models/quest_model.dart';
+import '../services/app_settings.dart';
 import '../services/geo.dart';
 import '../services/photo_uploader.dart';
 import '../theme/app_colors.dart';
@@ -58,7 +59,9 @@ class QuestVerifyScreen extends StatefulWidget {
 }
 
 class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
-  bool _isPublic = true;
+  /// 설정 5d의 '사진 기본 공개'로 시작한다. 이 화면에서 매번 바꿀 수 있고,
+  /// 여기서 바꾼 것은 이번 인증에만 적용된다 — 기본값 자체는 설정에서 바꾼다.
+  bool _isPublic = AppSettings.photoPublicByDefault;
   XFile? _photo;
   bool _isPicking = false;
 

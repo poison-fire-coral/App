@@ -30,6 +30,12 @@ model User {
   termsAgreed   Boolean   @default(false) @map("terms_agreed")
   termsAgreedAt DateTime? @map("terms_agreed_at")
   termsVersion  String?   @map("terms_version")
+
+  /// 마케팅 정보 수신 동의(선택). 앱은 가입 때부터 이 값을 보내고 있었는데
+  /// 받을 칸이 없어 조용히 버려지고 있었다 — 선택 동의는 받았다는 사실과
+  /// 받은 시각이 남아야 나중에 "동의한 적 없다"에 답할 수 있다.
+  marketingAgreed   Boolean   @default(false) @map("marketing_agreed")
+  marketingAgreedAt DateTime? @map("marketing_agreed_at")
   level         Int       @default(1)
   expTotal      Int       @default(0) @map("exp_total")
   expCurrent    Int       @default(0) @map("exp_current")

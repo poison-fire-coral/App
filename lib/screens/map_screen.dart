@@ -15,6 +15,7 @@ import '../models/api_exception.dart';
 import '../models/quest_model.dart';
 import '../models/user_model.dart';
 import '../models/viewport_quests.dart';
+import '../services/app_settings.dart';
 import '../services/compass_service.dart';
 import '../services/geo.dart';
 import '../services/map_zoom.dart';
@@ -95,6 +96,13 @@ class _MapScreenState extends State<MapScreen> {
   /// 카카오는 드래그하는 내내 `idle`을 여러 번 던진다. 그대로 조회하면
   /// 한 번 훑는 동안 요청이 수십 개 나가고, 그게 서버 최다 호출 경로가 된다.
   static const Duration _cameraIdleDebounce = Duration(milliseconds: 300);
+
+  /// '데이터 절약 모드'(설정 5d)일 때의 대기 시간.
+  ///
+  /// 스위치의 약속이 "지도 갱신 주기를 늘려 데이터를 아껴요"다. 지도를 훑는 동안
+  /// 손이 잠깐 멈추는 정도로는 조회가 나가지 않을 만큼 길게 잡되, 자리를 잡고
+  /// 기다리는 사람이 멈췄다고 느끼지 않을 만큼만 늘린다.
+  static const Duration _cameraIdleDebounceSaver = Duration(milliseconds: 1200);
 
   /// 마지막으로 성공한 조회의 파라미터. 같은 값이면 다시 묻지 않는다.
   ///
@@ -500,10 +508,13 @@ class _MapScreenState extends State<MapScreen> {
     if (_suppressIdleRefresh) return;
 
     _cameraIdleTimer?.cancel();
-    _cameraIdleTimer = Timer(_cameraIdleDebounce, () {
-      if (!mounted) return;
-      _refreshViewport();
-    });
+    _cameraIdleTimer = Timer(
+      AppSettings.dataSaver ? _cameraIdleDebounceSaver : _cameraIdleDebounce,
+      () {
+        if (!mounted) return;
+        _refreshViewport();
+      },
+    );
   }
 
   /// 지금 보이는 사각형으로 서버에 다시 물어본다.
