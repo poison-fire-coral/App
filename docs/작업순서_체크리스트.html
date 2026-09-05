@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>작업 순서 · 로컬 퀘스트</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --ground:#F5F0E6; --surface:#FDFBF6; --sunken:#EDE6D8;
+  --ink:#2B2520; --ink-2:#5C5147; --ink-3:#8B8175; --hair:#DED4C2;
+  --seal:#9E2B1E; --seal-soft:#F3E3DF;
+  --jade:#2E6B4F; --jade-soft:#E2EDE6;
+  --amber:#8A5D0C; --amber-soft:#F5EAD2;
+  --lapis:#2D5A86; --lapis-soft:#E1EAF3;
+  --shadow:rgba(74,58,42,.13);
+  --serif:"Gowun Batang",'Apple SD Gothic Neo',serif;
+  --sans:"IBM Plex Sans KR",-apple-system,'Malgun Gothic',sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#191512; --surface:#221D18; --sunken:#141110;
+    --ink:#EDE5D7; --ink-2:#B6AB9B; --ink-3:#867C6F; --hair:#3A322A;
+    --seal:#D8705F; --seal-soft:#33211D;
+    --jade:#77BC98; --jade-soft:#1B2A22;
+    --amber:#D6A84E; --amber-soft:#2B2317;
+    --lapis:#7FAAD4; --lapis-soft:#1A2430;
+    --shadow:rgba(0,0,0,.45);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#191512; --surface:#221D18; --sunken:#141110;
+  --ink:#EDE5D7; --ink-2:#B6AB9B; --ink-3:#867C6F; --hair:#3A322A;
+  --seal:#D8705F; --seal-soft:#33211D;
+  --jade:#77BC98; --jade-soft:#1B2A22;
+  --amber:#D6A84E; --amber-soft:#2B2317;
+  --lapis:#7FAAD4; --lapis-soft:#1A2430;
+  --shadow:rgba(0,0,0,.45);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--sans); font-size:16px; line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:760px; margin:0 auto; padding:52px 24px 88px}
+
+/* 표제 */
+.masthead{display:flex; gap:16px; align-items:flex-start; margin-bottom:12px}
+.seal{
+  flex:0 0 auto; width:52px; height:52px; border-radius:50%;
+  background:var(--seal); color:#FDF8F2; display:grid; place-items:center;
+  font-family:var(--serif); font-size:21px; line-height:1; margin-top:5px;
+  box-shadow:0 3px 10px var(--shadow), inset 0 0 0 3px rgba(255,255,255,.22);
+}
+h1{
+  font-family:var(--serif); font-weight:700;
+  font-size:clamp(28px,4.8vw,38px); line-height:1.25; margin:0 0 5px;
+  letter-spacing:-.01em;
+}
+.sub{color:var(--ink-2); margin:0 0 7px; font-size:16px}
+.stamp{font-family:var(--mono); font-size:12.5px; color:var(--ink-3); line-height:1.6}
+.stamp b{color:var(--ink-2); font-weight:500}
+hr.rule{height:1px; background:var(--hair); border:0; margin:30px 0}
+
+/* 진행 표시 */
+.meter{
+  display:flex; align-items:center; gap:14px; background:var(--surface);
+  border:1px solid var(--hair); border-radius:4px; padding:13px 18px;
+  box-shadow:0 1px 3px var(--shadow); margin:0 0 30px;
+}
+.meter .count{font-family:var(--mono); font-size:13px; color:var(--ink-2); font-variant-numeric:tabular-nums; white-space:nowrap}
+.meter .count b{color:var(--seal); font-size:17px; font-weight:500}
+.meter .track{flex:1; height:8px; background:var(--sunken); border-radius:99px; overflow:hidden}
+.meter .fill{height:100%; width:0%; background:var(--jade); border-radius:99px; transition:width .25s ease}
+.reset{
+  font-family:var(--mono); font-size:11px; color:var(--ink-3); background:none;
+  border:1px solid var(--hair); border-radius:3px; padding:3px 9px; cursor:pointer;
+}
+.reset:hover{color:var(--seal); border-color:var(--seal)}
+.reset:focus-visible{outline:2px solid var(--seal); outline-offset:2px}
+
+/* 단계 머리 */
+.stage{margin:0 0 30px}
+.stagehead{display:flex; align-items:baseline; gap:11px; flex-wrap:wrap; margin:0 0 4px}
+.tag{
+  font-family:var(--mono); font-size:11.5px; font-weight:500; color:#FDF8F2;
+  background:var(--seal); padding:2px 9px; border-radius:3px; flex:0 0 auto;
+}
+.tag.last{background:var(--jade)}
+h2{font-family:var(--serif); font-weight:700; font-size:21px; margin:0; letter-spacing:-.01em}
+.days{font-family:var(--mono); font-size:12px; color:var(--ink-3)}
+.why{font-size:14px; color:var(--ink-3); margin:0 0 14px; padding-left:2px}
+
+/* 담당 구분 */
+.split{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:0 0 18px;
+}
+.who-card{
+  background:var(--surface); border:1px solid var(--hair); border-radius:4px;
+  padding:12px 14px; box-shadow:0 1px 3px var(--shadow);
+}
+.who-card.fe{border-top:3px solid var(--lapis)}
+.who-card.be{border-top:3px solid var(--amber)}
+.who-card.both{border-top:3px solid var(--ink-3)}
+.who-card .role{font-family:var(--mono); font-size:12px; font-weight:500; letter-spacing:.05em; margin:0 0 2px}
+.who-card.fe .role{color:var(--lapis)}
+.who-card.be .role{color:var(--amber)}
+.who-card.both .role{color:var(--ink-3)}
+.who-card .cnt{font-family:var(--mono); font-size:22px; line-height:1.2; font-variant-numeric:tabular-nums}
+.who-card .cnt span{font-size:12px; color:var(--ink-3)}
+.who-card .desc{font-size:12.5px; color:var(--ink-3); margin:4px 0 0; line-height:1.5}
+
+.filters{display:flex; gap:7px; align-items:center; flex-wrap:wrap; margin:0 0 26px}
+.filters .lab{font-family:var(--mono); font-size:11.5px; color:var(--ink-3); margin-right:3px}
+.fbtn{
+  font-family:var(--mono); font-size:12px; color:var(--ink-2); background:var(--surface);
+  border:1px solid var(--hair); border-radius:3px; padding:4px 12px; cursor:pointer;
+}
+.fbtn:hover{border-color:var(--ink-3)}
+.fbtn:focus-visible{outline:2px solid var(--seal); outline-offset:2px}
+.fbtn[aria-pressed="true"]{background:var(--seal); border-color:var(--seal); color:#FDF8F2; font-weight:500}
+.item[hidden]{display:none}
+.stage[hidden]{display:none}
+
+/* 항목 */
+.item{
+  display:grid; grid-template-columns:22px 26px 44px 1fr; gap:10px; align-items:start;
+  padding:9px 12px 9px 8px; border-radius:4px;
+}
+.who{
+  font-family:var(--mono); font-size:10px; font-weight:500; letter-spacing:.03em;
+  text-align:center; padding:2px 0; border-radius:3px; margin-top:4px; white-space:nowrap;
+}
+.who.fe{background:var(--lapis-soft); color:var(--lapis); border:1px solid var(--lapis)}
+.who.be{background:var(--amber-soft); color:var(--amber); border:1px solid var(--amber)}
+.who.both{background:var(--sunken); color:var(--ink-3); border:1px dashed var(--ink-3); font-size:9.5px}
+.item + .item{border-top:1px solid var(--hair)}
+.item:hover{background:var(--surface)}
+.item input{
+  appearance:none; width:15px; height:15px; margin:5px 0 0; flex:0 0 auto;
+  border:1.4px solid var(--ink-3); border-radius:3px; background:var(--surface); cursor:pointer;
+}
+.item input:checked{background:var(--jade); border-color:var(--jade)}
+.item input:checked::after{
+  content:"✓"; display:block; color:#FDF8F2; font-size:11px;
+  line-height:13px; text-align:center; font-weight:700;
+}
+.item input:focus-visible{outline:2px solid var(--seal); outline-offset:2px}
+.item .n{
+  font-family:var(--mono); font-size:12.5px; color:var(--ink-3);
+  padding-top:4px; font-variant-numeric:tabular-nums; text-align:right;
+}
+.item label{cursor:pointer; display:block}
+.item .t{font-size:15.5px; font-weight:600; line-height:1.55; margin:0 0 2px}
+.item .d{font-size:13.5px; color:var(--ink-2); margin:0; line-height:1.6}
+.item input:checked ~ label .t{color:var(--ink-3); text-decoration:line-through; text-decoration-color:var(--hair)}
+.item input:checked ~ label .d{color:var(--ink-3)}
+
+code{
+  font-family:var(--mono); font-size:.86em; background:var(--sunken);
+  padding:1px 5px; border-radius:3px; color:var(--ink); word-break:break-all;
+}
+.chip{
+  display:inline-block; font-family:var(--mono); font-size:10.5px;
+  letter-spacing:.04em; padding:1px 7px; border-radius:99px;
+  font-weight:500; vertical-align:2px; margin-left:6px; white-space:nowrap;
+}
+.decide{background:var(--amber-soft); color:var(--amber); border:1px dashed var(--amber)}
+.must{background:var(--seal-soft); color:var(--seal); border:1px solid var(--seal)}
+.para{background:var(--lapis-soft); color:var(--lapis); border:1px solid var(--lapis)}
+
+/* 종착 */
+.finish{
+  background:var(--jade-soft); border:1px solid var(--jade); border-radius:4px;
+  padding:18px 20px; margin-top:6px;
+}
+.finish .item:hover{background:transparent}
+.finish .item + .item{border-top-color:rgba(46,107,79,.25)}
+
+.tail{
+  background:var(--surface); border:1px solid var(--hair); border-radius:4px;
+  padding:18px 20px; margin-top:34px; font-size:14.5px; color:var(--ink-2);
+  box-shadow:0 1px 3px var(--shadow);
+}
+.tail p{margin:0 0 9px}
+.tail p:last-child{margin:0}
+.tail b{color:var(--ink)}
+.foot{margin-top:44px; padding-top:18px; border-top:1px solid var(--hair);
+  font-family:var(--mono); font-size:12px; color:var(--ink-3)}
+
+@media (max-width:560px){
+  .wrap{padding:34px 15px 68px}
+  .item{grid-template-columns:20px 22px 38px 1fr; gap:8px; padding:9px 4px}
+  .split{grid-template-columns:1fr; gap:8px}
+  .who-card{display:flex; align-items:baseline; gap:10px}
+  .who-card .desc{display:none}
+}
+@media print{
+  body{background:#fff}
+  .meter .reset{display:none}
+  .stage{break-inside:avoid}
+  .item{break-inside:avoid}
+  *{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+}
+@media (prefers-reduced-motion:reduce){
+  .meter .fill{transition:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="seal">順</div>
+    <div>
+      <h1>작업 순서</h1>
+      <p class="sub">로컬 퀘스트 · 출시까지 해야 할 일 36가지</p>
+      <p class="stamp">
+        순서는 화면 순이 아니라 <b>위험도 순</b>이다 · 마지막은 <b>구글 플레이 배포</b><br>
+        담당 표기 <b>FE</b> · <b>BE</b> · <b>둘이서</b> — 위 필터로 내 몫만 볼 수 있다<br>
+        근거 <b>개발현황_및_로드맵_2026-08-28.html</b> · 커밋 <b>8339bc8</b> · 2026-08-28
+      </p>
+    </div>
+  </header>
+
+  <div class="meter">
+    <span class="count"><b id="done">0</b> / 36 완료</span>
+    <span class="track"><span class="fill" id="fill"></span></span>
+    <button class="reset" id="reset" type="button">초기화</button>
+  </div>
+
+  <div class="split">
+    <div class="who-card fe">
+      <p class="role">FE</p>
+      <p class="cnt">11<span> / 36</span></p>
+      <p class="desc">혼자 끝낼 수 있는 Flutter 작업. 지도·사진·화면 연결이 대부분이다.</p>
+    </div>
+    <div class="who-card be">
+      <p class="role">BE</p>
+      <p class="cnt">10<span> / 36</span></p>
+      <p class="desc">혼자 끝낼 수 있는 서버 작업. EXP 엔진과 쿼리·운영이 대부분이다.</p>
+    </div>
+    <div class="who-card both">
+      <p class="role">둘이서</p>
+      <p class="cnt">15<span> / 36</span></p>
+      <p class="desc">양쪽을 같이 고쳐야 하거나, 코드가 아니라 결정·문서·테스트인 것.</p>
+    </div>
+  </div>
+
+  <div class="filters">
+    <span class="lab">보기</span>
+    <button class="fbtn" id="f-all" type="button" aria-pressed="true">전체 36</button>
+    <button class="fbtn" id="f-fe" type="button" aria-pressed="false">FE 몫 26</button>
+    <button class="fbtn" id="f-be" type="button" aria-pressed="false">BE 몫 25</button>
+  </div>
+
+  <section class="stage">
+    <div class="stagehead"><span class="tag">R1</span><h2>제출 방어선</h2><span class="days">3일 · FE 2 + BE 1</span></div>
+    <p class="why">지금 저장소를 공개하거나 스토어에 올리면 사고가 나는 것들. 기능은 하나도 늘지 않는다.<br><b>FE 2 · BE 1 · 둘이서 4</b> — 서로 건드리는 파일이 겹치지 않아 전부 병렬로 돌아간다.</p>
+
+    <div class="item"><input type="checkbox" id="c1"><span class="n">01</span><span class="who be">BE</span><label for="c1">
+      <p class="t">GUEST 로그인을 운영 환경에서 차단<span class="chip must">보안</span></p>
+      <p class="d"><code>auth.service.ts:44</code>를 <code>NODE_ENV !== 'production'</code> 조건으로 감싼다. 지우지 말 것 — 개발·테스트가 이 계정에 의존한다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c2"><span class="n">02</span><span class="who fe">FE</span><label for="c2">
+      <p class="t">개발자 도구를 컴파일 타임 플래그로 감싼다<span class="chip must">보안</span></p>
+      <p class="d"><code>--dart-define=DEV_TOOLS</code>가 false면 <code>lib/dev/</code> 참조가 통째로 트리셰이킹된다. 로그인 화면의 개발용 계정 버튼, <code>settings_screen.dart:229</code>의 DEV-ONLY 블록도 같은 플래그를 본다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c3"><span class="n">03</span><span class="who both">둘이서</span><label for="c3">
+      <p class="t">카카오 키를 소스 밖으로 · <code>.env.example</code> 추가<span class="chip must">보안</span></p>
+      <p class="d"><b>FE</b> — <code>main.dart:53</code>의 리터럴 키를 <code>--dart-define</code>으로 옮기고 Android 쪽 참조도 정리한다.<br><b>BE</b> — <code>.env.example</code>을 만들어 필요한 변수 이름만 저장소에 남긴다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c4"><span class="n">04</span><span class="who both">둘이서</span><label for="c4">
+      <p class="t">약관 3종 문서 작성<span class="chip must">법적 필수</span></p>
+      <p class="d">서비스 이용약관 · <b>위치정보 이용약관</b> · 개인정보처리방침. 위치정보를 수집하므로 뒤 둘은 협상 대상이 아니다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c5"><span class="n">05</span><span class="who fe">FE</span><label for="c5">
+      <p class="t">회원가입 1c에 동의 UI + 실제 <code>termsVersion</code></p>
+      <p class="d">필수 2 + 선택 1(마케팅) 체크박스, 필수 미체크 시 버튼 비활성. 지금은 화면 없이 <code>2026-08-implicit-v1</code>이 전송된다. 설정 5d에서 문서 열람도 연결한다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c6"><span class="n">06</span><span class="who both">둘이서</span><label for="c6">
+      <p class="t">회원 탈퇴</p>
+      <p class="d"><b>BE</b> — <code>DELETE /users/me</code>. <code>onDelete: Cascade</code>가 이미 걸려 있어 짧다.<br><b>FE</b> — 설정 진입점과 확인 다이얼로그, 탈퇴 후 토큰 삭제·로그인 화면 복귀. 스토어 심사 요건이다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c7"><span class="n">07</span><span class="who both">둘이서</span><label for="c7">
+      <p class="t">위치기반서비스 사업자 신고 필요 여부 문의<span class="chip para">병행</span></p>
+      <p class="d">답변에 시간이 걸리므로 지금 걸어 둔다. 결과는 35번에서 필요하다.</p></label></div>
+  </section>
+
+  <section class="stage">
+    <div class="stagehead"><span class="tag">R2</span><h2>지도 뷰포트 전환</h2><span class="days">4일 · FE 3 + BE 1.5</span></div>
+    <p class="why">의뢰서 절대원칙 ③. 서버에는 이미 있고 앱만 안 쓴다 — 이 하나가 3a·3d 두 화면을 동시에 막고 있다.<br><b>FE 3 · BE 1 · 둘이서 2</b> — <b>사실상 FE 단계</b>다. BE는 상한·정렬만 얹고 R3로 넘어가면 된다.</p>
+
+    <div class="item"><input type="checkbox" id="c8"><span class="n">08</span><span class="who both">둘이서</span><label for="c8">
+      <p class="t"><code>fetchQuestsInBounds()</code> 신설</p>
+      <p class="d"><b>FE</b> — <code>GET /quests?swLat&amp;swLng&amp;neLat&amp;neLng&amp;zoom</code>을 부르고, 응답이 마커 목록인지 클러스터 목록인지(<code>isClustered</code>) 분기하는 파서를 만든다.<br><b>BE</b> — 지금 <code>findMany</code>에 <b><code>take</code> 상한이 없다.</b> 뷰포트가 넓으면 전국이 통째로 나간다. 200개 상한과 초과 시 클러스터 강제 전환을 넣는다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c9"><span class="n">09</span><span class="who fe">FE</span><label for="c9">
+      <p class="t">카메라 idle 300ms 디바운스 → 재조회</p>
+      <p class="d"><code>map_screen.dart:242</code>의 반경 호출을 bounds 버전으로 교체. 이동 중 연속 호출이 서버 최다 호출 경로가 되는 것을 막는다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c10"><span class="n">10</span><span class="who fe">FE</span><label for="c10">
+      <p class="t">클러스터 마커 연결 · 탭 시 줌인 (3d)</p>
+      <p class="d"><code>MarkerCluster</code> 위젯은 <code>app_widgets.dart:1372</code>에 이미 있고 붙기만 하면 된다. 카카오맵 오버레이는 PNG만 받는다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c11"><span class="n">11</span><span class="who fe">FE</span><label for="c11">
+      <p class="t">키워드 필터 칩 가로 스크롤 (3a)</p>
+      <p class="d">온보딩에서 고른 키워드가 앞으로 정렬. <b>서버는 이미 <code>keywords</code> 파라미터를 받으므로</b> BE 작업은 없다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c12"><span class="n">12</span><span class="who both">둘이서</span><label for="c12">
+      <p class="t">검색바를 서버 검색으로 교체</p>
+      <p class="d"><b>새 엔드포인트는 필요 없다.</b> <code>GET /quests</code>가 이미 <code>search</code> 파라미터를 받아 퀘스트명·장소명·지역명을 <code>insensitive</code>로 찾는다(<code>quest.service.ts:296</code>).<br><b>FE</b> — 로컬 리스트 필터를 버리고 <code>?search=</code>로 넘긴다. 지금은 화면 밖 퀘스트가 검색되지 않는다. 결과 선택 시 지도를 그 좌표로 이동.<br><b>BE</b> — 전국 검색이 되므로 결과 상한과 정렬(거리순)을 붙인다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c13"><span class="n">13</span><span class="who be">BE</span><label for="c13">
+      <p class="t">뷰포트 쿼리 성능 측정 → PostGIS 결정</p>
+      <p class="d">시드 500개로 <code>EXPLAIN ANALYZE</code>. 100ms 이내면 현재 B-tree로 MVP를 간다. 판단 근거를 문서에 남기는 것이 목적.</p></label></div>
+  </section>
+
+  <section class="stage">
+    <div class="stagehead"><span class="tag">R3</span><h2>보상 정합</h2><span class="days">4일 · BE 3 + FE 1.5</span></div>
+    <p class="why">지금 지급되는 EXP는 6b 배율표와 다르다. 상수로 박힌 배율 3개를 실제 판정으로 바꾼다.<br><b>FE 1 · BE 4 · 둘이서 1</b> — <b>사실상 BE 단계</b>다. FE는 사진 업로드(17)만 맡으므로 R2와 겹쳐 진행할 수 있다.</p>
+
+    <div class="item"><input type="checkbox" id="c14"><span class="n">14</span><span class="who be">BE</span><label for="c14">
+      <p class="t">신규 지역 판정 구현</p>
+      <p class="d"><code>quest.service.ts:556</code>의 <code>isNewArea: true</code> 고정을 제거. 유저의 완료 이력을 <code>regionCode</code>로 조인해 처음 보는 시·군일 때만 ×1.5.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c15"><span class="n">15</span><span class="who be">BE</span><label for="c15">
+      <p class="t">비피크 시간대 계산 + 스트릭 갱신</p>
+      <p class="d"><code>isOffPeak</code>는 평일 오전 기준 — <b>KST 주의</b>, 서버가 UTC면 9시간 어긋난다. <code>streakDays</code>는 쓰기 코드가 없어 영원히 0이다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c16"><span class="n">16</span><span class="who be">BE</span><label for="c16">
+      <p class="t">재수행 ×0.3 허용</p>
+      <p class="d">지금은 이전 완료가 있으면 409로 전면 차단. 24h 경과 + 그날 첫 재수행이면 통과시키고 0.3배를 적용한다. 멱등성은 유지.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c17"><span class="n">17</span><span class="who fe">FE</span><label for="c17">
+      <p class="t">사진 업로드 파이프라인 연결</p>
+      <p class="d">presign 요청 → S3 PUT → <code>publicUrl</code>을 verify에 전달. 장변 1600px 압축, EXIF 촬영 시각 동봉(서버 <code>validatePhotoMetadata</code>가 이미 있다). 지금 <code>photo_url</code>은 항상 null이다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c18"><span class="n">18</span><span class="who both">둘이서</span><label for="c18">
+      <p class="t">Mock location 차단</p>
+      <p class="d"><b>FE</b> — <code>Position.isMocked</code>를 verify 바디에 실어 보낸다.<br><b>BE</b> — 참이면 EXP 0으로 처리하고 <code>is_abused</code>에 기록한다. 클라이언트 값을 믿는 것이지만 없는 것보다 낫고 로그가 남는다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c19"><span class="n">19</span><span class="who be">BE</span><label for="c19">
+      <p class="t">혼잡도 배치를 실제로 켠다</p>
+      <p class="d"><code>index.ts</code>가 <code>congestionScore.job.ts</code>를 import하지 않아 <b>한 번도 돈 적이 없다.</b> 등록하고 초기값은 관광지별 상수 등급으로 시드한다.</p></label></div>
+  </section>
+
+  <section class="stage">
+    <div class="stagehead"><span class="tag">R4</span><h2>홈·배지 마감</h2><span class="days">3일 · FE 2 + BE 1</span></div>
+    <p class="why">S4 인수인계에서 "열림"으로 넘긴 것들. 새 화면은 없고 데이터 출처를 서버로 통일하는 일이다.<br><b>FE 1 · BE 1 · 둘이서 5</b> — 양쪽을 맞추는 단계라 짝지어 앉는 편이 빠르다.</p>
+
+    <div class="item"><input type="checkbox" id="c20"><span class="n">20</span><span class="who both">둘이서</span><label for="c20">
+      <p class="t"><code>GET /home</code> 통합 API</p>
+      <p class="d"><b>BE</b> — 진행중 + 추천 + 대표배지를 한 응답으로 묶는다.<br><b>FE</b> — 홈의 3회 호출을 1회로 교체. 홈이 가장 자주 열리는 화면이라 왕복 수가 체감 속도를 좌우한다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c21"><span class="n">21</span><span class="who fe">FE</span><label for="c21">
+      <p class="t">홈 대표 배지를 서버 값으로</p>
+      <p class="d"><code>home_screen.dart</code>만 아직 로컬 <code>BadgeRepository</code>를 본다. 프로필에서 지정해도 홈은 "획득한 배지가 없어요"라고 한다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c22"><span class="n">22</span><span class="who both">둘이서</span><label for="c22">
+      <p class="t">완료 퀘스트를 추천에서 제외</p>
+      <p class="d"><b>BE</b> — 추천 쿼리에서 <code>quest_completions</code>를 <code>NOT EXISTS</code>로 빼고, 응답에 완료 여부 플래그를 싣는다.<br><b>FE</b> — 지도에서는 지우지 말고 <b>완료 표식</b>(마커 흐리게 + 시트에 '완료함')으로 구분한다. 16번에서 재수행을 열기 때문이다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c23"><span class="n">23</span><span class="who be">BE</span><label for="c23">
+      <p class="t">배지 이력이 "실제로 채운 완료"를 고르게</p>
+      <p class="d">최신순 <code>limit threshold</code>를 버리고 규칙을 만족한 완료를 오래된 순으로 고른다. threshold 1인 배지에 두 번째 완료가 올라와 있다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c24"><span class="n">24</span><span class="who both">둘이서</span><label for="c24">
+      <p class="t">푸시 알림 — 구현 또는 약속 철회<span class="chip decide">결정</span></p>
+      <p class="d">온보딩 3단계가 묻고 설정에 스위치까지 있는데 발송 경로가 없다. 구현은 <b>+3일</b>(FE: FCM SDK·권한·토큰 획득 / BE: 토큰 저장·발송 트리거), 문구 정정은 30분. 지금 상태로 둘 수는 없다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c25"><span class="n">25</span><span class="who both">둘이서</span><label for="c25">
+      <p class="t">이메일 로그인 — 구현 또는 버튼 제거<span class="chip decide">결정</span></p>
+      <p class="d">와이어프레임 1b·1c에 있지만 구현도 계획도 없다. 인증 메일·비밀번호 재설정이 딸려 오므로 <b>MVP에서 빼는 쪽을 권한다.</b></p></label></div>
+
+    <div class="item"><input type="checkbox" id="c26"><span class="n">26</span><span class="who both">둘이서</span><label for="c26">
+      <p class="t">퀘스트 7종 유형 — 범위 결정<span class="chip decide">R2 전에</span></p>
+      <p class="d">DB·마커·시드는 7종인데 <code>verifyQuest</code>는 거리만 본다 — <b>퀴즈 퀘스트가 위치만으로 완료된다.</b> 전부 구현하면 <b>+7일</b>, 방문형만 남기면 시드를 되돌린다. 답이 R2 착수 전에 나와야 일정이 흔들리지 않는다.</p></label></div>
+  </section>
+
+  <section class="stage">
+    <div class="stagehead"><span class="tag">R5</span><h2>안정화</h2><span class="days">5일 · FE 3 + BE 2</span></div>
+    <p class="why">의뢰서 S5. 야외 실측 테스트가 이 단계의 절반이다.<br><b>FE 3 · BE 3 · 둘이서 2</b> — 30번 야외 테스트는 반드시 둘이 함께, 나머지는 각자.</p>
+
+    <div class="item"><input type="checkbox" id="c27"><span class="n">27</span><span class="who both">둘이서</span><label for="c27">
+      <p class="t">CI 구축</p>
+      <p class="d">PR마다 <code>flutter analyze</code> + <code>flutter test</code> + <code>npm run build</code>. 실서버 상대 live 테스트는 태그로 분리해 제외한다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c28"><span class="n">28</span><span class="who fe">FE</span><label for="c28">
+      <p class="t">마커 생성기를 <code>test/</code> 밖으로</p>
+      <p class="d">지금은 전체 테스트를 돌릴 때마다 PNG 108장이 다시 구워진다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c29"><span class="n">29</span><span class="who fe">FE</span><label for="c29">
+      <p class="t">오프라인 재시도 큐</p>
+      <p class="d">멱등 <code>requestId</code>가 이미 있어 큐 자체는 단순하다. 산·해안 퀘스트가 있는 서비스라 이건 예외가 아니라 정상 경로다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c30"><span class="n">30</span><span class="who both">둘이서</span><label for="c30">
+      <p class="t">야외 실측 테스트<span class="chip must">생략 불가</span></p>
+      <p class="d">GPS는 실내에서 검증되지 않는다. 밖에서 퀘스트 3개를 완주하고 앱 표시값과 DB를 한 줄씩 대조한다. 14–16번의 배율이 실제 이동에서만 드러난다. 배터리와 위치 갱신 주기도 이때 잰다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c31"><span class="n">31</span><span class="who be">BE</span><label for="c31">
+      <p class="t">부하 테스트 · 인덱스 · 백업 · prod 분리</p>
+      <p class="d">뷰포트 조회를 최다 호출로 가정. 목표 p95 &lt; 500ms(동시 50). dev/prod DB를 나누고 백업 정책을 정한다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c32"><span class="n">32</span><span class="who be">BE</span><label for="c32">
+      <p class="t">어뷰징 로그 조회 경로</p>
+      <p class="d"><code>is_abused</code>가 쌓이는데 볼 방법이 없다. 최소한의 조회 화면 또는 쿼리 문서.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c33"><span class="n">33</span><span class="who fe">FE</span><label for="c33">
+      <p class="t">앱 아이콘 · 스플래시 · 스토어 스크린샷</p>
+      <p class="d">디자인 시스템 v1.0의 인장 모티프를 그대로 쓴다.</p></label></div>
+
+    <div class="item"><input type="checkbox" id="c34"><span class="n">34</span><span class="who be">BE</span><label for="c34">
+      <p class="t">개인정보처리방침을 공개 URL로 게시</p>
+      <p class="d">4번에서 쓴 문서를 웹에 올린다. Play Console이 URL을 요구한다.</p></label></div>
+  </section>
+
+  <section class="stage">
+    <div class="stagehead"><span class="tag last">종착</span><h2>배포</h2><span class="days">1–2일 + 심사 대기</span></div>
+    <p class="why">앞의 34개가 끝나야 의미가 있다. 심사는 통제할 수 없으므로 여유를 둔다.<br><b>FE 1 · 둘이서 1</b> — 빌드·서명은 FE, 심사 문답과 고지 내용은 둘이서.</p>
+
+    <div class="finish">
+      <div class="item"><input type="checkbox" id="c35"><span class="n">35</span><span class="who fe">FE</span><label for="c35">
+        <p class="t">Play Console 등록 · 내부 테스트 배포</p>
+        <p class="d">내부 테스트 트랙에 올려 팀원 기기에 실제로 설치되는 것까지 확인한다. 서명 키 관리 방식도 여기서 정한다.</p></label></div>
+
+      <div class="item"><input type="checkbox" id="c36"><span class="n">36</span><span class="who both">둘이서</span><label for="c36">
+        <p class="t">구글 플레이 배포</p>
+        <p class="d">프로덕션 트랙 제출 · 심사 대응. 데이터 보안 섹션에 <b>위치정보 수집</b>을 정확히 고지해야 하고, 여기서 4번 문서와 7번 신고 결과가 필요하다.</p></label></div>
+    </div>
+  </section>
+
+  <div class="tail">
+    <p><b>총 19 영업일 ≈ 4주.</b> 24·25·26번 결정에서 전부 "구현"을 고르면 +10일 → 약 6주.</p>
+    <p>퀘스트 콘텐츠 작성(현재 <b>21개</b>)은 이 목록에 없는 <b>별도 병행 트랙</b>이다. 30번 야외 테스트 시점에 최소 한 개 도시가 채워져 있어야 의미 있는 테스트가 된다.</p>
+    <p>순서를 바꿔도 되는 곳과 안 되는 곳: R1은 언제든 병렬로 할 수 있지만 <b>26번 결정은 R2보다 앞서야</b> 하고, <b>30번은 R3가 끝난 뒤여야</b> 새로 연 배율을 검증할 수 있다.</p>
+    <p><b>가장 큰 단축 지점은 R2와 R3다.</b> R2는 지도(FE 3 · BE 1), R3는 EXP 엔진(BE 4 · FE 1)이라 손대는 파일이 거의 겹치지 않는다. 순차로 하면 8일이지만 <b>FE가 R2를, BE가 R3를 동시에 잡으면 5일</b>로 줄어든다. 다만 17번 사진 업로드는 FE 몫이므로 R2를 끝낸 뒤에 붙는다.</p>
+  </div>
+
+  <p class="foot">로컬 퀘스트 · 작업 순서 체크리스트 · 2026-08-28<br>체크 상태는 이 브라우저에만 저장된다 — 공유하려면 문서를 다시 보내야 한다</p>
+</div>
+
+<script>
+(function () {
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('.item input'));
+  var doneEl = document.getElementById('done');
+  var fillEl = document.getElementById('fill');
+  var KEY = 'localquest-todo-v1';
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var saved = JSON.parse(raw);
+      boxes.forEach(function (b) { if (saved[b.id]) b.checked = true; });
+    } catch (e) { /* 저장소를 못 읽어도 목록은 그대로 쓴다 */ }
+  }
+
+  function save() {
+    try {
+      var state = {};
+      boxes.forEach(function (b) { if (b.checked) state[b.id] = 1; });
+      localStorage.setItem(KEY, JSON.stringify(state));
+    } catch (e) { /* 무시 */ }
+  }
+
+  function paint() {
+    var n = boxes.filter(function (b) { return b.checked; }).length;
+    doneEl.textContent = n;
+    fillEl.style.width = (n / boxes.length * 100) + '%';
+  }
+
+  boxes.forEach(function (b) {
+    b.addEventListener('change', function () { save(); paint(); });
+  });
+
+  document.getElementById('reset').addEventListener('click', function () {
+    boxes.forEach(function (b) { b.checked = false; });
+    save(); paint();
+  });
+
+  // 담당 필터 — FE 몫에는 '둘이서'도 포함된다. 양쪽 다 손이 가는 일이라서다.
+  var items = Array.prototype.slice.call(document.querySelectorAll('.item'));
+  var stages = Array.prototype.slice.call(document.querySelectorAll('.stage'));
+  var btns = {
+    all: document.getElementById('f-all'),
+    fe: document.getElementById('f-fe'),
+    be: document.getElementById('f-be')
+  };
+
+  function roleOf(item) {
+    var w = item.querySelector('.who');
+    if (!w) return 'both';
+    if (w.classList.contains('fe')) return 'fe';
+    if (w.classList.contains('be')) return 'be';
+    return 'both';
+  }
+
+  function filter(mode) {
+    items.forEach(function (it) {
+      var r = roleOf(it);
+      it.hidden = !(mode === 'all' || r === 'both' || r === mode);
+    });
+    stages.forEach(function (s) {
+      var visible = Array.prototype.slice.call(s.querySelectorAll('.item'))
+        .some(function (it) { return !it.hidden; });
+      s.hidden = !visible;
+    });
+    Object.keys(btns).forEach(function (k) {
+      btns[k].setAttribute('aria-pressed', String(k === mode));
+    });
+  }
+
+  Object.keys(btns).forEach(function (k) {
+    btns[k].addEventListener('click', function () { filter(k); });
+  });
+
+  load();
+  paint();
+})();
+</script>
+</body>
+</html>
