@@ -740,12 +740,21 @@ class _PrimaryButtonState extends State<PrimaryButton> {
                       ),
                       const SizedBox(width: AppSpacing.sm),
                     ],
-                    Text(
-                      widget.label,
-                      style: AppType.button.copyWith(
-                        fontSize: widget.fontSize,
-                        color:
-                            on ? AppColors.textOnDark : AppColors.textDisabled,
+                    // 문구가 버튼보다 길어질 수 있다 — "사진 올리는 중… (2 / 3)"처럼
+                    // 상태에 따라 늘어나는 문구가 있고, 글자 크기를 키운 기기에서도
+                    // 넘친다. 넘치면 줄여서 버튼 모양을 지킨다.
+                    Flexible(
+                      child: Text(
+                        widget.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: AppType.button.copyWith(
+                          fontSize: widget.fontSize,
+                          color: on
+                              ? AppColors.textOnDark
+                              : AppColors.textDisabled,
+                        ),
                       ),
                     ),
                   ],

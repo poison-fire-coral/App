@@ -486,8 +486,16 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
         child: Column(
           children: [
             _buildTopBar(),
+            // **본문은 스크롤된다.**
+            //
+            // 예전에는 Expanded 안의 Column이 남는 높이를 나눠 가졌는데, 기록형처럼
+            // 입력이 하나 더 붙는 유형은 고정 요소만으로 320×568 화면을 67px
+            // 넘겼다. 글자 크기를 키운 기기에서는 어느 유형이든 넘친다.
+            // 사진 자리에 남는 공간을 주되, 모자라면 화면이 스크롤되게 한다.
             Expanded(
-              child: Padding(
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  child: Padding(
                 padding: const EdgeInsets.fromLTRB(
                   AppSpacing.gutter,
                   AppSpacing.md,
@@ -506,11 +514,17 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
                           accent: AppColors.jade500,
                         ),
                         const SizedBox(width: AppSpacing.sm),
-                        Text(
-                          '오차 ${widget.accuracyMeters.round()}m · 최대 ${Geo.maxAccuracyMeters.round()}m',
-                          style: AppType.numeric.copyWith(
-                            fontSize: 11,
-                            color: AppColors.textTertiary,
+                        // 좁은 화면에서 칩 옆 공간이 모자라면 줄인다.
+                        // 잘리더라도 "오차 12m"까지는 읽히는 것이 낫다.
+                        Flexible(
+                          child: Text(
+                            '오차 ${widget.accuracyMeters.round()}m · 최대 ${Geo.maxAccuracyMeters.round()}m',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppType.numeric.copyWith(
+                              fontSize: 11,
+                              color: AppColors.textTertiary,
+                            ),
                           ),
                         ),
                       ],
@@ -524,9 +538,15 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     if (_needsAnswer)
-                      Expanded(child: SingleChildScrollView(child: _buildQuiz()))
+                      _buildQuiz()
                     else
-                      Expanded(child: _buildPhotoArea()),
+                      // 남는 공간을 주되 너무 납작해지면 무엇을 찍어야 하는지
+                      // 읽히지 않는다. 아래위 상한을 둔다.
+                      SizedBox(
+                        height: (constraints.maxHeight * 0.36)
+                            .clamp(160.0, 300.0),
+                        child: _buildPhotoArea(),
+                      ),
                     if (_needsNote) ...[
                       const SizedBox(height: AppSpacing.lg),
                       _buildNoteField(),
@@ -579,6 +599,8 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
                       ),
                     ],
                   ],
+                ),
+                  ),
                 ),
               ),
             ),

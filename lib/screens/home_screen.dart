@@ -296,7 +296,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   '‹', () => _moveCarousel(-1), quests.length > 1),
               Expanded(
                 child: SizedBox(
-                  height: 104,
+                  // PageView는 높이를 스스로 못 정해서 여기서 잡아 줘야 한다.
+                  //
+                  // 고정 104는 좁은 화면에서 제목이 두 줄로 접히는 순간 모자랐다
+                  // (320×568에서 30px 넘침). 글자 크기를 키운 기기에서도 같은 일이
+                  // 난다 — 카드 안이 전부 글자라 배율을 그대로 따라간다.
+                  height: 104 *
+                      MediaQuery.textScalerOf(context)
+                          .scale(1.0)
+                          .clamp(1.0, 1.4),
                   child: PageView.builder(
                     controller: _carouselController,
                     itemCount: quests.length,
@@ -377,11 +385,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final isNear = active.progress >= 0.85;
 
-    return Row(
+    // 320px 폭 기기에서는 이 카드 안쪽이 250px 남짓이다. 등급 상자와 제목 두 줄을
+    // 그대로 두면 가로로 20px, 세로로 30px 넘쳤다. 좁으면 둘 다 한 단계 줄인다.
+    return LayoutBuilder(builder: (context, constraints) {
+      final isNarrow = constraints.maxWidth < 260;
+
+      return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
-          width: 76,
+          width: isNarrow ? 56 : 76,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             gradient: AppSurface.sunken,
@@ -400,7 +413,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Text(
                 quest.title,
-                maxLines: 2,
+                maxLines: isNarrow ? 1 : 2,
                 overflow: TextOverflow.ellipsis,
                 style: AppType.h3,
               ),
@@ -409,11 +422,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   RewardPill(exp: quest.displayExp),
                   const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    Geo.formatDistance(distanceMeters),
-                    style: AppType.numeric.copyWith(
-                      fontSize: 11,
-                      color: AppColors.textTertiary,
+                  // 좁은 화면에서는 EXP 배지가 먼저고 거리는 줄어들어도 된다.
+                  Flexible(
+                    child: Text(
+                      Geo.formatDistance(distanceMeters),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppType.numeric.copyWith(
+                        fontSize: 11,
+                        color: AppColors.textTertiary,
+                      ),
                     ),
                   ),
                 ],
@@ -424,12 +442,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 accent: isNear ? AppColors.jade500 : null,
               ),
               const SizedBox(height: AppSpacing.xs),
-              Text(active.progressLabel, style: AppType.micro),
+              Text(
+                active.progressLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppType.micro,
+              ),
             ],
           ),
         ),
       ],
-    );
+      );
+    });
   }
 
   Widget _buildEmptyQuestCard() {
