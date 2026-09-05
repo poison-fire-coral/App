@@ -22,6 +22,7 @@ import '../theme/app_assets.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/heading_cone.dart';
 
 class MapScreen extends StatefulWidget {
   final UserModel user;
@@ -170,10 +171,10 @@ class _MapScreenState extends State<MapScreen> {
   /// 래핑한 방위각을 그대로 넘기면 357° → 3°가 브라우저에는 +6°가 아니라
   /// -354°로 보이고, `transition`이 그 길을 다 보간한다 — 북쪽을 지날 때마다
   /// 부채꼴이 한 바퀴 거꾸로 휘도는 이유다. 최단 차이만 더해서 쌓는다.
-  double _coneAngle = 0;
-
-  /// `_coneAngle`을 마지막으로 갱신할 때 쓴 방위각. 다음 차이의 기준이 된다.
-  double? _coneAngleSource;
+  ///
+  /// 진행 화면(4a)도 같은 규칙을 써야 두 화면이 같은 방향을 가리킨다 —
+  /// 그래서 계산은 `widgets/heading_cone.dart`에 한 벌만 둔다.
+  final ConeAngle _cone = ConeAngle();
 
   @override
   void initState() {
@@ -298,8 +299,9 @@ class _MapScreenState extends State<MapScreen> {
           latLng: location,
           // 새로 만든 div에는 이전 각도가 없어 보간이 안 일어나지만, 이후
           // _rotateHeadingCone이 이어 붙일 수 있도록 누적값으로 시작한다.
-          content: _headingConeHtml(
-            rebuildCone ? _advanceConeAngle(heading) : _coneAngle,
+          content: headingConeHtml(
+            _headingConeId,
+            rebuildCone ? _cone.advance(heading) : _cone.value,
           ),
           // 부채꼴의 회전 중심이 곧 현위치 좌표다.
           xAnchor: 0.5,
@@ -446,39 +448,11 @@ class _MapScreenState extends State<MapScreen> {
     _mapController?.setLevel(next);
   }
 
-  /// 64×64 상자 한가운데가 현위치다. 부채꼴은 반지름 14px(현위치 점) 밖에서
-  /// 시작하므로 점을 가리지 않는다. 상자를 통째로 돌려서 방향을 만든다.
-  ///
-  /// 플러그인이 이 문자열을 작은따옴표로 감싼 JS에 그대로 넣는다 —
-  /// 작은따옴표·줄바꿈을 쓰면 안 된다.
-  static String _headingConeHtml(double rotation) {
-    final deg = rotation.toStringAsFixed(1);
-    return '<div id="$_headingConeId" style="width:64px;height:64px;'
-        'position:relative;pointer-events:none;'
-        'transform:rotate(${deg}deg);transform-origin:32px 32px;'
-        'transition:transform 150ms linear;will-change:transform;">'
-        '<div style="position:absolute;left:21px;top:0px;width:0;height:0;'
-        'border-left:11px solid transparent;border-right:11px solid transparent;'
-        'border-bottom:18px solid rgba(158,43,30,0.55);"></div>'
-        '</div>';
-  }
-
-  /// 방위각을 누적 회전각으로 바꾼다. 두 각의 최단 차이(-180~180)만 더하므로
-  /// 359° 다음에 1°가 오면 +2°가 되고, 값은 360을 넘어 계속 자란다.
-  double _advanceConeAngle(double degrees) {
-    final previous = _coneAngleSource;
-    _coneAngle += previous == null
-        ? degrees
-        : ((degrees - previous + 540) % 360) - 180;
-    _coneAngleSource = degrees;
-    return _coneAngle;
-  }
-
   void _rotateHeadingCone(double degrees) {
     final controller = _mapController;
     if (controller == null) return;
 
-    final deg = _advanceConeAngle(degrees).toStringAsFixed(1);
+    final deg = _cone.advance(degrees).toStringAsFixed(1);
     controller.webViewController.runJavaScript(
       'var e=document.getElementById("$_headingConeId");'
       'if(e){e.style.transform="rotate(${deg}deg)";}',

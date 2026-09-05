@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
+import '../config/app_config.dart';
 import '../data/quest_repository.dart';
 import '../dev/dev_quest_panel.dart'; // DEV-ONLY
 import '../models/active_quest.dart';
@@ -17,6 +17,8 @@ import '../services/verify_queue.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/heading_cone.dart';
+import '../widgets/quest_route_map.dart';
 import 'level_up_screen.dart';
 import 'quest_reward_screen.dart';
 import 'quest_verify_screen.dart';
@@ -88,10 +90,21 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
   final CompassService _compass = CompassService();
   StreamSubscription<double>? _headingSub;
 
-  /// 화면에 적용할 누적 회전각(도). 359°→1°에서 한 바퀴 되감기지 않도록
-  /// 최단 차이만 더해 계속 키운다.
-  double _coneAngle = 0;
-  double? _coneAngleSource;
+  /// 지도에 넘기는 방위각. **setState를 부르지 않는다** — 방위각은 초당 열 번
+  /// 넘게 바뀌는데 그때마다 화면을 다시 빌드하면 지도가 눈에 띄게 버벅인다.
+  /// [QuestRouteMap]이 직접 구독해 WebView 안 CSS만 돌린다.
+  final ValueNotifier<double?> _heading = ValueNotifier<double?>(null);
+
+  /// 지도를 못 띄웠을 때 쓰는 폴백 부채꼴의 누적 회전각. 이쪽은 Flutter가
+  /// 직접 그리므로 setState가 필요하다.
+  final ConeAngle _fallbackCone = ConeAngle();
+  double _fallbackConeAngle = 0;
+
+  /// 아래 시트가 실제로 차지하는 높이. 지도가 화면 전체를 채우므로, 이걸
+  /// 넘겨 주지 않으면 카메라가 시트에 가린 자리를 기준으로 맞춰 현위치 점이 숨는다.
+  /// 시트 높이는 남은 거리 문구에 따라 달라져서 상수로 둘 수 없다.
+  final GlobalKey _sheetKey = GlobalKey();
+  double _sheetHeight = 0;
 
   @override
   void initState() {
@@ -103,13 +116,11 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
 
     _headingSub = _compass.headingStream.listen((degrees) {
       if (!mounted) return;
-      setState(() {
-        final previous = _coneAngleSource;
-        _coneAngle += previous == null
-            ? degrees
-            : ((degrees - previous + 540) % 360) - 180;
-        _coneAngleSource = degrees;
-      });
+      _heading.value = degrees;
+      // 지도가 있으면 부채꼴은 WebView가 그린다. 폴백일 때만 다시 그린다.
+      if (!_canShowMap) {
+        setState(() => _fallbackConeAngle = _fallbackCone.advance(degrees));
+      }
     });
   }
 
@@ -118,6 +129,7 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     _subscription?.cancel();
     _headingSub?.cancel();
     _compass.dispose();
+    _heading.dispose();
     _location.dispose();
     super.dispose();
   }
@@ -412,17 +424,55 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
   // ---------------------------------------------------------------------------
   // 빌드
   // ---------------------------------------------------------------------------
+  /// 카카오 JS 키가 없으면 지도를 띄울 수 없다.
+  /// 그때만 예전의 추상 표현으로 떨어진다 — 빈 화면보다는 낫다.
+  bool get _canShowMap => AppConfig.kakaoJavaScriptKey.isNotEmpty;
+
+  /// 시트를 그린 뒤 높이를 재서 지도에 알린다.
+  /// 레이아웃 도중에 setState를 부를 수 없으므로 프레임이 끝난 뒤로 미룬다.
+  void _measureSheet() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box = _sheetKey.currentContext?.findRenderObject() as RenderBox?;
+      final height = box?.size.height ?? 0;
+      // 1px 미만의 흔들림으로 지도를 다시 그리지 않는다.
+      if ((height - _sheetHeight).abs() < 1) return;
+      setState(() => _sheetHeight = height);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final spot = _activeQuest.currentSpot;
+    _measureSheet();
+
     return Scaffold(
       backgroundColor: AppColors.surface,
       body: SafeArea(
         child: Stack(
           children: [
-            const Positioned.fill(child: MapBackdrop()),
-            Positioned.fill(child: _buildApproachOverlay()),
+            if (_canShowMap)
+              Positioned.fill(
+                child: QuestRouteMap(
+                  quest: _activeQuest.quest,
+                  target: spot.point,
+                  radiusMeters: spot.radiusMeters,
+                  user: _sample?.point,
+                  heading: _heading,
+                  bottomInset: _sheetHeight,
+                ),
+              )
+            else ...[
+              const Positioned.fill(child: MapBackdrop()),
+              Positioned.fill(child: _buildApproachOverlay()),
+            ],
             Positioned(left: 12, top: 12, child: _buildBackButton()),
-            Positioned(left: 0, right: 0, bottom: 0, child: _buildSheet()),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: KeyedSubtree(key: _sheetKey, child: _buildSheet()),
+            ),
           ],
         ),
       ),
@@ -444,8 +494,12 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     );
   }
 
-  /// 목표 지점의 인증 반경 원과 현재 위치 점을 겹쳐 그린다.
-  /// 실제 타일맵이 아니므로 남은 거리에 비례해 사용자 점이 원 쪽으로 다가오게만 표현한다.
+  /// **폴백 전용.** 카카오 JS 키가 없어 지도를 못 띄웠을 때만 그린다.
+  ///
+  /// 지리 좌표가 개입하지 않는 추상 표현이다 — 목표 원을 화면 한 곳에 고정해 두고
+  /// 남은 거리에 비례해 사용자 점이 그쪽으로 다가오게만 한다. 방향 부채꼴도
+  /// 바탕에 북쪽이 없으니 여기서는 "돌아가고 있다"는 것 이상을 뜻하지 못한다.
+  /// 제대로 된 방위는 [QuestRouteMap] 경로에서만 나온다.
   Widget _buildApproachOverlay() {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -477,14 +531,13 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
               child: const QuestMarker(isActive: true),
             ),
             // 방향 부채꼴 — 점보다 **아래**에 깔아야 점을 가리지 않는다.
-            // 지도 화면(3a)과 같은 모양·같은 각도를 쓴다.
             Positioned(
               left: position.dx - 32,
               top: position.dy - 32,
               child: IgnorePointer(
                 child: Transform.rotate(
-                  angle: _coneAngle * math.pi / 180,
-                  child: const _HeadingCone(),
+                  angle: degreesToRadians(_fallbackConeAngle),
+                  child: const HeadingCone(),
                 ),
               ),
             ),
@@ -603,45 +656,4 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     return '${Geo.formatDistance(distance)} 남았어요. '
         '${spot.name}까지 이동해 주세요.';
   }
-}
-
-/// 현위치 점이 보는 방향을 가리키는 부채꼴.
-///
-/// 지도 화면(3a)은 카카오 오버레이라 HTML로 같은 모양을 그린다
-/// (`map_screen.dart`의 `_headingConeHtml`). 두 화면의 삼각형이 다르면
-/// 같은 뜻으로 읽히지 않으므로 크기와 색을 맞춰 두었다 —
-/// 64×64 상자, 밑변 22, 높이 18, 브랜드색 55% 불투명.
-class _HeadingCone extends StatelessWidget {
-  const _HeadingCone();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 64,
-      height: 64,
-      child: CustomPaint(painter: _HeadingConePainter()),
-    );
-  }
-}
-
-class _HeadingConePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-
-    // 위쪽(=0°, 북)을 향하는 삼각형. 회전은 부모 Transform이 맡는다.
-    final path = Path()
-      ..moveTo(cx, 0)
-      ..lineTo(cx - 11, 18)
-      ..lineTo(cx + 11, 18)
-      ..close();
-
-    canvas.drawPath(
-      path,
-      Paint()..color = AppColors.quest500.withValues(alpha: 0.55),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _HeadingConePainter oldDelegate) => false;
 }
