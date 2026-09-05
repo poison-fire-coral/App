@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert' show base64Encode;
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show setEquals;
@@ -93,6 +94,30 @@ class _MapScreenState extends State<MapScreen> {
   /// 카카오는 드래그하는 내내 `idle`을 여러 번 던진다. 그대로 조회하면
   /// 한 번 훑는 동안 요청이 수십 개 나가고, 그게 서버 최다 호출 경로가 된다.
   static const Duration _cameraIdleDebounce = Duration(milliseconds: 300);
+
+  /// 마지막으로 성공한 조회의 파라미터. 같은 값이면 다시 묻지 않는다.
+  ///
+  /// 지도를 처음 열면 두 경로가 거의 동시에 같은 범위를 물었다 —
+  /// `_syncNearbyQuests` 끝의 직접 호출과, 내 위치로 이동하며 발생한
+  /// `onCameraIdle`이다. 응답은 순번으로 걸러졌지만 요청은 두 번 나갔다.
+  String? _lastViewportKey;
+
+  /// 내 위치로 이동하는 동안 카메라 정지 조회를 눌러 둔다.
+  ///
+  /// `_initUserLocation`은 지도를 먼저 옮기고(`panTo`) 나서 TourAPI 동기화를
+  /// 기다린 뒤 마지막에 한 번 조회한다. 그런데 `panTo` 자체가 카메라를 움직여
+  /// `onCameraIdle`을 깨우기 때문에, 눌러 두지 않으면 같은 범위를 두 번 묻는다 —
+  /// 한 번은 이동 때문에, 한 번은 동기화가 끝나서.
+  bool _suppressIdleRefresh = false;
+
+  /// 마지막 조회 범위와 지도 위젯 크기. 클러스터 탭 히트테스트에 쓴다.
+  ///
+  /// 화면 좌표를 직접 물어볼 방법이 없어서 "범위 ÷ 픽셀"로 환산한다.
+  double? _boundsSwLat;
+  double? _boundsSwLng;
+  double? _boundsNeLat;
+  double? _boundsNeLng;
+  Size? _mapSize;
   Timer? _cameraIdleTimer;
 
   /// 조회 순번. 응답이 순서를 바꿔 도착해도 **더 오래된 것이 새 것을 덮지
@@ -120,8 +145,9 @@ class _MapScreenState extends State<MapScreen> {
   ///
   /// 결과에서 뽑지 않는다. 서버 필터를 걸면 결과가 줄어드는데 그걸로 칩을
   /// 만들면 방금 누른 칩만 남고 되돌릴 수가 없다.
-  late final List<String> _keywordChips =
-      KeywordTaxonomy.filterChipOrder(widget.user.travelStyles);
+  late final List<String> _keywordChips = KeywordTaxonomy.filterChipOrder(
+    widget.user.travelStyles,
+  );
 
   // ---------------------------------------------------------------------------
   // 현위치 방향 (나침반)
@@ -266,32 +292,36 @@ class _MapScreenState extends State<MapScreen> {
     final location = _userLocation;
     final heading = _heading;
     if (location != null && heading != null && _headingOverlayPlaced) {
-      overlays.add(CustomOverlay(
-        customOverlayId: _headingOverlayId,
-        latLng: location,
-        // 새로 만든 div에는 이전 각도가 없어 보간이 안 일어나지만, 이후
-        // _rotateHeadingCone이 이어 붙일 수 있도록 누적값으로 시작한다.
-        content: _headingConeHtml(
-          rebuildCone ? _advanceConeAngle(heading) : _coneAngle,
+      overlays.add(
+        CustomOverlay(
+          customOverlayId: _headingOverlayId,
+          latLng: location,
+          // 새로 만든 div에는 이전 각도가 없어 보간이 안 일어나지만, 이후
+          // _rotateHeadingCone이 이어 붙일 수 있도록 누적값으로 시작한다.
+          content: _headingConeHtml(
+            rebuildCone ? _advanceConeAngle(heading) : _coneAngle,
+          ),
+          // 부채꼴의 회전 중심이 곧 현위치 좌표다.
+          xAnchor: 0.5,
+          yAnchor: 0.5,
+          // 현위치 마커(zIndex 10)보다 아래. 부채꼴은 점 바깥쪽에만 그려서
+          // 두 레이어가 겹치지 않는다.
+          zIndex: 9,
         ),
-        // 부채꼴의 회전 중심이 곧 현위치 좌표다.
-        xAnchor: 0.5,
-        yAnchor: 0.5,
-        // 현위치 마커(zIndex 10)보다 아래. 부채꼴은 점 바깥쪽에만 그려서
-        // 두 레이어가 겹치지 않는다.
-        zIndex: 9,
-      ));
+      );
     }
 
     for (final cluster in _clusters) {
-      overlays.add(CustomOverlay(
-        customOverlayId: cluster.overlayId,
-        latLng: LatLng(cluster.latitude, cluster.longitude),
-        content: _clusterHtml(cluster.count),
-        xAnchor: 0.5,
-        yAnchor: 0.5,
-        zIndex: 8,
-      ));
+      overlays.add(
+        CustomOverlay(
+          customOverlayId: cluster.overlayId,
+          latLng: LatLng(cluster.latitude, cluster.longitude),
+          content: _clusterHtml(cluster.count),
+          xAnchor: 0.5,
+          yAnchor: 0.5,
+          zIndex: 8,
+        ),
+      );
     }
 
     try {
@@ -320,7 +350,9 @@ class _MapScreenState extends State<MapScreen> {
   /// **작은따옴표와 줄바꿈을 쓰면 안 된다.**
   static String _clusterHtml(int count) {
     // MarkerCluster의 `34 + min(count,40) * 0.45`를 그대로 옮겼다.
-    final diameter = (34.0 + (count > 40 ? 40 : count) * 0.45).toStringAsFixed(0);
+    final diameter = (34.0 + (count > 40 ? 40 : count) * 0.45).toStringAsFixed(
+      0,
+    );
     final label = count > 999 ? '999+' : '$count';
 
     return '<div style="width:${diameter}px;height:${diameter}px;'
@@ -334,13 +366,78 @@ class _MapScreenState extends State<MapScreen> {
         'cursor:pointer;">$label</div>';
   }
 
+  /// 지도 빈 곳을 눌렀을 때 그 자리에 클러스터가 있었는지 되짚는다.
+  ///
+  /// **왜 이런 우회가 필요한가:** 클러스터 원은 `CustomOverlay`로 그리는데,
+  /// `kakao_map_plugin`(0.3.7)이 `kakao.maps.CustomOverlay`를 만들 때
+  /// `clickable: true`를 넘기지 않는다. 카카오 SDK는 이 값이 기본 false라
+  /// 오버레이가 마우스 이벤트를 아예 받지 않고, 플러그인이 심어 둔 `onclick`도
+  /// 같이 죽는다. 그래서 [_onCustomOverlayTap]은 한 번도 불리지 않는다.
+  ///
+  /// 대신 지도 탭 좌표를 받아 클러스터 중심과의 거리를 **화면 픽셀로 환산해**
+  /// 원 안쪽인지 본다. 플러그인이 고쳐지면 이 함수만 지우면 된다.
+  bool _handleClusterTap(LatLng tapped) {
+    if (_clusters.isEmpty) return false;
+
+    final size = _mapSize;
+    final swLat = _boundsSwLat;
+    final swLng = _boundsSwLng;
+    final neLat = _boundsNeLat;
+    final neLng = _boundsNeLng;
+    if (size == null ||
+        swLat == null ||
+        swLng == null ||
+        neLat == null ||
+        neLng == null) {
+      return false;
+    }
+
+    final lngSpan = neLng - swLng;
+    final latSpan = neLat - swLat;
+    if (lngSpan <= 0 || latSpan <= 0 || size.width <= 0 || size.height <= 0) {
+      return false;
+    }
+
+    final pxPerLng = size.width / lngSpan;
+    final pxPerLat = size.height / latSpan;
+
+    QuestCluster? best;
+    double bestDistPx = double.infinity;
+
+    for (final c in _clusters) {
+      final dx = (c.longitude - tapped.longitude) * pxPerLng;
+      final dy = (c.latitude - tapped.latitude) * pxPerLat;
+      final dist = math.sqrt(dx * dx + dy * dy);
+
+      // `_clusterHtml`이 그리는 지름과 같은 식. 손가락은 정확하지 않으니 6px 여유.
+      final radius =
+          (34.0 + (c.count > 40 ? 40 : c.count) * 0.45) / 2 + 6;
+
+      if (dist <= radius && dist < bestDistPx) {
+        best = c;
+        bestDistPx = dist;
+      }
+    }
+
+    if (best == null) return false;
+
+    _zoomIntoCluster(LatLng(best.latitude, best.longitude));
+    return true;
+  }
+
   /// 클러스터를 눌렀다 — 그 자리로 두 단계 확대한다.
   ///
   /// 한 단계만 당기면 여전히 클러스터라 두 번 눌러야 뭔가 보인다.
   /// 확대가 끝나면 `onCameraIdle`이 알아서 다시 조회한다.
   void _onCustomOverlayTap(String overlayId, LatLng latLng) {
     if (overlayId == _headingOverlayId) return;
+    _zoomIntoCluster(latLng);
+  }
 
+  /// 그 자리로 두 단계 확대한다.
+  ///
+  /// 한 단계만 당기면 여전히 클러스터라 두 번 눌러야 뭔가 보인다.
+  void _zoomIntoCluster(LatLng latLng) {
     final next = (_kakaoLevel - 2).clamp(
       MapZoom.minKakaoLevel,
       MapZoom.maxKakaoLevel,
@@ -370,8 +467,9 @@ class _MapScreenState extends State<MapScreen> {
   /// 359° 다음에 1°가 오면 +2°가 되고, 값은 360을 넘어 계속 자란다.
   double _advanceConeAngle(double degrees) {
     final previous = _coneAngleSource;
-    _coneAngle +=
-        previous == null ? degrees : ((degrees - previous + 540) % 360) - 180;
+    _coneAngle += previous == null
+        ? degrees
+        : ((degrees - previous + 540) % 360) - 180;
     _coneAngleSource = degrees;
     return _coneAngle;
   }
@@ -419,12 +517,17 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     // 동기화로 새로 생긴 퀘스트까지 포함해 화면 범위를 다시 그린다.
-    await _refreshViewport();
+    // 범위는 그대로여도 목록이 달라졌을 수 있으므로 중복 차단을 건너뛴다.
+    await _refreshViewport(force: true);
   }
 
   /// 카메라가 멈췄다. 디바운스를 걸고 [_refreshViewport]로 넘긴다.
   void _onCameraIdle(LatLng center, int zoomLevel) {
+    // 줌 레벨은 억제 중에도 최신으로 들고 있어야 한다. 마지막 조회가 옛 줌으로
+    // 나가면 클러스터 여부가 어긋난다.
     _kakaoLevel = zoomLevel;
+    if (_suppressIdleRefresh) return;
+
     _cameraIdleTimer?.cancel();
     _cameraIdleTimer = Timer(_cameraIdleDebounce, () {
       if (!mounted) return;
@@ -437,21 +540,49 @@ class _MapScreenState extends State<MapScreen> {
   /// 여기가 **지도의 유일한 데이터 경로**다. 검색·키워드 필터도 앱에서
   /// 거르지 않고 이 호출의 파라미터로 들어간다 — 그래야 화면 밖에 있는
   /// 퀘스트도 조건에 맞으면 잡힌다.
-  Future<void> _refreshViewport() async {
+  /// [force]는 "화면은 그대로지만 내용이 달라졌을 수 있다"는 뜻이다 —
+  /// 퀘스트를 새로 만들어 넣었거나(TourAPI 동기화) 완료 상태가 바뀐 뒤에 쓴다.
+  Future<void> _refreshViewport({bool force = false}) async {
     final controller = _mapController;
     if (controller == null || !_isMapReady || !mounted) return;
 
     final request = ++_viewportRequest;
-    setState(() => _isLoadingQuests = true);
 
     try {
       final bounds = await controller.getBounds();
+      final zoom = MapZoom.fromKakaoLevel(_kakaoLevel);
+
+      // 소수점 다섯 자리(약 1m)면 같은 화면으로 본다. 그보다 잘게 비교하면
+      // 지도가 미세하게 떨릴 때마다 같은 조회가 다시 나간다.
+      final key = [
+        bounds.sw.latitude.toStringAsFixed(5),
+        bounds.sw.longitude.toStringAsFixed(5),
+        bounds.ne.latitude.toStringAsFixed(5),
+        bounds.ne.longitude.toStringAsFixed(5),
+        zoom,
+        _selectedKeyword ?? '',
+        _searchQuery,
+      ].join('|');
+
+      if (!force && key == _lastViewportKey) return;
+
+      // **요청을 내보내기 전에** 잡아 둔다. 응답이 온 뒤에 저장하면, 두 경로가
+      // 거의 동시에 출발했을 때 둘 다 "아직 아무도 안 물어봤다"고 판단해
+      // 같은 조회가 두 번 나간다 — 지도 첫 진입이 정확히 그 상황이었다.
+      _lastViewportKey = key;
+      _boundsSwLat = bounds.sw.latitude;
+      _boundsSwLng = bounds.sw.longitude;
+      _boundsNeLat = bounds.ne.latitude;
+      _boundsNeLng = bounds.ne.longitude;
+
+      if (mounted) setState(() => _isLoadingQuests = true);
+
       final result = await QuestRepository.fetchQuestsInBounds(
         swLat: bounds.sw.latitude,
         swLng: bounds.sw.longitude,
         neLat: bounds.ne.latitude,
         neLng: bounds.ne.longitude,
-        zoom: MapZoom.fromKakaoLevel(_kakaoLevel),
+        zoom: zoom,
         keywords: _selectedKeyword == null ? null : [_selectedKeyword!],
         search: _searchQuery,
       );
@@ -476,9 +607,14 @@ class _MapScreenState extends State<MapScreen> {
       await _syncCustomOverlays();
       _applyFocusRequest();
     } on ApiException catch (e) {
+      // 실패한 조회를 "이미 물어봤다"로 남겨 두면 같은 화면에서 영영 재시도하지
+      // 않는다. 키를 풀어 다음 기회에 다시 묻게 한다.
+      _lastViewportKey = null;
       debugPrint('뷰포트 조회 실패: ${e.code}');
     } catch (e) {
       // getBounds()는 WebView가 아직 준비되지 않았으면 파싱에서 터진다.
+      // 여기서는 키를 풀지 않는다 — 조회 자체는 성공했는데 마커를 그리다
+      // 실패한 경우까지 "안 물어본 것"으로 되돌리면 같은 조회가 다시 나간다.
       debugPrint('뷰포트 조회 실패: $e');
     } finally {
       if (mounted && request == _viewportRequest) {
@@ -512,6 +648,7 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _initUserLocation({bool panToUser = true}) async {
     if (_isFetchingLocation) return;
     _isFetchingLocation = true;
+    _suppressIdleRefresh = true;
 
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -556,6 +693,9 @@ class _MapScreenState extends State<MapScreen> {
       debugPrint('내 위치 가져오기 실패: $e');
     } finally {
       _isFetchingLocation = false;
+      _suppressIdleRefresh = false;
+      // 이동 중 쌓인 예약이 있으면 버린다 — 방금 최신 범위로 조회했다.
+      _cameraIdleTimer?.cancel();
     }
   }
 
@@ -697,10 +837,26 @@ class _MapScreenState extends State<MapScreen> {
         // 앞 세 줄이 회색조(BT.709 휘도), 마지막 줄이 알파를 통째로 줄인다.
         // 한 행렬로 처리해야 반투명 픽셀의 가장자리가 두 번 곱해지지 않는다.
         ..colorFilter = const ColorFilter.matrix(<double>[
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0, 0, 0, _dimmedOpacity, 0,
+          0.2126,
+          0.7152,
+          0.0722,
+          0,
+          0,
+          0.2126,
+          0.7152,
+          0.0722,
+          0,
+          0,
+          0.2126,
+          0.7152,
+          0.0722,
+          0,
+          0,
+          0,
+          0,
+          0,
+          _dimmedOpacity,
+          0,
         ]),
     );
 
@@ -736,7 +892,8 @@ class _MapScreenState extends State<MapScreen> {
       // 서버가 준 `isCompleted`를 먼저 믿고, 없으면(비로그인이거나 서버가
       // 아직 안 채운 응답이면) 앱이 들고 있는 목록으로 떨어진다. 진행 중인
       // 퀘스트는 완료 표시보다 우선한다 — 재방문으로 다시 잡은 경우다.
-      final isDone = !isActive &&
+      final isDone =
+          !isActive &&
           (q.isCompleted || widget.completedQuestIds.contains(q.id));
 
       final icon = await _icon(
@@ -772,8 +929,8 @@ class _MapScreenState extends State<MapScreen> {
           zIndex: isActive
               ? 5
               : isDone
-                  ? -1
-                  : 0,
+              ? -1
+              : 0,
         ),
       );
     }
@@ -806,9 +963,9 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _closeSheet() => setState(() {
-        _selectedQuest = null;
-        _sheetState = _SheetState.closed;
-      });
+    _selectedQuest = null;
+    _sheetState = _SheetState.closed;
+  });
 
   void _expandSheet() => setState(() => _sheetState = _SheetState.detail);
 
@@ -820,15 +977,20 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _notReady(String label) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$label 화면은 준비 중입니다.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$label 화면은 준비 중입니다.')));
   }
 
   // ---------------------------------------------------------------------------
   // 대표 이미지 로딩 & 이미지 없음 처리 헬퍼 위젯
   // ---------------------------------------------------------------------------
-  Widget _buildQuestImage(String? imageUrl, {double width = 78, double height = 62, double borderRadius = 7}) {
+  Widget _buildQuestImage(
+    String? imageUrl, {
+    double width = 78,
+    double height = 62,
+    double borderRadius = 7,
+  }) {
     final hasImage = imageUrl != null && imageUrl.trim().isNotEmpty;
 
     return Container(
@@ -843,14 +1005,18 @@ class _MapScreenState extends State<MapScreen> {
           ? Image.network(
               imageUrl,
               fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => _buildNoImagePlaceholder(),
+              errorBuilder: (context, error, stackTrace) =>
+                  _buildNoImagePlaceholder(),
               loadingBuilder: (context, child, loadingProgress) {
                 if (loadingProgress == null) return child;
                 return const Center(
                   child: SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.quest500),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.quest500,
+                    ),
                   ),
                 );
               },
@@ -864,7 +1030,11 @@ class _MapScreenState extends State<MapScreen> {
       child: Text(
         '대표이미지\n없음',
         textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 10, color: AppColors.textSecondary, height: 1.2),
+        style: TextStyle(
+          fontSize: 10,
+          color: AppColors.textSecondary,
+          height: 1.2,
+        ),
       ),
     );
   }
@@ -885,67 +1055,87 @@ class _MapScreenState extends State<MapScreen> {
               onTapSettings: () => widget.onOpenSettings?.call(context),
             ),
             Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: KakaoMap(
-                      key: const ValueKey('stable_kakao_map_webview'),
-                      center: _initialCenter,
-                      markers: const [],
-                      onMapCreated: (controller) async {
-                        _mapController = controller;
-                        await Future.delayed(const Duration(milliseconds: 800));
-                        if (!mounted) return;
+              // 지도 위젯의 픽셀 크기를 잡아 둔다 — 클러스터 탭을 좌표로
+              // 되짚으려면 "이 범위가 몇 픽셀인가"를 알아야 한다.
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  _mapSize = constraints.biggest;
+                  return Stack(
+                    children: [
+                      Positioned.fill(
+                        child: KakaoMap(
+                          key: const ValueKey('stable_kakao_map_webview'),
+                          center: _initialCenter,
+                          markers: const [],
+                          onMapCreated: (controller) async {
+                            _mapController = controller;
+                            await Future.delayed(
+                              const Duration(milliseconds: 800),
+                            );
+                            if (!mounted) return;
 
-                        _isMapReady = true;
-                        await _initUserLocation(panToUser: true);
+                            _isMapReady = true;
+                            await _initUserLocation(panToUser: true);
 
-                        // 위치 권한을 거부했거나 GPS가 꺼져 있으면
-                        // `_initUserLocation`이 아무것도 싣지 않고 끝난다.
-                        // 그래도 지도는 초기 중심을 보여주고 있으므로,
-                        // 최소한 그 범위의 퀘스트는 채워 준다.
-                        if (mounted && _quests.isEmpty && _clusters.isEmpty) {
-                          await _refreshViewport();
-                        }
-                      },
-                      onMarkerTap: (markerId, latLng, zoomLevel) {
-                        if (markerId == 'user_my_location_pin') return;
+                            // 위치 권한을 거부했거나 GPS가 꺼져 있으면
+                            // `_initUserLocation`이 아무것도 싣지 않고 끝난다.
+                            // 그래도 지도는 초기 중심을 보여주고 있으므로,
+                            // 최소한 그 범위의 퀘스트는 채워 준다.
+                            if (mounted &&
+                                _quests.isEmpty &&
+                                _clusters.isEmpty) {
+                              await _refreshViewport();
+                            }
+                          },
+                          onMarkerTap: (markerId, latLng, zoomLevel) {
+                            if (markerId == 'user_my_location_pin') return;
 
-                        final matched = _quests.where((q) => q.id == markerId);
-                        if (matched.isNotEmpty) {
-                          _selectQuest(matched.first);
-                        }
-                      },
-                      // 클러스터 원을 눌렀을 때. 커스텀 오버레이는 이 콜백을
-                      // 넘겨야만 플러그인이 onclick 래퍼를 붙인다.
-                      onCustomOverlayTap: _onCustomOverlayTap,
-                      // 3b — 카메라가 멈추면 보이는 범위로 다시 조회한다.
-                      onCameraIdle: _onCameraIdle,
-                      onMapTap: (latLng) {
-                        if (_selectedQuest != null) {
-                          _closeSheet();
-                        }
-                      },
-                    ),
-                  ),
+                            final matched = _quests.where(
+                              (q) => q.id == markerId,
+                            );
+                            if (matched.isNotEmpty) {
+                              _selectQuest(matched.first);
+                            }
+                          },
+                          // 클러스터 원을 눌렀을 때. 커스텀 오버레이는 이 콜백을
+                          // 넘겨야만 플러그인이 onclick 래퍼를 붙인다.
+                          onCustomOverlayTap: _onCustomOverlayTap,
+                          // 3b — 카메라가 멈추면 보이는 범위로 다시 조회한다.
+                          onCameraIdle: _onCameraIdle,
+                          onMapTap: (latLng) {
+                            // 클러스터가 떠 있으면 먼저 그것부터 본다 — 아래 주석 참고.
+                            if (_handleClusterTap(latLng)) return;
+                            if (_selectedQuest != null) {
+                              _closeSheet();
+                            }
+                          },
+                        ),
+                      ),
 
-                  if (_sheetState != _SheetState.detail) _buildSearchBar(),
-                  if (_isLoadingQuests)
-                    const Positioned(
-                      top: 80,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                          child: LinearProgressIndicator(
-                              color: AppColors.quest500)),
-                    ),
-                  if (_shouldShowEmptyNote) _buildEmptyResultNote(),
-                  if (_isTruncated) _buildTruncatedNote(),
+                      if (_sheetState != _SheetState.detail) ...[
+                        _buildTopScrim(),
+                        _buildSearchBar(),
+                      ],
+                      if (_isLoadingQuests)
+                        const Positioned(
+                          top: 80,
+                          left: 0,
+                          right: 0,
+                          child: Center(
+                            child: LinearProgressIndicator(
+                              color: AppColors.quest500,
+                            ),
+                          ),
+                        ),
+                      if (_shouldShowEmptyNote) _buildEmptyResultNote(),
+                      if (_isTruncated) _buildTruncatedNote(),
 
-                  _buildMyLocationButton(),
+                      _buildMyLocationButton(),
 
-                  if (_selectedQuest != null) _buildSheet(),
-                ],
+                      if (_selectedQuest != null) _buildSheet(),
+                    ],
+                  );
+                },
               ),
             ),
             AppBottomNav(
@@ -977,6 +1167,38 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  /// 검색바·칩 뒤에 까는 옅은 그늘.
+  ///
+  /// 지도 라벨(상호명·역 이름)이 칩 사이사이로 그대로 올라와서, 흰 알약과
+  /// 지도 글자가 같은 밝기로 겹쳐 읽기 어려웠다. 위에서 아래로 사라지는
+  /// 그라데이션을 한 겹 깔면 겹치는 구간만 눌러 주고 지도는 그대로 보인다.
+  ///
+  /// 터치를 먹지 않는다 — 이 영역을 스와이프하면 지도가 움직여야 한다.
+  Widget _buildTopScrim() {
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: 0,
+      height: 190,
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                AppColors.background.withValues(alpha: 0.92),
+                AppColors.background.withValues(alpha: 0.72),
+                AppColors.background.withValues(alpha: 0.0),
+              ],
+              stops: const [0.0, 0.55, 1.0],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSearchBar() {
     return Positioned(
       left: 0,
@@ -997,8 +1219,11 @@ class _MapScreenState extends State<MapScreen> {
               radius: BorderRadius.circular(AppRadius.pill),
               child: Row(
                 children: [
-                  const Icon(Icons.search_rounded,
-                      size: 18, color: AppColors.textTertiary),
+                  const Icon(
+                    Icons.search_rounded,
+                    size: 18,
+                    color: AppColors.textTertiary,
+                  ),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: TextField(
@@ -1009,12 +1234,14 @@ class _MapScreenState extends State<MapScreen> {
                       style: AppType.body,
                       decoration: InputDecoration(
                         hintText: '지역 · 퀘스트 검색',
-                        hintStyle: AppType.body
-                            .copyWith(color: AppColors.textDisabled),
+                        hintStyle: AppType.body.copyWith(
+                          color: AppColors.textDisabled,
+                        ),
                         isDense: true,
                         border: InputBorder.none,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                        ),
                       ),
                     ),
                   ),
@@ -1033,8 +1260,11 @@ class _MapScreenState extends State<MapScreen> {
                         _searchController.clear();
                         _onSearchChanged('');
                       },
-                      child: const Icon(Icons.close_rounded,
-                          size: 18, color: AppColors.textTertiary),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        size: 18,
+                        color: AppColors.textTertiary,
+                      ),
                     ),
                 ],
               ),
@@ -1151,7 +1381,8 @@ class _MapScreenState extends State<MapScreen> {
       _searchResults.isEmpty;
 
   Widget _buildEmptyResultNote() {
-    final hasFilter = _selectedKeyword != null || _searchQuery.trim().isNotEmpty;
+    final hasFilter =
+        _selectedKeyword != null || _searchQuery.trim().isNotEmpty;
 
     return Positioned(
       left: 24,
@@ -1162,8 +1393,7 @@ class _MapScreenState extends State<MapScreen> {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Text(
           hasFilter ? '조건에 맞는 퀘스트가 없어요' : '이 범위에는 퀘스트가 없어요 · 지도를 옮겨 보세요',
-          style: const TextStyle(
-              fontSize: 12, color: AppColors.textSecondary),
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
       ),
     );
@@ -1183,8 +1413,7 @@ class _MapScreenState extends State<MapScreen> {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Text(
           '$_totalInViewport개 중 ${ViewportQuests.renderLimit}개만 표시했어요 · 지도를 확대해 보세요',
-          style: const TextStyle(
-              fontSize: 12, color: AppColors.textSecondary),
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
       ),
     );
@@ -1233,7 +1462,12 @@ class _MapScreenState extends State<MapScreen> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildQuestImage(quest.imageUrl, width: 72, height: 72, borderRadius: 10),
+            _buildQuestImage(
+              quest.imageUrl,
+              width: 72,
+              height: 72,
+              borderRadius: 10,
+            ),
             const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Column(
@@ -1257,6 +1491,10 @@ class _MapScreenState extends State<MapScreen> {
                   const SizedBox(height: AppSpacing.xs),
                   Row(
                     children: [
+                      // 무엇을 해야 하는 퀘스트인지 — 지금까지 핀 속 심볼로만
+                      // 있던 정보를 글자로 꺼낸다.
+                      QuestTypeBadge(questType: quest.questType),
+                      const SizedBox(width: AppSpacing.sm),
                       RewardPill(
                         exp: quest.displayExp,
                         multiplierNote: quest.crowdMultiplier != 1.0
@@ -1266,7 +1504,9 @@ class _MapScreenState extends State<MapScreen> {
                       const SizedBox(width: AppSpacing.sm),
                       Text(
                         QuestRepository.distanceFromUser(quest),
-                        style: AppType.numeric.copyWith(color: AppColors.textTertiary),
+                        style: AppType.numeric.copyWith(
+                          color: AppColors.textTertiary,
+                        ),
                       ),
                     ],
                   ),
@@ -1282,9 +1522,7 @@ class _MapScreenState extends State<MapScreen> {
         const SizedBox(height: AppSpacing.sm),
         GestureDetector(
           onTap: _expandSheet,
-          child: Center(
-            child: Text('관광지 정보 보기', style: AppType.caption),
-          ),
+          child: Center(child: Text('관광지 정보 보기', style: AppType.caption)),
         ),
       ],
     );
@@ -1311,7 +1549,11 @@ class _MapScreenState extends State<MapScreen> {
             Expanded(
               child: Text(
                 quest.title,
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
               ),
             ),
             TagChip(label: quest.starLabel, fontSize: 11),
@@ -1327,13 +1569,21 @@ class _MapScreenState extends State<MapScreen> {
         const Divider(color: AppColors.divider, height: 1),
         const SizedBox(height: 10),
         const Center(
-          child: Text('― 관광지 정보 ―', style: TextStyle(fontSize: 11, color: AppColors.textTertiary)),
+          child: Text(
+            '― 관광지 정보 ―',
+            style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+          ),
         ),
         const SizedBox(height: 8),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildQuestImage(quest.imageUrl, width: 88, height: 68, borderRadius: 8),
+            _buildQuestImage(
+              quest.imageUrl,
+              width: 88,
+              height: 68,
+              borderRadius: 8,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -1341,18 +1591,28 @@ class _MapScreenState extends State<MapScreen> {
                 children: [
                   Text(
                     quest.spotName,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                   const SizedBox(height: 5),
                   Wrap(
                     spacing: 5,
                     runSpacing: 4,
-                    children: [for (final k in quest.keywords) TagChip(label: k, fontSize: 11)],
+                    children: [
+                      for (final k in quest.keywords)
+                        TagChip(label: k, fontSize: 11),
+                    ],
                   ),
                   const SizedBox(height: 5),
                   Text(
                     '${quest.regionLabel} · $distance',
-                    style: const TextStyle(fontSize: 12, color: AppColors.textTertiary),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textTertiary,
+                    ),
                   ),
                 ],
               ),

@@ -24,11 +24,19 @@ class QuestVerifyResult {
   /// 방금 찍은 사진의 기기 내 경로. 미리보기에만 쓴다.
   final String? localPhotoPath;
 
+  /// 13 기록형 퀘스트에 남긴 한 줄. 다른 유형에서는 비어 있다.
+  final String? userText;
+
+  /// 09 퀴즈형 · 10 탐색형에서 고른 답. 채점은 서버가 한다.
+  final String? answer;
+
   const QuestVerifyResult({
     required this.hasPhoto,
     this.isPhotoPublic = true,
     this.photoUrl,
     this.localPhotoPath,
+    this.userText,
+    this.answer,
   });
 }
 
@@ -53,6 +61,29 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
   bool _isPublic = true;
   XFile? _photo;
   bool _isPicking = false;
+
+  /// 13 기록형에서만 쓰는 한 줄 입력.
+  final TextEditingController _noteController = TextEditingController();
+
+  /// 이 퀘스트가 기록형인가. 기록형은 한 줄을 남겨야 인증이 성립한다
+  /// (서버도 `userText` 없이는 거절한다).
+  bool get _needsNote => widget.quest.questType == 'RECORD';
+
+  String? get _noteOrNull {
+    final t = _noteController.text.trim();
+    return t.isEmpty ? null : t;
+  }
+
+  /// 09 퀴즈형 · 10 탐색형에서 고른 선택지.
+  String? _pickedAnswer;
+
+  /// 문제와 선택지가 다 있어야 풀 수 있다. 하나라도 비면 그냥 방문형처럼 다룬다 —
+  /// 문제를 못 그리는데 정답을 요구하면 인증이 영영 막힌다.
+  bool get _needsAnswer =>
+      (widget.quest.questType == 'QUIZ' ||
+          widget.quest.questType == 'EXPLORATION') &&
+      widget.quest.quizQuestion != null &&
+      widget.quest.quizOptions.length >= 2;
 
   /// S3 업로드가 도는 중. 이 동안 버튼을 잠근다.
   bool _isUploading = false;
@@ -109,6 +140,8 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
         hasPhoto: true,
         isPhotoPublic: _isPublic,
         localPhotoPath: photo.path,
+        userText: _noteOrNull,
+        answer: _pickedAnswer,
       ));
       return;
     }
@@ -132,6 +165,8 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
         hasPhoto: false,
         isPhotoPublic: _isPublic,
         localPhotoPath: photo.path,
+        userText: _noteOrNull,
+        answer: _pickedAnswer,
       ));
       return;
     }
@@ -144,6 +179,8 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
       isPhotoPublic: _isPublic,
       photoUrl: publicUrl,
       localPhotoPath: photo.path,
+      userText: _noteOrNull,
+      answer: _pickedAnswer,
     ));
   }
 
@@ -176,10 +213,20 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
   }
 
   void _completeWithoutPhoto() {
-    Navigator.of(context).pop(const QuestVerifyResult(hasPhoto: false));
+    Navigator.of(context).pop(QuestVerifyResult(
+      hasPhoto: false,
+      userText: _noteOrNull,
+      answer: _pickedAnswer,
+    ));
   }
 
   /// 찍기 전에는 안내를, 찍은 뒤에는 실제 사진을 보여준다.
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
   Widget _buildPhotoArea() {
     final photo = _photo;
     if (photo == null) {
@@ -287,44 +334,70 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
                       style: AppType.caption,
                     ),
                     const SizedBox(height: AppSpacing.lg),
-                    Expanded(child: _buildPhotoArea()),
+                    if (_needsAnswer)
+                      Expanded(child: SingleChildScrollView(child: _buildQuiz()))
+                    else
+                      Expanded(child: _buildPhotoArea()),
+                    if (_needsNote) ...[
+                      const SizedBox(height: AppSpacing.lg),
+                      _buildNoteField(),
+                    ],
                     const SizedBox(height: AppSpacing.lg),
-                    _buildPhotoNotice(),
-                    const SizedBox(height: AppSpacing.md),
+                    // 퀴즈형은 사진을 받지 않는다. 안내와 갤러리 버튼을 남겨 두면
+                    // "답도 고르고 사진도 찍어야 하나" 하고 손이 멈춘다.
+                    if (!_needsAnswer) ...[
+                      _buildPhotoNotice(),
+                      const SizedBox(height: AppSpacing.md),
+                    ],
                     Row(
                       children: [
-                        Expanded(
-                          child: SecondaryButton(
-                            label: '갤러리',
-                            onTap: _isPicking || _isUploading
-                                ? null
-                                : () => _pickPhoto(fromGallery: true),
+                        if (!_needsAnswer) ...[
+                          Expanded(
+                            child: SecondaryButton(
+                              label: '갤러리',
+                              onTap: _isPicking || _isUploading
+                                  ? null
+                                  : () => _pickPhoto(fromGallery: true),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
+                          const SizedBox(width: AppSpacing.sm),
+                        ],
                         Expanded(
                           flex: 2,
                           child: PrimaryButton(
                             label: _isUploading
                                 ? '사진 올리는 중…'
+                                : _needsAnswer
+                                    ? '이 답으로 완료'
+                                    : _photo == null
+                                        ? '촬영하기'
+                                        : '이 사진으로 완료',
+                            enabled: !_isPicking &&
+                                !_isUploading &&
+                                (!_needsNote || _noteOrNull != null) &&
+                                (!_needsAnswer || _pickedAnswer != null),
+                            onTap: _needsAnswer
+                                ? _completeWithoutPhoto
                                 : _photo == null
-                                    ? '촬영하기'
-                                    : '이 사진으로 완료',
-                            enabled: !_isPicking && !_isUploading,
-                            onTap: _photo == null
-                                ? () => _pickPhoto(fromGallery: false)
-                                : _completeWithPhoto,
+                                    ? () => _pickPhoto(fromGallery: false)
+                                    : _completeWithPhoto,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: AppSpacing.md),
-                    Center(
-                      child: GestureDetector(
-                        onTap: _isUploading ? null : _completeWithoutPhoto,
-                        child: Text('사진 없이 위치만으로 완료', style: AppType.caption),
+                    // 사진형은 서버가 사진을 요구하므로 이 지름길을 열면
+                    // 눌러 놓고 400을 맞는다. 퀴즈형은 사진 자체가 없다.
+                    if (!_needsAnswer &&
+                        widget.quest.questType != 'PHOTO_SINGLE') ...[
+                      const SizedBox(height: AppSpacing.md),
+                      Center(
+                        child: GestureDetector(
+                          onTap: _isUploading ? null : _completeWithoutPhoto,
+                          child:
+                              Text('사진 없이 위치만으로 완료', style: AppType.caption),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -360,6 +433,74 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 09 퀴즈형 · 10 탐색형의 문제와 선택지.
+  ///
+  /// 정답은 앱에 내려오지 않는다. 고른 값을 그대로 인증 요청에 실어 보내고,
+  /// 맞았는지는 서버가 판정해 `WRONG_ANSWER`로 돌려준다. 앱에서 채점하면
+  /// 응답만 들여다봐도 정답을 알 수 있다.
+  Widget _buildQuiz() {
+    final options = widget.quest.quizOptions;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        NoteBox.text(widget.quest.quizQuestion ?? ''),
+        const SizedBox(height: AppSpacing.lg),
+        for (final option in options) ...[
+          _QuizOption(
+            label: option,
+            isSelected: _pickedAnswer == option,
+            onTap: () => setState(() => _pickedAnswer = option),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+      ],
+    );
+  }
+
+  /// 13 기록형의 한 줄 입력.
+  ///
+  /// 기록형은 "무엇을 느꼈는지 남기는 것"이 인증의 알맹이다. 입력 자리가 없으면
+  /// 걸어가기만 해도 완료되어 유형이 이름뿐이 된다 — 서버도 이 값 없이는 거절한다.
+  Widget _buildNoteField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('한 줄 남기기', style: AppType.h3),
+        const SizedBox(height: AppSpacing.xs),
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: 2,
+          ),
+          decoration: BoxDecoration(
+            gradient: AppSurface.sunken,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            border: Border.all(color: AppColors.ink200),
+          ),
+          child: TextField(
+            controller: _noteController,
+            minLines: 2,
+            maxLines: 3,
+            maxLength: 200,
+            style: AppType.body,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: widget.quest.summary.isEmpty
+                  ? '여기서 느낀 것을 한 줄로'
+                  : '여기서 느낀 것을 한 줄로',
+              hintStyle: AppType.body.copyWith(color: AppColors.textDisabled),
+              border: InputBorder.none,
+              counterText: '',
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -430,6 +571,67 @@ class _QuestVerifyScreenState extends State<QuestVerifyScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+/// 퀴즈 선택지 한 칸.
+///
+/// 라디오 버튼 대신 카드로 만든 이유: 현장에서 한 손으로, 장갑을 끼고도 누를 수
+/// 있어야 한다. 작은 원을 정확히 겨누게 하면 그 자리에서 몇 번씩 헛누른다.
+class _QuizOption extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _QuizOption({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.md,
+        ),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.quest50 : AppColors.ink0,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          border: Border.all(
+            color: isSelected ? AppColors.quest500 : AppColors.ink200,
+            width: isSelected ? 1.6 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              size: 20,
+              color: isSelected ? AppColors.quest500 : AppColors.ink300,
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                label,
+                style: AppType.body.copyWith(
+                  color: isSelected
+                      ? AppColors.quest700
+                      : AppColors.textPrimary,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

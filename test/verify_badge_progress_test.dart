@@ -10,6 +10,7 @@ Map<String, dynamic> _b({
   int threshold = 1,
   bool achieved = false,
   bool justEarned = false,
+  bool advanced = false,
   bool hidden = false,
 }) =>
     {
@@ -20,6 +21,7 @@ Map<String, dynamic> _b({
       'threshold': threshold,
       'achieved': achieved,
       'justEarned': justEarned,
+      'advanced': advanced,
       'hidden': hidden,
     };
 
@@ -34,20 +36,39 @@ void main() {
     expect(picked.ratio, 1.0);
   });
 
-  test('딴 게 없으면 완성에 가장 가까운 진행 중 배지', () {
+  test('딴 게 없으면 이번에 오른 것 중 완성에 가장 가까운 배지', () {
     final picked = VerifyBadgeProgress.pick([
-      _b(id: 2, name: '스무 걸음', progress: 2, threshold: 20),
-      _b(id: 3, name: '경기 순례자', progress: 4, threshold: 5),
+      _b(id: 2, name: '스무 걸음', progress: 2, threshold: 20, advanced: true),
+      _b(id: 3, name: '수수께끼 풀이', progress: 2, threshold: 3, advanced: true),
       _b(id: 4, name: '아직', progress: 0, threshold: 5),
     ]);
-    expect(picked!.name, '경기 순례자');
-    expect(picked.label, '4 / 5 진행 중');
+    expect(picked!.name, '수수께끼 풀이');
+    expect(picked.label, '2 / 3 진행 중');
+  });
+
+  /// 실기기에서 잡은 회귀: 성북구 퀘스트를 끝냈는데 손대지도 않은
+  /// "경기 순례자 3/5"가 보상 화면에 떴다. 진행률만 높으면 골라 버렸기 때문이다.
+  test('이번에 오르지 않은 배지는 진행률이 높아도 고르지 않는다', () {
+    expect(
+      VerifyBadgeProgress.pick([
+        _b(id: 3, name: '경기 순례자', progress: 4, threshold: 5),
+        _b(id: 2, name: '스무 걸음', progress: 6, threshold: 20),
+      ]),
+      isNull,
+    );
   });
 
   test('히든 배지는 딴 순간에만 드러난다', () {
     expect(
       VerifyBadgeProgress.pick([
-        _b(id: 9, name: '새벽을 여는 사람', progress: 1, threshold: 3, hidden: true),
+        _b(
+          id: 9,
+          name: '새벽을 여는 사람',
+          progress: 1,
+          threshold: 3,
+          advanced: true,
+          hidden: true,
+        ),
       ]),
       isNull,
     );

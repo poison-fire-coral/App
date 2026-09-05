@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../data/badge_api.dart';
+import '../data/home_repository.dart';
 import '../data/quest_repository.dart';
 import '../dev/dev_tools.dart'; // DEV-ONLY
 import '../models/active_quest.dart';
@@ -49,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final PageController _carouselController;
   int _carouselIndex = 0;
 
-  // Real-time nearest 3 quests state
+  // 내 위치 기준 추천 3개.
   List<QuestModel> _nearbyQuests = [];
   bool _isLoadingNearby = true;
   double? _userLat;
@@ -63,65 +64,58 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _carouselController = PageController();
-    _loadNearbyQuests();
-    _loadBadges();
+    _loadHome();
   }
 
-  /// 대표 배지를 서버에서 받아 3칸을 채운다.
-  Future<void> _loadBadges() async {
-    try {
-      final result = await BadgeApi.list();
+  /// 홈에 필요한 것을 **한 번에** 받는다 — 체크리스트 20번.
+  ///
+  /// 예전에는 `BadgeApi.list()`와 `fetchNearbyQuests()`를 따로 불렀다. 홈은 앱에서
+  /// 가장 자주 열리는 화면이라 그 왕복 수가 그대로 체감 속도가 된다.
+  ///
+  /// 위치는 서버로 넘겨 **가까운 순**으로 받는다. 권한을 아직 안 줬으면 좌표 없이
+  /// 보내고, 그때는 키워드·홈지역 기준 추천이 온다 — 홈이 비어 보이지 않게 하려는 것이다.
+  Future<void> _loadHome() async {
+    double? lat;
+    double? lng;
 
-      final featured =
-          result.items.where((b) => b.isFeatured).toList(growable: false);
-      final achieved = result.items
-          .where((b) => b.state == BadgeState.achieved && !b.isFeatured)
-          .toList(growable: false);
+    try {
+      final pos = await PermissionService.currentPosition();
+      final override = DevTools.locationOverride;
+      lat = override?.latitude ?? pos?.latitude;
+      lng = override?.longitude ?? pos?.longitude;
+    } catch (_) {
+      // 위치를 못 잡아도 홈은 뜬다. 거리 표기만 흐려질 뿐이다.
+    }
+
+    if (lat != null && lng != null) {
+      // 거리 표기와 검색 정렬이 같은 기준을 보도록 알려 둔다.
+      QuestRepository.updateUserLocation(lat, lng);
+    }
+
+    try {
+      final summary = await HomeRepository.fetchSummary(lat: lat, lng: lng);
 
       if (!mounted) return;
       setState(() {
-        _badges = [...featured, ...achieved].take(3).toList();
+        _userLat = lat;
+        _userLng = lng;
+        _nearbyQuests = summary.recommendedQuests
+            .where((q) => !widget.user.hasCompleted(q.id))
+            .take(3)
+            .toList();
+        _badges = summary.badges;
+        _isLoadingNearby = false;
         _isLoadingBadges = false;
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _isLoadingBadges = false);
-    }
-  }
-
-  /// 백엔드 API를 호출하여 내 위치 기준 가장 가까운 퀘스트 3개를 로드합니다.
-  Future<void> _loadNearbyQuests() async {
-    try {
-      final pos = await PermissionService.currentPosition();
-      final override = DevTools.locationOverride;
-
-      final lat = override?.latitude ??
-          pos?.latitude ??
-          QuestRepository.mockUserLocation.latitude;
-      final lng = override?.longitude ??
-          pos?.longitude ??
-          QuestRepository.mockUserLocation.longitude;
-
-      final quests = await QuestRepository.fetchNearbyQuests(lat: lat, lng: lng);
-
-      if (mounted) {
-        setState(() {
-          _userLat = lat;
-          _userLng = lng;
-          _nearbyQuests = quests
-              .where((q) => !widget.user.hasCompleted(q.id))
-              .take(3)
-              .toList();
-          _isLoadingNearby = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _nearbyQuests = widget.recommendedQuests.take(3).toList();
-          _isLoadingNearby = false;
-        });
-      }
+      setState(() {
+        _userLat = lat;
+        _userLng = lng;
+        _nearbyQuests = widget.recommendedQuests.take(3).toList();
+        _isLoadingNearby = false;
+        _isLoadingBadges = false;
+      });
     }
   }
 
@@ -182,12 +176,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: RefreshIndicator(
                 color: AppColors.quest500,
-                onRefresh: () async {
-                  await Future.wait([
-                    _loadNearbyQuests(),
-                    _loadBadges(),
-                  ]);
-                },
+                onRefresh: _loadHome,
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(
@@ -208,8 +197,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         title: '내 주변 추천 퀘스트',
                         trailingText: '새로고침',
                         onTapTrailing: () {
-                          setState(() => _isLoadingNearby = true);
-                          _loadNearbyQuests();
+                          setState(() {
+                            _isLoadingNearby = true;
+                            _isLoadingBadges = true;
+                          });
+                          _loadHome();
                         },
                       ),
                       const SizedBox(height: AppSpacing.md),
@@ -497,7 +489,6 @@ class _HomeScreenState extends State<HomeScreen> {
             TierBadge(
               stars: quest.difficulty.stars,
               hasHalfStar: quest.hasHalfStar,
-              showLabel: false,
             ),
             const SizedBox(width: AppSpacing.md),
             Expanded(
@@ -515,6 +506,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     '${quest.spotName} · $distanceStr',
                     style: AppType.caption,
                   ),
+                  const SizedBox(height: 5),
+                  // 난이도(별)만 보이던 줄에 "무엇을 하는 퀘스트인지"를 더한다.
+                  QuestTypeBadge(questType: quest.questType),
                 ],
               ),
             ),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
@@ -9,6 +10,7 @@ import '../models/active_quest.dart';
 import '../models/api_exception.dart';
 import '../models/quest_completion.dart';
 import '../models/quest_model.dart';
+import '../services/compass_service.dart';
 import '../services/geo.dart';
 import '../services/location_service.dart';
 import '../services/verify_queue.dart';
@@ -79,6 +81,18 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
 
   bool _isSettling = false;
 
+  /// 현위치 점이 어디를 보고 있는지 — 지도 화면(3a)의 부채꼴과 같은 값이다.
+  ///
+  /// GPS의 `heading`은 **걷고 있을 때만** 나온다. 목표를 앞에 두고 제자리에서
+  /// 두리번거릴 때가 정작 방향이 필요한 순간이라 자기계를 쓴다.
+  final CompassService _compass = CompassService();
+  StreamSubscription<double>? _headingSub;
+
+  /// 화면에 적용할 누적 회전각(도). 359°→1°에서 한 바퀴 되감기지 않도록
+  /// 최단 차이만 더해 계속 키운다.
+  double _coneAngle = 0;
+  double? _coneAngleSource;
+
   @override
   void initState() {
     super.initState();
@@ -86,11 +100,24 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     _location = widget.locationService ??
         SimulatedLocationService(origin: _startingPoint());
     _startTracking();
+
+    _headingSub = _compass.headingStream.listen((degrees) {
+      if (!mounted) return;
+      setState(() {
+        final previous = _coneAngleSource;
+        _coneAngle += previous == null
+            ? degrees
+            : ((degrees - previous + 540) % 360) - 180;
+        _coneAngleSource = degrees;
+      });
+    });
   }
 
   @override
   void dispose() {
     _subscription?.cancel();
+    _headingSub?.cancel();
+    _compass.dispose();
     _location.dispose();
     super.dispose();
   }
@@ -252,6 +279,10 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
           isMocked: sample.isMocked,
           photoUrl: verifyResult.photoUrl,
           photoVisibility: verifyResult.isPhotoPublic ? 'PUBLIC' : 'PRIVATE',
+          // 13 기록형이 남긴 한 줄. 다른 유형에서는 null이다.
+          userText: verifyResult.userText,
+          // 09 퀴즈형·10 탐색형이 고른 답. 채점은 서버가 한다.
+          answer: verifyResult.answer,
         );
       } on ApiException catch (e) {
         // 체크리스트 29번 — 연결이 없어서 못 보낸 것은 **실패가 아니라 지연**이다.
@@ -278,6 +309,10 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
           isMocked: sample.isMocked,
           photoUrl: verifyResult.photoUrl,
           photoVisibility: verifyResult.isPhotoPublic ? 'PUBLIC' : 'PRIVATE',
+          // 큐에 넣을 때도 한 줄과 답을 함께 보관한다. 빠뜨리면 신호가 돌아온 뒤
+          // 재전송이 서버에서 NOTE_REQUIRED·ANSWER_REQUIRED로 튕긴다.
+          userText: verifyResult.userText,
+          answer: verifyResult.answer,
           queuedAt: DateTime.now(),
         ));
 
@@ -441,6 +476,18 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
               top: center.dy - 20,
               child: const QuestMarker(isActive: true),
             ),
+            // 방향 부채꼴 — 점보다 **아래**에 깔아야 점을 가리지 않는다.
+            // 지도 화면(3a)과 같은 모양·같은 각도를 쓴다.
+            Positioned(
+              left: position.dx - 32,
+              top: position.dy - 32,
+              child: IgnorePointer(
+                child: Transform.rotate(
+                  angle: _coneAngle * math.pi / 180,
+                  child: const _HeadingCone(),
+                ),
+              ),
+            ),
             Positioned(
               left: position.dx - 9,
               top: position.dy - 9,
@@ -556,4 +603,45 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     return '${Geo.formatDistance(distance)} 남았어요. '
         '${spot.name}까지 이동해 주세요.';
   }
+}
+
+/// 현위치 점이 보는 방향을 가리키는 부채꼴.
+///
+/// 지도 화면(3a)은 카카오 오버레이라 HTML로 같은 모양을 그린다
+/// (`map_screen.dart`의 `_headingConeHtml`). 두 화면의 삼각형이 다르면
+/// 같은 뜻으로 읽히지 않으므로 크기와 색을 맞춰 두었다 —
+/// 64×64 상자, 밑변 22, 높이 18, 브랜드색 55% 불투명.
+class _HeadingCone extends StatelessWidget {
+  const _HeadingCone();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 64,
+      height: 64,
+      child: CustomPaint(painter: _HeadingConePainter()),
+    );
+  }
+}
+
+class _HeadingConePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+
+    // 위쪽(=0°, 북)을 향하는 삼각형. 회전은 부모 Transform이 맡는다.
+    final path = Path()
+      ..moveTo(cx, 0)
+      ..lineTo(cx - 11, 18)
+      ..lineTo(cx + 11, 18)
+      ..close();
+
+    canvas.drawPath(
+      path,
+      Paint()..color = AppColors.quest500.withValues(alpha: 0.55),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HeadingConePainter oldDelegate) => false;
 }
