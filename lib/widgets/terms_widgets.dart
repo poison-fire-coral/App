@@ -1,15 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../data/terms.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
 import 'app_widgets.dart';
 
+/// 문서를 브라우저에서 연다. 열지 못했으면 false.
+///
+/// 인앱 웹뷰가 아니라 바깥 브라우저를 쓴다 — 약관은 주소가 보여야 하는 문서다.
+/// 어디서 온 글인지 확인할 수 없으면 읽는 의미가 절반은 사라진다.
+Future<bool> _openDocument(TermsDocument doc) async {
+  final url = doc.url;
+  if (url == null || url.isEmpty) return false;
+  try {
+    return await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
 /// 약관 문서 한 편을 띄운다.
 ///
-/// 가입(1c)과 설정(5d)이 같은 것을 부른다. 지금은 문서가 없어서 요약과
-/// "준비 중" 안내만 나오지만, [TermsDocument.url]이 채워지면 이 함수 하나만
-/// 고치면 두 화면이 함께 진짜 문서를 보게 된다.
+/// 가입(1c)과 설정(5d)이 같은 것을 부른다. 요약을 보여 주고, 전문은 브라우저로
+/// 넘긴다 — 본문은 서버가 들고 있어서(`legal.router.ts`) 앱을 새로 배포하지
+/// 않고도 고칠 수 있다.
 Future<void> showTermsDocument(BuildContext context, TermsDocument doc) {
   return showModalBottomSheet<void>(
     context: context,
@@ -34,18 +52,33 @@ Future<void> showTermsDocument(BuildContext context, TermsDocument doc) {
             const SizedBox(height: AppSpacing.sm),
             Text(doc.summary, style: AppType.bodyMuted),
             const SizedBox(height: AppSpacing.lg),
-            NoteBox(
-              child: Text(
-                doc.hasDocument
-                    // url이 있는데도 여기까지 왔다면 브라우저를 못 연 것이다.
-                    // 주소를 글자로라도 보여줘야 사용자가 옮겨 적을 수 있다.
-                    ? '전문은 아래 주소에서 볼 수 있어요.\n${doc.url}'
-                    : '전문은 아직 준비 중이에요. 정식 출시 전까지 이 화면에서 볼 수 있게 됩니다.',
-                style: AppType.bodyMuted,
+            if (!doc.hasDocument) ...[
+              NoteBox(
+                child: Text(
+                  '전문은 아직 준비 중이에요. 정식 출시 전까지 이 화면에서 볼 수 있게 됩니다.',
+                  style: AppType.bodyMuted,
+                ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            PrimaryButton(
+              const SizedBox(height: AppSpacing.lg),
+            ] else ...[
+              PrimaryButton(
+                label: '전문 보기',
+                onTap: () async {
+                  final opened = await _openDocument(doc);
+                  if (!sheetContext.mounted) return;
+                  if (!opened) {
+                    // 브라우저를 못 열었으면 주소라도 보여준다 — 옮겨 적을 수 있다.
+                    ScaffoldMessenger.of(sheetContext).showSnackBar(
+                      SnackBar(content: Text('브라우저를 열지 못했어요. ${doc.url}')),
+                    );
+                    return;
+                  }
+                  Navigator.of(sheetContext).pop();
+                },
+              ),
+              const SizedBox(height: AppSpacing.sm),
+            ],
+            SecondaryButton(
               label: '닫기',
               onTap: () => Navigator.of(sheetContext).pop(),
             ),
