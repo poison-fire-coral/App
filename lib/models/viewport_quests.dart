@@ -47,12 +47,13 @@ class ViewportQuests {
   /// `isClustered == true`일 때만 채워진다.
   final List<QuestCluster> clusters;
 
-  /// 서버가 준 개수가 [renderLimit]을 넘어 [quests]를 잘랐는지.
+  /// 보이는 것이 이 범위의 **전부가 아니다**라는 표시.
   ///
-  /// 서버 `findMany`에 아직 `take` 상한이 없다(체크리스트 08번 BE 몫).
-  /// 그래서 범위가 넓으면 수천 건이 그대로 내려올 수 있고, 그 수만큼
-  /// WebView에 마커를 꽂으면 지도가 멈춘다. 내려받는 건 못 막지만
-  /// 그리는 건 막을 수 있다.
+  /// 서버가 상한을 갖게 되면서(08·12번) 이 값의 출처가 둘로 늘었다.
+  ///  - 서버가 잘람: `totalQuests`가 받은 개수보다 크다. 전국 검색은 100건에서
+  ///    자르고 진짜 개수를 따로 세어 준다.
+  ///  - 앱이 잘람: [renderLimit]을 넘긴 경우. 뜻밖의 응답에도 지도가 멈추지 않게
+  ///    남겨 둔 이중 안전장치다 — 보통은 서버 상한에 먼저 걸려 무용지물이 된다.
   final bool isTruncated;
 
   const ViewportQuests({
@@ -72,9 +73,9 @@ class ViewportQuests {
 
   /// 한 화면에 꽂을 마커 상한.
   ///
-  /// 200은 서버가 08번에서 넣기로 한 `take`와 같은 수다. 서버가 상한을 갖게
-  /// 되면 이 자르기는 저절로 아무 일도 하지 않게 된다 — 그때 지워도 되고,
-  /// 이중 안전장치로 남겨 둬도 된다.
+  /// 서버의 `VIEWPORT_MAX_MARKERS`와 같은 수다. 서버가 이제 이 수를 넘기면 마커
+  /// 대신 클러스터를 돌려주므로 여기서 잘릴 일은 거의 없다. 둘을 따로 움직이면
+  /// 어긋나기 쉬우니 바꿀 때는 같이 바꾼다.
   static const int renderLimit = 200;
 
   factory ViewportQuests.fromJson(Map<String, dynamic> json) {
@@ -100,13 +101,15 @@ class ViewportQuests {
           QuestModel.fromJson(Map<String, dynamic>.from(entry as Map)),
     ];
 
+    final resolvedTotal = total == 0 ? parsed.length : total;
+
     return ViewportQuests(
       isClustered: false,
-      totalQuests: total == 0 ? parsed.length : total,
+      totalQuests: resolvedTotal,
       quests: parsed.length > renderLimit
           ? parsed.sublist(0, renderLimit)
           : parsed,
-      isTruncated: parsed.length > renderLimit,
+      isTruncated: parsed.length > renderLimit || resolvedTotal > parsed.length,
     );
   }
 }

@@ -220,7 +220,10 @@ class QuestRepository {
         if (keywords != null && keywords.isNotEmpty) 'keywords': keywords,
         if (trimmed != null && trimmed.isNotEmpty) 'search': trimmed,
       },
-      auth: false,
+      // 서버가 `optionalAuth`라 토큰이 **있으면** 각 퀘스트에 `isCompleted`를
+      // 붙여 준다(22번). `auth: false`로 두면 로그인해 놓고도 완료 표식을
+      // 영영 못 받는다 — 토큰이 없으면 그대로 비로그인으로 처리되므로
+      // 지도가 안 뜨는 일은 없다.
     );
 
     if (data is! Map) return const ViewportQuests.empty();
@@ -232,8 +235,9 @@ class QuestRepository {
   /// 검색은 지도 밖도 찾아야 의미가 있다. 좌표 없이 `search`만 보내면
   /// 서버가 `where`에서 place 범위 조건을 빼고 전체에서 찾는다.
   ///
-  /// **서버에 결과 상한이 없다**(체크리스트 08·12번 BE 몫). 한 글자만 넣어도
-  /// 전국이 통째로 올 수 있어서, 받은 뒤 내 위치에서 가까운 순으로 잘라 쓴다.
+  /// 서버가 100건에서 자르고(`SEARCH_MAX_RESULTS`), 내 위치를 함께 보내면
+  /// 거리순으로 정렬해서 준다 — 체크리스트 12번. 받은 뒤 한 번 더 정렬하는 건
+  /// 위치를 모르는 첫 진입(기본값이 목업 좌표일 때)을 위한 안전망이다.
   static Future<List<QuestModel>> searchQuests(
     String query, {
     int limit = 30,
@@ -243,8 +247,17 @@ class QuestRepository {
 
     final data = await ApiClient.get(
       '/quests',
-      query: {'search': trimmed, 'zoom': 15},
-      auth: false,
+      query: {
+        'search': trimmed,
+        'zoom': 15,
+        // 상한을 자를 때 서버가 거리순으로 세우도록 기준점을 준다.
+        'originLat': currentUserLocation.latitude,
+        'originLng': currentUserLocation.longitude,
+      },
+      // 서버가 `optionalAuth`라 토큰이 **있으면** 각 퀘스트에 `isCompleted`를
+      // 붙여 준다(22번). `auth: false`로 두면 로그인해 놓고도 완료 표식을
+      // 영영 못 받는다 — 토큰이 없으면 그대로 비로그인으로 처리되므로
+      // 지도가 안 뜨는 일은 없다.
     );
 
     if (data is! Map) return const [];
@@ -279,7 +292,10 @@ class QuestRepository {
         if (keywords != null && keywords.isNotEmpty && !keywords.contains('전체'))
           'keywords': keywords,
       },
-      auth: false,
+      // 서버가 `optionalAuth`라 토큰이 **있으면** 각 퀘스트에 `isCompleted`를
+      // 붙여 준다(22번). `auth: false`로 두면 로그인해 놓고도 완료 표식을
+      // 영영 못 받는다 — 토큰이 없으면 그대로 비로그인으로 처리되므로
+      // 지도가 안 뜨는 일은 없다.
     );
 
     if (data is! List) return const [];
@@ -374,6 +390,7 @@ class QuestRepository {
     String? photoVisibility,
     String? userText,
     String? emotionTag,
+    String? answer,
   }) async {
     final data = await ApiClient.post('/quests/$questId/verify', body: {
       'requestId': requestId,
@@ -391,6 +408,8 @@ class QuestRepository {
       'photoVisibility': ?photoVisibility,
       'userText': ?userText,
       'emotionTag': ?emotionTag,
+      // 09 퀴즈형·10 탐색형이 고른 답. 정답 비교는 서버에서만 한다.
+      'answer': ?answer,
     });
     return Map<String, dynamic>.from(data as Map);
   }

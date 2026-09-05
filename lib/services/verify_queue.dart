@@ -26,6 +26,9 @@ class PendingVerification {
   final String? userText;
   final String? emotionTag;
 
+  /// 09 퀴즈형·10 탐색형이 고른 답.
+  final String? answer;
+
   /// 인증을 **시도한** 시각. 보낸 시각이 아니다.
   ///
   /// 오래 묵은 것을 버리는 기준이다.
@@ -43,6 +46,7 @@ class PendingVerification {
     this.photoVisibility,
     this.userText,
     this.emotionTag,
+    this.answer,
   });
 
   Map<String, dynamic> toJson() => {
@@ -56,6 +60,7 @@ class PendingVerification {
         'photoVisibility': photoVisibility,
         'userText': userText,
         'emotionTag': emotionTag,
+        'answer': answer,
         'queuedAt': queuedAt.toIso8601String(),
       };
 
@@ -81,6 +86,7 @@ class PendingVerification {
       photoVisibility: json['photoVisibility'] as String?,
       userText: json['userText'] as String?,
       emotionTag: json['emotionTag'] as String?,
+      answer: json['answer'] as String?,
       queuedAt: DateTime.tryParse('${json['queuedAt']}') ?? DateTime.now(),
     );
   }
@@ -235,6 +241,7 @@ class VerifyQueue {
             photoVisibility: item.photoVisibility,
             userText: item.userText,
             emotionTag: item.emotionTag,
+            answer: item.answer,
           );
           delivered++;
         } on ApiException catch (e) {

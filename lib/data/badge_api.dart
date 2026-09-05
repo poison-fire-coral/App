@@ -297,6 +297,10 @@ class VerifyBadgeProgress {
   final int threshold;
   final bool achieved;
   final bool justEarned;
+
+  /// 이번 인증으로 진행도가 **실제로 올랐는지**. 서버가 계산해 준다.
+  final bool advanced;
+
   final bool hidden;
 
   const VerifyBadgeProgress({
@@ -307,6 +311,7 @@ class VerifyBadgeProgress {
     required this.threshold,
     required this.achieved,
     required this.justEarned,
+    required this.advanced,
     required this.hidden,
   });
 
@@ -319,6 +324,7 @@ class VerifyBadgeProgress {
         threshold: (json['threshold'] as num?)?.toInt() ?? 1,
         achieved: json['achieved'] == true,
         justEarned: json['justEarned'] == true,
+        advanced: json['advanced'] == true,
         hidden: json['hidden'] == true,
       );
 
@@ -330,7 +336,13 @@ class VerifyBadgeProgress {
 
   /// 보상 화면에 **한 개만** 띄운다. 13개를 다 나열하면 축하가 아니라 목록이다.
   ///
-  /// 우선순위: 방금 딴 것 → 이번에 진행된 것 중 완성에 가장 가까운 것.
+  /// 우선순위: 방금 딴 것 → **이번에 진행된 것** 중 완성에 가장 가까운 것.
+  ///
+  /// **이번에 오르지 않은 배지는 절대 고르지 않는다.** 예전에는 "진행률이 가장
+  /// 높은 미획득 배지"를 골라서, 성북구에서 퀘스트를 끝냈는데 손대지도 않은
+  /// "경기 순례자 3/5"가 떴다. 기여하지 않은 배지를 축하 화면에 올리면
+  /// 사용자가 규칙을 잘못 배운다. 오른 게 없으면 아무것도 띄우지 않는다.
+  ///
   /// 히든 배지는 딴 순간에만 드러낸다. 진행 중일 때 이름을 보이면 히든이 아니다.
   static VerifyBadgeProgress? pick(dynamic raw) {
     if (raw is! List) return null;
@@ -346,7 +358,7 @@ class VerifyBadgeProgress {
     }
 
     final ongoing = all
-        .where((b) => !b.hidden && !b.achieved && b.progress > 0)
+        .where((b) => b.advanced && !b.hidden && !b.achieved && b.progress > 0)
         .toList();
     if (ongoing.isEmpty) return null;
     ongoing.sort((a, b) => b.ratio.compareTo(a.ratio));

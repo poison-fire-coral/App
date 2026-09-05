@@ -74,6 +74,15 @@ class QuestModel {
   /// 되고, 재방문(x0.3, 16번)으로 가는 길도 막힌다. 흐리게 그릴 뿐이다.
   final bool isCompleted;
 
+  /// 09 퀴즈형 · 10 탐색형의 문제. 다른 유형에서는 null이다.
+  ///
+  /// **정답은 여기 없다.** 서버가 `quizAnswer`를 지우고 내려보내므로
+  /// (`QuestService.toClientQuest`) 채점은 인증 요청으로만 이뤄진다.
+  final String? quizQuestion;
+
+  /// 3택 선택지. 비어 있으면 문제를 그릴 수 없다.
+  final List<String> quizOptions;
+
   QuestModel({
     required this.id,
     required this.title,
@@ -92,6 +101,8 @@ class QuestModel {
     this.crowdMultiplier = 1.0,
     this.spots = const [],
     this.isCompleted = false,
+    this.quizQuestion,
+    this.quizOptions = const [],
     bool? requiresPhoto,
   }) : requiresPhoto = requiresPhoto ?? difficulty != QuestDifficulty.star1;
 
@@ -147,6 +158,8 @@ class QuestModel {
         'requiresPhoto': requiresPhoto,
         'crowdMultiplier': crowdMultiplier,
         'isCompleted': isCompleted,
+        'quizQuestion': quizQuestion,
+        'quizOptions': quizOptions,
         'spots': [
           for (final spot in spots)
             {
@@ -220,6 +233,13 @@ class QuestModel {
       keywords: List<String>.from(json['keywords'] ?? []),
       crowdMultiplier: crowdMult,
       isCompleted: json['isCompleted'] == true,
+      quizQuestion: (json['quizQuestion'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : json['quizQuestion'] as String?,
+      quizOptions: [
+        if (json['quizOptions'] is List)
+          for (final o in (json['quizOptions'] as List)) '$o',
+      ],
       requiresPhoto: json['requiresPhoto'] as bool?,
       spots: [
         if (json['spots'] is List)
