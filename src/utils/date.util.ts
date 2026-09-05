@@ -52,3 +52,35 @@ export function calculateStreak(
   // 2일 이상 단절: 1로 리셋
   return 1;
 }
+/**
+ * KST 기준으로 지금이 시간대 창 안인지 — 05 시간대 제한형 검증.
+ *
+ * 값은 시드가 쓰는 두 형식을 받는다:
+ *   "04:00"        절대 시각
+ *   "SUNSET-40"    일몰 기준 상대 (아직 일몰 계산이 없어 **판정을 건너뛴다**)
+ *
+ * 상대 표기를 만나면 `true`를 돌려준다. 계산하지 못하는 조건 때문에 인증을
+ * 막으면, 유저는 이유를 알 수 없는 채로 문 앞에서 되돌아가게 된다.
+ * 일몰 계산이 들어오면 여기만 고치면 된다.
+ */
+export function isWithinTimeWindowKST(
+  start: string,
+  end: string,
+  now: Date = new Date()
+): boolean {
+  const toMinutes = (v: string): number | null => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(v.trim());
+    if (!m) return null;
+    return Number(m[1]) * 60 + Number(m[2]);
+  };
+
+  const s = toMinutes(start);
+  const e = toMinutes(end);
+  if (s === null || e === null) return true;
+
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const cur = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+
+  // 자정을 넘는 창(예: 22:00~02:00)도 다룬다.
+  return s <= e ? cur >= s && cur <= e : cur >= s || cur <= e;
+}
