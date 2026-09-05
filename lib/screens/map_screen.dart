@@ -104,6 +104,12 @@ class _MapScreenState extends State<MapScreen> {
   /// 기다리는 사람이 멈췄다고 느끼지 않을 만큼만 늘린다.
   static const Duration _cameraIdleDebounceSaver = Duration(milliseconds: 1200);
 
+  /// 마지막 조회가 연결 문제로 실패했는지.
+  ///
+  /// 예전에는 debugPrint만 찍고 끝나서, 지도가 텅 빈 채로 아무 말이 없었다.
+  /// 사용자는 "이 동네에 퀘스트가 없다"와 "못 불러왔다"를 구분할 수 없었다.
+  bool _loadFailed = false;
+
   /// 마지막으로 성공한 조회의 파라미터. 같은 값이면 다시 묻지 않는다.
   ///
   /// 지도를 처음 열면 두 경로가 거의 동시에 같은 범위를 물었다 —
@@ -577,6 +583,7 @@ class _MapScreenState extends State<MapScreen> {
         _clusters = result.clusters;
         _totalInViewport = result.totalQuests;
         _isTruncated = result.isTruncated;
+        _loadFailed = false;
       });
 
       // 화면에서 사라진 퀘스트를 고른 채로 두면 시트만 떠 있고 핀이 없다.
@@ -593,6 +600,8 @@ class _MapScreenState extends State<MapScreen> {
       // 않는다. 키를 풀어 다음 기회에 다시 묻게 한다.
       _lastViewportKey = null;
       debugPrint('뷰포트 조회 실패: ${e.code}');
+      // 연결 문제만 알린다. 서버가 판단해서 거절한 것은 지도에 띄울 말이 아니다.
+      if (mounted && e.isNetwork) setState(() => _loadFailed = true);
     } catch (e) {
       // getBounds()는 WebView가 아직 준비되지 않았으면 파싱에서 터진다.
       // 여기서는 키를 풀지 않는다 — 조회 자체는 성공했는데 마커를 그리다
@@ -1110,6 +1119,7 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ),
                       if (_shouldShowEmptyNote) _buildEmptyResultNote(),
+                      if (_shouldShowLoadError) _buildLoadErrorNote(),
                       if (_isTruncated) _buildTruncatedNote(),
 
                       _buildMyLocationButton(),
@@ -1358,9 +1368,15 @@ class _MapScreenState extends State<MapScreen> {
   /// 검색 결과 목록이 펼쳐져 있을 때도 지도 위 안내는 방해만 된다.
   bool get _shouldShowEmptyNote =>
       !_isLoadingQuests &&
+      !_loadFailed &&
       _quests.isEmpty &&
       _clusters.isEmpty &&
       _searchResults.isEmpty;
+
+  /// 못 불러온 것을 "여기엔 없다"로 말하지 않는다. 둘은 완전히 다른 상황이고,
+  /// 사용자가 할 수 있는 일도 다르다 — 하나는 지도를 옮기는 것, 하나는 기다리는 것.
+  bool get _shouldShowLoadError =>
+      !_isLoadingQuests && _loadFailed && _quests.isEmpty && _clusters.isEmpty;
 
   Widget _buildEmptyResultNote() {
     final hasFilter =
@@ -1376,6 +1392,47 @@ class _MapScreenState extends State<MapScreen> {
         child: Text(
           hasFilter ? '조건에 맞는 퀘스트가 없어요' : '이 범위에는 퀘스트가 없어요 · 지도를 옮겨 보세요',
           style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+      ),
+    );
+  }
+
+  /// 연결이 안 돼 퀘스트를 못 받아 왔을 때. 눌러서 다시 시도할 수 있다.
+  Widget _buildLoadErrorNote() {
+    return Positioned(
+      left: 24,
+      right: 24,
+      top: 84,
+      child: GestureDetector(
+        onTap: () {
+          setState(() => _loadFailed = false);
+          _refreshViewport(force: true);
+        },
+        child: NoteBox(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_rounded,
+                  size: 14, color: AppColors.textSecondary),
+              const SizedBox(width: 6),
+              const Text(
+                '퀘스트를 불러오지 못했어요 · ',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              Text(
+                '다시 시도',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.quest500,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                  decorationColor: AppColors.quest500,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

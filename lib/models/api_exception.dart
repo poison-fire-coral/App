@@ -11,11 +11,19 @@ class ApiException implements Exception {
   final Map<String, dynamic>? details;
   final int statusCode;
 
+  /// 원인 예외의 문자열. **로그에만 쓴다.**
+  ///
+  /// 예전에는 이 값을 [message]에 붙여 화면에 그대로 띄웠다. 그래서 사용자가
+  /// `SocketException: Failed host lookup: 'xxx.ngrok-free.dev'` 같은 문구와
+  /// 우리 내부 호스트 이름을 보게 됐다. 무슨 뜻인지도 모르고, 알 필요도 없다.
+  final String? debugCause;
+
   const ApiException({
     required this.code,
     required this.message,
     this.details,
     this.statusCode = 0,
+    this.debugCause,
   });
 
   // ---------------------------------------------------------------------------
@@ -52,5 +60,8 @@ class ApiException implements Exception {
   String get displayMessage => message.isEmpty ? '알 수 없는 오류가 발생했어요.' : message;
 
   @override
-  String toString() => 'ApiException($code, $statusCode): $message';
+  String toString() {
+    final cause = debugCause == null ? '' : ' <- $debugCause';
+    return 'ApiException($code, $statusCode): $message$cause';
+  }
 }
