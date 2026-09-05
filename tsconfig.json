@@ -12,8 +12,7 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true
+    "strict": true
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "prisma/seed.ts"]

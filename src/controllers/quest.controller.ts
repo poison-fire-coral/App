@@ -242,6 +242,7 @@ export class QuestController {
     try {
       const userId = req.user?.id;
       const questId = Number(req.params.id);
+      // 확장자는 화이트리스트로 정규화한다 (upload.service).
       const ext = (req.body.ext || req.query.ext || "jpg") as string;
 
       if (!userId) {

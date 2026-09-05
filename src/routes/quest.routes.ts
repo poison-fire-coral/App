@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { QuestController } from "../controllers/quest.controller";
-import { authenticateToken, optionalAuth } from "../middlewares/auth.middleware";
+import { authenticateToken, optionalAuth, requireAdmin } from "../middlewares/auth.middleware";
 
 const router = Router();
 
@@ -20,7 +20,8 @@ router.get("/recommended", authenticateToken, QuestController.getRecommendedQues
 router.get("/my", authenticateToken, QuestController.getMyQuests);
 
 // 4-1. 어뷰징 탐지 로그 조회 (32번 - JWT 인증 필요, /:id 보다 상단 배치)
-router.get("/abuse-logs", authenticateToken, QuestController.getAbuseLogs);
+// 32번 조회 경로. 응답에 남의 닉네임과 제공자 회원번호가 들어가므로 운영자만 본다.
+router.get("/abuse-logs", authenticateToken, requireAdmin, QuestController.getAbuseLogs);
 
 // 5. 퀘스트 단건 상세 조회
 router.get("/:id", QuestController.getQuestById);

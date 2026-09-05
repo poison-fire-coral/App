@@ -1,23 +1,25 @@
 {
   "name": "local_quest",
   "version": "1.0.0",
-  "description": "A new Flutter project.",
-  "main": "index.js",
+  "description": "로컬 퀘스트 API 서버 (Express + Prisma)",
+  "main": "dist/index.js",
   "directories": {
     "lib": "lib",
     "test": "test"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "typecheck": "tsc",
+    "typecheck": "tsc --noEmit",
     "build": "prisma generate && tsc",
     "dev": "node scripts/free-port.js 5001 && tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "start:dev": "tsx src/index.ts",
+    "postinstall": "prisma generate"
   },
   "repository": {
     "type": "git",
@@ -40,7 +42,9 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
     "firebase-admin": "^14.3.0",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^4.6.0",
     "pg": "^8.23.0"
@@ -63,5 +67,8 @@
     "@prisma/engines@7.9.1": true,
     "esbuild@0.28.2": true,
     "prisma@7.9.1": true
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
