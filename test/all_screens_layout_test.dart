@@ -38,8 +38,22 @@ void main() {
     '보통 폰 (412×915)': Size(412, 915),
   };
 
-  Future<void> pumpScreen(WidgetTester tester, Widget screen) async {
-    await tester.pumpWidget(MaterialApp(theme: AppTheme.light, home: screen));
+  /// 글자 크기를 키운 기기. 시스템 설정에서 올리는 사람이 적지 않고,
+  /// 그때 처음 넘치는 화면이 많다 — 기본 배율로만 보면 끝까지 모른다.
+  const largeTextScale = 1.3;
+
+  Future<void> pumpScreen(
+    WidgetTester tester,
+    Widget screen, {
+    double textScale = 1.0,
+  }) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.light,
+      home: MediaQuery(
+        data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+        child: screen,
+      ),
+    ));
     // 첫 프레임 뒤의 비동기 로드(위치·서버)가 setState를 부를 수 있다.
     await tester.pump(const Duration(milliseconds: 600));
     expect(tester.takeException(), isNull);
@@ -55,6 +69,15 @@ void main() {
         await pumpScreen(tester, build());
       });
     }
+
+    // 큰 글자는 가장 좁은 화면과 겹칠 때 터진다. 그 조합만 따로 본다.
+    testWidgets('$name — 작은 폰 · 글자 크게(×$largeTextScale)', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpScreen(tester, build(), textScale: largeTextScale);
+    });
   }
 
   // ---------------------------------------------------------------------------

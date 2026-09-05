@@ -83,18 +83,25 @@ class TermsConsentRow extends StatelessWidget {
                 children: [
                   _CheckMark(checked: value),
                   const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    doc.isRequired ? '[필수] ' : '[선택] ',
-                    style: AppType.caption.copyWith(
-                      color: doc.isRequired
-                          ? AppColors.quest500
-                          : AppColors.textTertiary,
-                    ),
-                  ),
+                  // [필수]와 제목을 한 덩어리로 그린다.
+                  //
+                  // 예전에는 둘이 형제 위젯이라 [필수] 쪽이 줄어들 줄 몰랐고,
+                  // 글자 크기를 키운 기기에서 폭을 1px 넘겼다. 한 문장으로 두면
+                  // 넘칠 때 뒤에서부터 잘려 "[필수] 위치기반서비스…"로 읽힌다.
                   Flexible(
-                    child: Text(
-                      doc.title,
-                      style: AppType.body,
+                    child: Text.rich(
+                      TextSpan(children: [
+                        TextSpan(
+                          text: doc.isRequired ? '[필수] ' : '[선택] ',
+                          style: AppType.caption.copyWith(
+                            color: doc.isRequired
+                                ? AppColors.quest500
+                                : AppColors.textTertiary,
+                          ),
+                        ),
+                        TextSpan(text: doc.title, style: AppType.body),
+                      ]),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -143,9 +150,13 @@ class TermsAgreeAllRow extends StatelessWidget {
           children: [
             _CheckMark(checked: value, size: 24),
             const SizedBox(width: AppSpacing.md),
-            Text(
-              '아래 내용에 모두 동의합니다',
-              style: AppType.body.copyWith(fontWeight: FontWeight.w600),
+            Flexible(
+              child: Text(
+                '아래 내용에 모두 동의합니다',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppType.body.copyWith(fontWeight: FontWeight.w600),
+              ),
             ),
           ],
         ),

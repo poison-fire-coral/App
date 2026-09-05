@@ -20,8 +20,18 @@ import 'package:local_quest/theme/app_theme.dart';
 /// `flutter analyze`도 통과하고 빌드도 성공했지만 실기기에서 아무것도 안 보였다.
 /// 컴파일이 되는 것과 그려지는 것은 다르다.
 void main() {
-  Future<void> pumpScreen(WidgetTester tester, Widget screen) async {
-    await tester.pumpWidget(MaterialApp(theme: AppTheme.light, home: screen));
+  Future<void> pumpScreen(
+    WidgetTester tester,
+    Widget screen, {
+    double textScale = 1.0,
+  }) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.light,
+      home: MediaQuery(
+        data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+        child: screen,
+      ),
+    ));
     await tester.pump(const Duration(milliseconds: 500));
 
     // 레이아웃 실패는 예외로 드러난다. 조용히 넘어가면 빈 화면이 배포된다.
@@ -45,6 +55,15 @@ void main() {
         await pumpScreen(tester, build());
       });
     }
+
+    // 시스템에서 글자를 키운 기기. 그때 처음 넘치는 화면이 많다.
+    testWidgets('$name — 작은 폰 · 글자 크게(×1.3)', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpScreen(tester, build(), textScale: 1.3);
+    });
   }
 
   forEachSize('스플래시', () => const SplashScreen(progress: 0.5));
@@ -136,7 +155,8 @@ void main() {
 
       // 필수 2종을 누르면 프로필 단계로 넘어간다. 선택(마케팅)은 건드리지 않는다.
       for (final doc in kConsentDocuments.where((d) => d.isRequired)) {
-        await tester.tap(find.text(doc.title));
+        // 제목은 '[필수] …'와 한 덩어리(Text.rich)라 부분 일치로 찾는다.
+        await tester.tap(find.textContaining(doc.title).first);
         await tester.pumpAndSettle();
       }
       await tester.tap(find.text('동의하고 계속하기'));
