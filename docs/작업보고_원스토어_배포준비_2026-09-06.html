@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>작업 보고 · 원스토어 배포 준비 · 2026-09-06</title>
-<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --ground:#F5F0E6; --surface:#FDFBF6; --sunken:#EDE6D8;
@@ -14,9 +13,17 @@
   --amber:#8A5D0C; --amber-soft:#F5EAD2;
   --lapis:#2D5A86; --lapis-soft:#E1EAF3;
   --shadow:rgba(74,58,42,.13);
-  --serif:"Gowun Batang",'Apple SD Gothic Neo',serif;
-  --sans:"IBM Plex Sans KR",-apple-system,'Malgun Gothic',sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,monospace;
+  /* 웹폰트를 쓰지 않는다.
+     이 문서는 파일 하나로 건네받아 여는 경우가 대부분인데, 그때 구글 폰트는
+     받아오지 못한다(오프라인·에어드롭·사내망). 없는 폰트로 조판해 두면
+     기기마다 다르게 무너지므로, 처음부터 각 OS에 있는 것만 쓴다. */
+  --serif: "AppleMyungjo", "Apple SD Gothic Neo", "Nanum Myeongjo",
+           "Batang", "바탕", "Noto Serif KR", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+          "Segoe UI", "Malgun Gothic", "맑은 고딕", "Noto Sans KR",
+          Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+          "D2Coding", monospace;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -43,10 +50,18 @@ body{
   margin:0; background:var(--ground); color:var(--ink);
   font-family:var(--sans); font-size:16px; line-height:1.75;
   -webkit-font-smoothing:antialiased;
+  /* iOS 사파리는 좁은 화면에서 본문 글자를 스스로 키운다. 그대로 두면
+     표와 카드가 넘치고 겹친다. */
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%;
+  /* 한글은 어절 단위로 끊어야 읽힌다. 이게 없으면 사파리가 단어 중간을 자른다. */
+  word-break:keep-all;
+  overflow-wrap:break-word;
 }
 .wrap{max-width:860px; margin:0 auto; padding:52px 24px 96px}
 
 .masthead{display:flex; gap:16px; align-items:flex-start; margin-bottom:10px}
+.masthead>div{min-width:0}
 .seal{
   flex:0 0 auto; width:52px; height:52px; border-radius:50%;
   background:var(--seal); color:#FDF8F2; display:grid; place-items:center;
@@ -70,7 +85,8 @@ hr.rule{height:1px; background:var(--hair); border:0; margin:34px 0}
 .lede p{margin:0 0 10px} .lede p:last-child{margin:0}
 
 h2{font-family:var(--serif); font-weight:700; font-size:23px; margin:44px 0 4px;
-   letter-spacing:-.01em; display:flex; align-items:baseline; gap:11px; flex-wrap:wrap}
+   letter-spacing:-.01em; display:flex; align-items:baseline; gap:11px; flex-wrap:wrap;
+   min-width:0}
 h2 .n{font-family:var(--mono); font-size:12px; font-weight:500; color:#FDF8F2;
       background:var(--seal); padding:2px 9px; border-radius:3px}
 h2 .n.done{background:var(--jade)}
@@ -85,9 +101,14 @@ p{margin:0 0 12px}
 ul{padding-left:20px; margin:0 0 14px}
 li{margin-bottom:7px}
 code{font-family:var(--mono); font-size:.86em; background:var(--sunken);
-     padding:1px 5px; border-radius:3px; color:var(--ink); word-break:break-all}
+     padding:1px 5px; border-radius:3px; color:var(--ink);
+     /* 경로·URL 은 어절 개념이 없다. 넘칠 때만 아무 데서나 끊는다. */
+     word-break:normal; overflow-wrap:anywhere}
 
-table{border-collapse:collapse; width:100%; font-size:14.5px; margin:10px 0 18px;
+/* 표는 스스로 줄어들지 않는다. 좁은 화면에서 그대로 두면 표가 페이지 폭을
+   밀어내 본문 전체가 가로로 스크롤된다. 표만 따로 스크롤시킨다. */
+.tw{overflow-x:auto; -webkit-overflow-scrolling:touch; margin:10px 0 18px}
+table{border-collapse:collapse; width:100%; min-width:420px; font-size:14.5px;
       background:var(--surface); box-shadow:0 1px 3px var(--shadow); border-radius:4px; overflow:hidden}
 th,td{border:1px solid var(--hair); padding:9px 12px; text-align:left; vertical-align:top}
 th{background:var(--sunken); font-weight:600; font-size:13.5px; color:var(--ink-2)}
@@ -139,11 +160,15 @@ td.k{font-family:var(--mono); font-size:12.5px; white-space:nowrap}
 @media (max-width:620px){
   .wrap{padding:34px 15px 72px}
   .split{grid-template-columns:1fr}
-  table{font-size:13.5px}
+  table{font-size:13.5px; min-width:360px}
   th,td{padding:7px 9px}
+  h1{font-size:26px}
+  .steps>li{padding-left:40px}
 }
 @media print{
   body{background:#fff}
+  .tw{overflow:visible}
+  table{min-width:0}
   .card,.stat,table{break-inside:avoid}
   *{-webkit-print-color-adjust:exact; print-color-adjust:exact}
 }
@@ -243,7 +268,7 @@ td.k{font-family:var(--mono); font-size:12.5px; white-space:nowrap}
 </div>
 
 <h3>A-3. 장식만 하던 설정을 실제 동작으로</h3>
-<table>
+<div class="tw"><table>
   <tr><th>항목</th><th>전</th><th>후</th></tr>
   <tr><td class="k">데이터 절약 모드</td><td>지역 <code>setState</code>뿐 — 아무 동작 없음</td>
       <td>지도 카메라 디바운스 300ms → 1200ms</td></tr>
@@ -255,7 +280,7 @@ td.k{font-family:var(--mono); font-size:12.5px; white-space:nowrap}
       <td><code>package_info_plus</code>로 실제 설치된 빌드에서 읽음</td></tr>
   <tr><td class="k">마케팅 동의</td><td>앱이 보내는데 DB에 칸이 없어 <b>조용히 버려짐</b></td>
       <td><code>marketing_agreed</code> + 동의 시각 기록</td></tr>
-</table>
+</table></div>
 
 <h3>A-4. 수집형(사진 N장) 인증 — 7종 중 마지막</h3>
 <div class="card now">
@@ -312,7 +337,7 @@ td.k{font-family:var(--mono); font-size:12.5px; white-space:nowrap}
 </div>
 
 <h3>A-7. 서버를 실제로 배포할 수 있는 상태로</h3>
-<table>
+<div class="tw"><table>
   <tr><th>항목</th><th>무엇이 잘못돼 있었나</th></tr>
   <tr><td class="k">빌드 산출물</td>
       <td><code>outDir</code>과 <code>noEmit</code>이 함께 있어 <b>JS를 한 줄도 만들지 않았음</b>.
@@ -340,7 +365,7 @@ td.k{font-family:var(--mono); font-size:12.5px; white-space:nowrap}
   <tr><td class="k">종료·확장</td>
       <td>SIGTERM 처리 없음(처리 중인 인증이 끊김). 크론이 프로세스 안에 있어
       인스턴스를 늘리면 알림이 두 번 나감</td></tr>
-</table>
+</table></div>
 <p>전부 고쳤고, <code>Dockerfile</code>과 <code>.dockerignore</code>를 만들었습니다.
 특정 플랫폼 설정 파일 대신 이미지를 두면 무료 티어 정책이 바뀌어도 코드를 고치지 않고
 옮길 수 있습니다. <code>/health</code>가 DB까지 확인합니다.</p>
@@ -423,7 +448,7 @@ FCM 토큰이 빠져 있었고, 위치를 "인증 시점 일회성"이라고만 
 </div>
 
 <h3>실기기에서 확인한 것</h3>
-<table>
+<div class="tw"><table>
   <tr><th>화면 · 기능</th><th>결과</th></tr>
   <tr><td class="k">지도 검색창</td><td>흰 알약 하나만. 포커스해도 겹치는 테두리 없음</td></tr>
   <tr><td class="k">필터 칩 + 안내</td><td>칩 7개 모두 보이고, 안내는 그 아래 알약으로</td></tr>
@@ -436,7 +461,7 @@ FCM 토큰이 빠져 있었고, 위치를 "인증 시점 일회성"이라고만 
   <tr><td class="k">배지 컬렉션</td><td>서울 산책자 4/5 — 지역 배지 수정이 유지됨</td></tr>
   <tr><td class="k">서버 신규 경로</td><td><code>/health</code> <code>/privacy</code>
       <code>/terms/service</code> <code>/account/delete</code> 모두 200</td></tr>
-</table>
+</table></div>
 
 <h3>실기기에서 확인하지 <b>못한</b> 것</h3>
 <ul>
@@ -597,7 +622,7 @@ FCM 토큰이 빠져 있었고, 위치를 "인증 시점 일회성"이라고만 
 </ol>
 
 <h3>제출 전 마지막 확인</h3>
-<table>
+<div class="tw"><table>
   <tr><th>확인할 것</th><th>방법</th></tr>
   <tr><td>릴리스 키로 서명됐는지</td>
       <td><code>apksigner verify --print-certs app-release.apk</code> —
@@ -613,7 +638,7 @@ FCM 토큰이 빠져 있었고, 위치를 "인증 시점 일회성"이라고만 
       <td>"준비 중" 대신 브라우저가 열려야 합니다</td></tr>
   <tr><td>전 구간 완주</td>
       <td>설치 → 로그인 → 수락 → 이동 → 인증 → 보상</td></tr>
-</table>
+</table></div>
 
 <hr class="rule">
 
