@@ -1118,10 +1118,6 @@ class _MapScreenState extends State<MapScreen> {
                             ),
                           ),
                         ),
-                      if (_shouldShowEmptyNote) _buildEmptyResultNote(),
-                      if (_shouldShowLoadError) _buildLoadErrorNote(),
-                      if (_isTruncated) _buildTruncatedNote(),
-
                       _buildMyLocationButton(),
 
                       if (_selectedQuest != null) _buildSheet(),
@@ -1230,7 +1226,18 @@ class _MapScreenState extends State<MapScreen> {
                           color: AppColors.textDisabled,
                         ),
                         isDense: true,
+                        // **앱 테마의 채움과 테두리를 여기서만 끈다.**
+                        //
+                        // 테마는 모든 입력칸에 `filled: true`(오목한 면)와
+                        // 사방 테두리를 준다. 폼에서는 맞지만 여기서는 흰 알약
+                        // 안에 또 하나의 블록이 생겨 답답해 보였고, 포커스가
+                        // 들어오면 굵은 빨간 테두리까지 겹쳤다.
+                        // `border`만 none 으로 두면 enabled/focused 는 테마 값이
+                        // 그대로 남는다 — 셋 다 꺼야 한다.
+                        filled: false,
                         border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
                           vertical: 12,
                         ),
@@ -1276,8 +1283,96 @@ class _MapScreenState extends State<MapScreen> {
                 ],
               ),
             ),
-            if (_searchResults.isNotEmpty) _buildSearchResults(),
+            if (_searchResults.isNotEmpty)
+              _buildSearchResults()
+            // 안내는 **칩 아래로 흐르게** 둔다.
+            //
+            // 예전에는 `Positioned(top: 84)` 로 따로 띄워서 필터 칩 위에 겹쳤다.
+            // 칩 높이나 검색창 높이가 바뀌면 다시 어긋나므로, 아예 같은 세로
+            // 흐름에 넣어 겹칠 수 없게 만든다.
+            else if (_shouldShowLoadError)
+              _buildMapNote(
+                icon: Icons.cloud_off_rounded,
+                text: '퀘스트를 불러오지 못했어요',
+                actionLabel: '다시 시도',
+                onTap: () {
+                  setState(() => _loadFailed = false);
+                  _refreshViewport(force: true);
+                },
+              )
+            else if (_shouldShowEmptyNote)
+              _buildMapNote(
+                icon: Icons.explore_off_rounded,
+                text: _selectedKeyword != null || _searchQuery.trim().isNotEmpty
+                    ? '조건에 맞는 퀘스트가 없어요'
+                    : '이 범위에는 퀘스트가 없어요 · 지도를 옮겨 보세요',
+              )
+            else if (_isTruncated)
+              _buildMapNote(
+                icon: Icons.filter_center_focus_rounded,
+                text: '$_totalInViewport개 중 '
+                    '${ViewportQuests.renderLimit}개만 표시했어요 · 확대해 보세요',
+              ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 지도 위에 뜨는 한 줄 안내.
+  ///
+  /// 지도 라벨 위에 겹치므로 **반투명하게 두지 않는다** — 글자끼리 섞이면
+  /// 둘 다 안 읽힌다. 불투명한 면에 그림자를 줘 지도에서 떠 있게 만든다.
+  Widget _buildMapNote({
+    required IconData icon,
+    required String text,
+    String? actionLabel,
+    VoidCallback? onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: 9,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(color: AppColors.hairline),
+            boxShadow: AppElevation.e1,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: AppColors.textTertiary),
+              const SizedBox(width: 7),
+              Flexible(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              if (actionLabel != null) ...[
+                const SizedBox(width: 8),
+                Text(
+                  actionLabel,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.quest500,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -1377,86 +1472,6 @@ class _MapScreenState extends State<MapScreen> {
   /// 사용자가 할 수 있는 일도 다르다 — 하나는 지도를 옮기는 것, 하나는 기다리는 것.
   bool get _shouldShowLoadError =>
       !_isLoadingQuests && _loadFailed && _quests.isEmpty && _clusters.isEmpty;
-
-  Widget _buildEmptyResultNote() {
-    final hasFilter =
-        _selectedKeyword != null || _searchQuery.trim().isNotEmpty;
-
-    return Positioned(
-      left: 24,
-      right: 24,
-      top: 84,
-      child: NoteBox(
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Text(
-          hasFilter ? '조건에 맞는 퀘스트가 없어요' : '이 범위에는 퀘스트가 없어요 · 지도를 옮겨 보세요',
-          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-        ),
-      ),
-    );
-  }
-
-  /// 연결이 안 돼 퀘스트를 못 받아 왔을 때. 눌러서 다시 시도할 수 있다.
-  Widget _buildLoadErrorNote() {
-    return Positioned(
-      left: 24,
-      right: 24,
-      top: 84,
-      child: GestureDetector(
-        onTap: () {
-          setState(() => _loadFailed = false);
-          _refreshViewport(force: true);
-        },
-        child: NoteBox(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.cloud_off_rounded,
-                  size: 14, color: AppColors.textSecondary),
-              const SizedBox(width: 6),
-              const Text(
-                '퀘스트를 불러오지 못했어요 · ',
-                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-              ),
-              Text(
-                '다시 시도',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.quest500,
-                  fontWeight: FontWeight.w600,
-                  decoration: TextDecoration.underline,
-                  decorationColor: AppColors.quest500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 서버가 준 개수가 그릴 수 있는 양을 넘었을 때.
-  ///
-  /// 서버 `findMany`에 `take` 상한이 아직 없다(체크리스트 08번 BE 몫).
-  /// 상한이 생기면 이 안내는 저절로 뜨지 않게 된다.
-  Widget _buildTruncatedNote() {
-    return Positioned(
-      left: 24,
-      right: 24,
-      top: 84,
-      child: NoteBox(
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Text(
-          '$_totalInViewport개 중 ${ViewportQuests.renderLimit}개만 표시했어요 · 지도를 확대해 보세요',
-          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-        ),
-      ),
-    );
-  }
 
   Widget _buildSheet() {
     final quest = _selectedQuest!;

@@ -536,8 +536,9 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
             ),
             // 방향 부채꼴 — 점보다 **아래**에 깔아야 점을 가리지 않는다.
             Positioned(
-              left: position.dx - 32,
-              top: position.dy - 32,
+              // 부채꼴 상자 한가운데가 현위치다.
+              left: position.dx - headingConeBoxSize / 2,
+              top: position.dy - headingConeBoxSize / 2,
               child: IgnorePointer(
                 child: Transform.rotate(
                   angle: degreesToRadians(_fallbackConeAngle),
