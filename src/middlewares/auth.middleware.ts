@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken } from "../utils/jwt";
 import { CustomError } from "../utils/CustomError";
+import { env } from "../config/env";
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -58,6 +59,35 @@ export const optionalAuth = (
     } catch {
       // 무시한다 — 비로그인과 같게 다룬다.
     }
+  }
+
+  next();
+};
+
+/**
+ * 운영자만 지나갈 수 있는 문.
+ *
+ * 어뷰징 로그(`GET /quests/abuse-logs`)는 로그인만 하면 누구나 볼 수 있었다.
+ * 그 응답에는 **다른 사용자의 닉네임과 소셜 제공자 회원번호**가 들어 있다.
+ * 32번이 만든 조회 경로는 운영을 위한 것이지 사용자용이 아니다.
+ *
+ * 역할 컬럼을 두지 않고 환경 변수 목록으로 정하는 이유: 지금 운영자는 몇 명이고,
+ * DB에 역할을 넣으면 그 값을 바꾸는 화면과 그 화면을 지키는 권한이 또 필요하다.
+ * 배포 설정으로 두면 서버에 접근할 수 있는 사람만 바꿀 수 있다.
+ */
+export const requireAdmin = (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  const userId = req.user?.id;
+
+  if (!userId || !env.adminUserIds.includes(userId)) {
+    // 있는지 없는지도 알려 주지 않는다.
+    return res.status(404).json({
+      data: null,
+      error: { code: "NOT_FOUND", message: "경로를 찾을 수 없습니다." },
+    });
   }
 
   next();

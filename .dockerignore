@@ -1,0 +1,51 @@
+# 이 저장소는 Flutter 앱과 Express 서버가 한 트리에 있다.
+# 걸러내지 않으면 서버 이미지에 앱 소스·에셋·안드로이드 빌드가 통째로 들어간다.
+
+# ── Flutter 앱 ───────────────────────────────────────────────────────────────
+lib/
+test/
+tool/
+assets/
+android/
+ios/
+web/
+macos/
+windows/
+linux/
+pubspec.yaml
+pubspec.lock
+analysis_options.yaml
+dart_test.yaml
+flutter_launcher_icons.yaml
+.dart_tool/
+.flutter-plugins-dependencies
+dart_defines.json
+dart_defines.example.json
+
+# ── 빌드 산출물 ──────────────────────────────────────────────────────────────
+build/
+dist/
+node_modules/
+
+# ── 비밀·로컬 설정 ───────────────────────────────────────────────────────────
+# .env 가 이미지에 들어가면 레지스트리에 그대로 남는다. 값은 실행 환경에서 준다.
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+key.properties
+google-services.json
+GoogleService-Info.plist
+
+# ── 그 외 ────────────────────────────────────────────────────────────────────
+.git/
+.github/
+.gitignore
+.vscode/
+.idea/
+docs/
+README.md
+*.md
+!prisma/migrations/README.md
+scripts/free-port.js

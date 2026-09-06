@@ -68,7 +68,7 @@ class ExpBreakdown {
   /// 의뢰서 절대원칙 ①이 "EXP 판정은 100% 서버 계산, 클라이언트는 결과만 표시"라
   /// 못박고 있다. 로컬 계산은 수락 전 예상치·오프라인 폴백으로만 남긴다.
   ///
-  /// 서버 모양: `{baseExp, mHalf, mCong, mArea, mTime, mStreak, mReattempt,
+  /// 서버 모양: `{baseExp, mHalf, mCong, mArea, mTime, mStreak, mRepeat,
   /// calculatedExp, singleCappedExp, finalExp}` 또는 어뷰징 시 `{abusePenalty: true}`.
   factory ExpBreakdown.fromServer(
     Map<String, dynamic> raw, {
@@ -91,8 +91,10 @@ class ExpBreakdown {
       'mArea': '첫 지역',
       'mTime': '비피크',
       'mStreak': '스트릭',
-      // 서버는 더 이상 이 키를 보내지 않는다. 규칙이 바뀌기 전에 저장된 완료 기록을
-      // 멱등 응답으로 되읽을 때만 나타나므로, 그 내역을 옳게 보여주려고 남겨둔다.
+      // 재수행(x0.3) — 서버가 지금 쓰는 키다(`exp-engine.service.ts`의 mRepeat).
+      'mRepeat': '재수행',
+      // 옛 키. 규칙이 바뀌기 전에 저장된 완료 기록을 멱등 응답으로 되읽을 때만
+      // 나타나므로, 그 내역을 옳게 보여주려고 남겨둔다.
       'mReattempt': '재수행',
     };
 

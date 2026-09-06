@@ -74,6 +74,24 @@ class QuestModel {
   /// 되고, 재방문(x0.3, 16번)으로 가는 길도 막힌다. 흐리게 그릴 뿐이다.
   final bool isCompleted;
 
+  /// 09 퀴즈형 · 10 탐색형의 문제. 다른 유형에서는 null이다.
+  ///
+  /// **정답은 여기 없다.** 서버가 `quizAnswer`를 지우고 내려보내므로
+  /// (`QuestService.toClientQuest`) 채점은 인증 요청으로만 이뤄진다.
+  final String? quizQuestion;
+
+  /// 3택 선택지. 비어 있으면 문제를 그릴 수 없다.
+  final List<String> quizOptions;
+
+  /// 08 수집형이 요구하는 사진 장수. 다른 유형에서는 1이다.
+  ///
+  /// 서버가 채점하므로(`PHOTO_COUNT_NOT_MET`) 앱은 이 값을 화면에 쓰기만 한다 —
+  /// "3장 중 1장" 같은 진행 표시와 완료 버튼의 활성 조건.
+  final int requiredCount;
+
+  /// 06 피사체형 · 08 수집형의 촬영 안내 문구. 무엇을 찍어야 하는지 알려 준다.
+  final String? photoPrompt;
+
   QuestModel({
     required this.id,
     required this.title,
@@ -92,6 +110,10 @@ class QuestModel {
     this.crowdMultiplier = 1.0,
     this.spots = const [],
     this.isCompleted = false,
+    this.quizQuestion,
+    this.quizOptions = const [],
+    this.requiredCount = 1,
+    this.photoPrompt,
     bool? requiresPhoto,
   }) : requiresPhoto = requiresPhoto ?? difficulty != QuestDifficulty.star1;
 
@@ -125,11 +147,31 @@ class QuestModel {
     return '보통';
   }
 
+  /// 이 퀘스트를 무엇으로 끝내는지 한 줄로.
+  ///
+  /// **유형이 먼저다.** 예전에는 난이도로 추정한 `requiresPhoto`만 보고
+  /// 늘 "사진 1장"이라 적었다 — 사진 3장을 모아야 하는 수집형에도,
+  /// 정답을 골라야 하는 퀴즈형에도 같은 문구가 붙었다.
   String get completionCriteria {
     final spotPart = spotCount > 1
         ? '지점 $spotCount곳 순서대로 도달'
         : '목표 좌표 반경 ${visitSpots.first.radiusMeters.round()}m 도달';
-    return requiresPhoto ? '$spotPart · 사진 1장' : spotPart;
+
+    switch (questType) {
+      case 'PHOTO_COLLECT':
+        return '$spotPart · 사진 $requiredCount장';
+      case 'PHOTO_SINGLE':
+        return '$spotPart · 사진 1장';
+      case 'QUIZ':
+      case 'EXPLORATION':
+        return '$spotPart · 정답 고르기';
+      case 'RECORD':
+        return '$spotPart · 한 줄 기록';
+      default:
+        // 방문형·시간대형은 도달이 곧 완료다. 사진은 있으면 좋은 정도라
+        // 난이도로 추정한 값을 그대로 쓴다.
+        return requiresPhoto ? '$spotPart · 사진 1장' : spotPart;
+    }
   }
 
   /// 진행 중 퀘스트를 로컬에 통째로 저장하기 위한 직렬화.
@@ -147,6 +189,10 @@ class QuestModel {
         'requiresPhoto': requiresPhoto,
         'crowdMultiplier': crowdMultiplier,
         'isCompleted': isCompleted,
+        'quizQuestion': quizQuestion,
+        'quizOptions': quizOptions,
+        'requiredCount': requiredCount,
+        'photoPrompt': photoPrompt,
         'spots': [
           for (final spot in spots)
             {
@@ -220,6 +266,21 @@ class QuestModel {
       keywords: List<String>.from(json['keywords'] ?? []),
       crowdMultiplier: crowdMult,
       isCompleted: json['isCompleted'] == true,
+      quizQuestion: (json['quizQuestion'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : json['quizQuestion'] as String?,
+      quizOptions: [
+        if (json['quizOptions'] is List)
+          for (final o in (json['quizOptions'] as List)) '$o',
+      ],
+      // 0이나 음수가 오면 1로 본다 — 0장을 요구하면 인증이 성립하지 않는다.
+      requiredCount: () {
+        final n = (json['requiredCount'] as num?)?.toInt() ?? 1;
+        return n < 1 ? 1 : n;
+      }(),
+      photoPrompt: (json['photoPrompt'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : json['photoPrompt'] as String?,
       requiresPhoto: json['requiresPhoto'] as bool?,
       spots: [
         if (json['spots'] is List)

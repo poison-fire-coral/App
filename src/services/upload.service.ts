@@ -6,16 +6,37 @@ const bucketName = process.env.AWS_S3_BUCKET_NAME || process.env.AWS_S3_BUCKET |
 
 const s3Client = new S3Client({ region });
 
+/**
+ * 허용하는 확장자. **화이트리스트로 둔다.**
+ *
+ * 예전에는 클라이언트가 준 `ext`를 그대로 S3 키와 `ContentType`에 넣었다.
+ * `../`이 섞이면 버킷 안 다른 경로를 가리킬 수 있고, `html`이 오면
+ * `image/html`이 붙은 채로 올라가 브라우저가 열어 버린다.
+ */
+const ALLOWED_EXTENSIONS: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  heic: "image/heic",
+  webp: "image/webp",
+};
+
+export function normalizeExtension(raw: unknown): string {
+  const ext = String(raw ?? "").trim().toLowerCase().replace(/^\./, "");
+  return ext in ALLOWED_EXTENSIONS ? ext : "jpg";
+}
+
 export async function getPresignedUploadUrl(
   userId: number,
   questId: number,
-  ext: string
+  rawExt: string
 ) {
+  const ext = normalizeExtension(rawExt);
   const fileKey = `quests/${questId}/users/${userId}/${Date.now()}.${ext}`;
   const command = new PutObjectCommand({
     Bucket: bucketName,
     Key: fileKey,
-    ContentType: `image/${ext}`
+    ContentType: ALLOWED_EXTENSIONS[ext]
   });
 
   // 5분(300초) 유효기간 설정

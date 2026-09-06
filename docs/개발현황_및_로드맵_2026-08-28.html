@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>남은 길 · 로컬 퀘스트</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+
+<style>
+:root{
+  --ground:#F5F0E6; --surface:#FDFBF6; --sunken:#EDE6D8;
+  --ink:#2B2520; --ink-2:#5C5147; --ink-3:#8B8175; --hair:#DED4C2;
+  --seal:#9E2B1E; --seal-soft:#F3E3DF;
+  --jade:#2E6B4F; --jade-soft:#E2EDE6;
+  --amber:#8A5D0C; --amber-soft:#F5EAD2;
+  --lapis:#2D5A86; --lapis-soft:#E1EAF3;
+  --shadow:rgba(74,58,42,.13);
+  --serif:"Gowun Batang",'Apple SD Gothic Neo',serif;
+  --sans:"IBM Plex Sans KR",-apple-system,'Malgun Gothic',sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#191512; --surface:#221D18; --sunken:#141110;
+    --ink:#EDE5D7; --ink-2:#B6AB9B; --ink-3:#867C6F; --hair:#3A322A;
+    --seal:#D8705F; --seal-soft:#33211D;
+    --jade:#77BC98; --jade-soft:#1B2A22;
+    --amber:#D6A84E; --amber-soft:#2B2317;
+    --lapis:#7FAAD4; --lapis-soft:#1A2430;
+    --shadow:rgba(0,0,0,.45);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#191512; --surface:#221D18; --sunken:#141110;
+  --ink:#EDE5D7; --ink-2:#B6AB9B; --ink-3:#867C6F; --hair:#3A322A;
+  --seal:#D8705F; --seal-soft:#33211D;
+  --jade:#77BC98; --jade-soft:#1B2A22;
+  --amber:#D6A84E; --amber-soft:#2B2317;
+  --lapis:#7FAAD4; --lapis-soft:#1A2430;
+  --shadow:rgba(0,0,0,.45);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--sans); font-size:16px; line-height:1.75;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:800px; margin:0 auto; padding:56px 24px 96px}
+
+/* ── 표제 ───────────────────────────────── */
+.masthead{display:flex; gap:18px; align-items:flex-start; margin-bottom:14px}
+.seal{
+  flex:0 0 auto; width:58px; height:58px; border-radius:50%;
+  background:var(--seal); color:#FDF8F2; display:grid; place-items:center;
+  font-family:var(--serif); font-size:22px; line-height:1; margin-top:6px;
+  box-shadow:0 3px 10px var(--shadow), inset 0 0 0 3px rgba(255,255,255,.22);
+}
+h1{
+  font-family:var(--serif); font-weight:700;
+  font-size:clamp(30px,5.2vw,42px); line-height:1.25; margin:0 0 6px;
+  text-wrap:balance; letter-spacing:-.01em;
+}
+.sub{color:var(--ink-2); margin:0 0 8px; font-size:16.5px}
+.stamp{font-family:var(--mono); font-size:12.5px; color:var(--ink-3)}
+.stamp b{color:var(--ink-2); font-weight:500}
+.rule{height:1px; background:var(--hair); border:0; margin:34px 0}
+
+/* ── 섹션 ───────────────────────────────── */
+section{margin:0 0 44px}
+.sechead{display:flex; align-items:baseline; gap:12px; margin:0 0 16px}
+.secnum{
+  font-family:var(--mono); font-size:12px; color:var(--seal);
+  letter-spacing:.08em; flex:0 0 auto; padding-top:6px;
+}
+h2{
+  font-family:var(--serif); font-weight:700; font-size:26px;
+  margin:0 0 2px; letter-spacing:-.01em; text-wrap:balance;
+}
+.dek{color:var(--ink-3); font-size:14px; margin:0}
+h3{font-family:var(--serif); font-size:19px; font-weight:700; margin:28px 0 8px}
+p{margin:0 0 14px}
+a{color:var(--seal)}
+
+/* ── 요약 ───────────────────────────────── */
+.lede{
+  background:var(--surface); border:1px solid var(--hair); border-radius:4px;
+  padding:22px 24px; box-shadow:0 1px 3px var(--shadow);
+}
+.lede p:last-child{margin-bottom:0}
+.lede strong{color:var(--seal); font-weight:600}
+
+/* ── 상태 칩 : 색 + 형태 ─────────────────── */
+.chip{
+  display:inline-block; font-family:var(--mono); font-size:11px;
+  letter-spacing:.04em; padding:1px 8px; border-radius:99px;
+  white-space:nowrap; font-weight:500; vertical-align:1px;
+}
+.ok{background:var(--jade-soft); color:var(--jade); border:1px solid var(--jade)}
+.part{background:var(--amber-soft); color:var(--amber); border:1px dashed var(--amber)}
+.none{background:transparent; color:var(--ink-3); border:1px dotted var(--ink-3)}
+.crit{background:var(--seal-soft); color:var(--seal); border:1px solid var(--seal)}
+.info{background:var(--lapis-soft); color:var(--lapis); border:1px solid var(--lapis)}
+
+/* ── 진척 막대 ──────────────────────────── */
+.bars{display:flex; flex-direction:column; gap:10px; margin:18px 0 6px}
+.bar{display:grid; grid-template-columns:88px 1fr 74px; gap:12px; align-items:center}
+.bar .lab{font-family:var(--mono); font-size:12px; color:var(--ink-2)}
+.bar .track{height:9px; background:var(--sunken); border-radius:99px; overflow:hidden}
+.bar .fill{height:100%; border-radius:99px}
+.bar .pct{font-family:var(--mono); font-size:12px; color:var(--ink-3); text-align:right; font-variant-numeric:tabular-nums}
+
+/* ── 표 ─────────────────────────────────── */
+.scroll{overflow-x:auto; margin:0 0 18px; border:1px solid var(--hair); border-radius:4px; background:var(--surface)}
+table{border-collapse:collapse; width:100%; font-size:14px; min-width:520px}
+th,td{padding:9px 14px; text-align:left; border-bottom:1px solid var(--hair); vertical-align:top}
+thead th{
+  background:var(--sunken); font-family:var(--mono); font-weight:500;
+  font-size:11.5px; letter-spacing:.05em; color:var(--ink-2); white-space:nowrap;
+}
+tbody tr:last-child td{border-bottom:0}
+td.id{font-family:var(--mono); font-size:12.5px; color:var(--seal); white-space:nowrap}
+td.num{font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap}
+.note{font-size:13px; color:var(--ink-2)}
+
+/* ── 갭 카드 ────────────────────────────── */
+.gaps{display:flex; flex-direction:column; gap:12px}
+.gap{
+  background:var(--surface); border:1px solid var(--hair); border-radius:4px;
+  border-left:3px solid var(--hair); padding:15px 18px;
+  box-shadow:0 1px 2px var(--shadow);
+}
+.gap.p0{border-left-color:var(--seal)}
+.gap.p1{border-left-color:var(--amber)}
+.gap.p2{border-left-color:var(--lapis)}
+.gap h4{
+  margin:0 0 5px; font-size:15.5px; font-weight:600; line-height:1.5;
+  display:flex; gap:9px; align-items:baseline; flex-wrap:wrap;
+}
+.gap p{margin:0 0 6px; font-size:14.5px; color:var(--ink-2)}
+.gap p:last-child{margin-bottom:0}
+.where{font-family:var(--mono); font-size:12px; color:var(--ink-3); word-break:break-all}
+.where em{font-style:normal; color:var(--ink-2)}
+code{
+  font-family:var(--mono); font-size:.88em; background:var(--sunken);
+  padding:1px 5px; border-radius:3px; color:var(--ink);
+}
+
+/* ── 마일스톤 ───────────────────────────── */
+.ms{
+  background:var(--surface); border:1px solid var(--hair); border-radius:4px;
+  padding:20px 22px; margin:0 0 16px; box-shadow:0 1px 3px var(--shadow);
+}
+.mshead{display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; margin:0 0 4px}
+.mstag{
+  font-family:var(--mono); font-size:12px; font-weight:500; color:#FDF8F2;
+  background:var(--seal); padding:2px 9px; border-radius:3px; flex:0 0 auto;
+}
+.ms h3{margin:0; font-size:21px}
+.msmeta{font-family:var(--mono); font-size:12px; color:var(--ink-3); margin:0 0 14px}
+.ms .goal{font-size:14.5px; color:var(--ink-2); margin:0 0 16px; padding-bottom:14px; border-bottom:1px dashed var(--hair)}
+.task{display:grid; grid-template-columns:26px 1fr; gap:10px; margin:0 0 14px}
+.task:last-child{margin-bottom:0}
+.task .n{font-family:var(--mono); font-size:12px; color:var(--ink-3); padding-top:4px; font-variant-numeric:tabular-nums}
+.task .t{font-weight:600; font-size:15px; margin:0 0 3px; line-height:1.55}
+.task .d{font-size:14px; color:var(--ink-2); margin:0 0 4px}
+.task .dod{
+  font-size:13px; color:var(--jade); background:var(--jade-soft);
+  border-radius:3px; padding:4px 9px; display:inline-block; margin-top:2px;
+}
+.task .dod b{font-weight:600; font-family:var(--mono); font-size:11px; letter-spacing:.04em}
+.owner{font-family:var(--mono); font-size:11px; padding:1px 7px; border-radius:99px; border:1px solid var(--hair); color:var(--ink-3)}
+
+ul{margin:0 0 14px; padding-left:20px}
+li{margin:0 0 6px}
+.foot{margin-top:52px; padding-top:20px; border-top:1px solid var(--hair);
+  font-family:var(--mono); font-size:12px; color:var(--ink-3)}
+
+@media (max-width:560px){
+  .wrap{padding:36px 16px 72px}
+  .bar{grid-template-columns:66px 1fr 56px; gap:8px}
+  .secnum{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="seal">程</div>
+    <div>
+      <h1>남은 길</h1>
+      <p class="sub">로컬 퀘스트 · 현재 개발 현황과 출시까지의 로드맵</p>
+      <p class="stamp">
+        기준 <b>와이어프레임 v2 (1a–6d)</b> · <b>개발 순서 및 작업 의뢰서</b><br>
+        조사 대상 <b>App/</b> — Flutter 45파일 11,561줄 / Express·Prisma 28파일 · 커밋 <b>8339bc8</b> · 2026-08-28
+      </p>
+    </div>
+  </header>
+
+  <hr class="rule">
+
+  <section>
+    <div class="lede">
+      <p><strong>골격은 다 서 있다.</strong> 의뢰서의 S1~S4에 해당하는 화면 20개와 API 17개가 실제로 붙어 있고, 실기기에서 로그인부터 배지까지 한 바퀴가 돈다. 남은 것은 “처음부터 만들기”가 아니라 <strong>이미 만든 것을 스펙에 맞추는 일</strong>이다.</p>
+      <p>빠진 것은 네 덩어리다. ① <strong>지도가 뷰포트로 조회하지 않는다</strong> — 서버에는 bounds·클러스터 조회가 구현돼 있는데 앱이 반경 API를 부른다. 의뢰서 절대원칙 ③이 지켜지지 않는 상태다. ② <strong>사진이 서버에 올라가지 않는다</strong> — S3 presign이 서버에 있는데 앱이 호출하지 않는다. ③ <strong>EXP 배율 5개 중 3개가 상수로 박혀 있다</strong> — 신규지역은 항상 참, 비피크는 항상 거짓, 스트릭은 영원히 0이다. ④ <strong>법적·보안 요건이 비어 있다</strong> — 약관 화면이 없는데 동의로 기록되고, <code>GUEST</code> 로그인이 토큰 검증 없이 열려 있다.</p>
+      <p>아래 로드맵은 <strong>5개 마일스톤 · 19 영업일</strong>이다. 순서는 위험도 순이지 화면 순이 아니다. R1은 지금 제출하면 사고가 나는 것들이고, R2–R4가 스펙 이행, R5가 출시 준비다.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead">
+      <div class="secnum">01</div>
+      <div>
+        <h2>지금 서 있는 자리</h2>
+        <p class="dek">의뢰서의 스프린트 정의 대비 실제 완료율</p>
+      </div>
+    </div>
+
+    <div class="bars">
+      <div class="bar"><span class="lab">S0 기반</span><span class="track"><span class="fill" style="background:var(--amber); width:70%"></span></span><span class="pct">70%</span></div>
+      <div class="bar"><span class="lab">S1 계정</span><span class="track"><span class="fill" style="background:var(--jade); width:85%"></span></span><span class="pct">85%</span></div>
+      <div class="bar"><span class="lab">S2 지도</span><span class="track"><span class="fill" style="background:var(--amber); width:55%"></span></span><span class="pct">55%</span></div>
+      <div class="bar"><span class="lab">S3 수행</span><span class="track"><span class="fill" style="background:var(--amber); width:70%"></span></span><span class="pct">70%</span></div>
+      <div class="bar"><span class="lab">S4 배지</span><span class="track"><span class="fill" style="background:var(--jade); width:88%"></span></span><span class="pct">88%</span></div>
+      <div class="bar"><span class="lab">S5 안정화</span><span class="track"><span class="fill" style="background:var(--seal); width:8%"></span></span><span class="pct">8%</span></div>
+    </div>
+
+    <p class="note" style="margin-top:16px">S0이 100%가 아닌 이유는 <b>CI가 없고</b>(<code>.github/</code> 없음) <b>PostGIS를 쓰지 않기</b> 때문이다. <code>Place</code>는 <code>lat</code>·<code>lng</code>를 <code>Float</code>으로 갖고 B-tree 복합 인덱스 하나만 걸려 있다. 시드 규모에서는 문제없지만, 의뢰서가 “사실상 필수”라고 못 박은 공간 인덱스는 없다.</p>
+
+    <h3>이미 되어 있는 것 — 다시 만들지 말 것</h3>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>영역</th><th>상태</th><th>근거</th></tr></thead>
+        <tbody>
+          <tr><td>JWT 발급·회전·자동 갱신</td><td><span class="chip ok">완료</span></td><td class="note">401 시 1회만 갱신 후 재시도 (<code>api_client.dart:80</code>)</td></tr>
+          <tr><td>소셜 로그인 (Google·Kakao)</td><td><span class="chip ok">완료</span></td><td class="note">서버 토큰 검증 · 미가입 시 <code>AUTH_NOT_REGISTERED</code></td></tr>
+          <tr><td>온보딩 3스텝 · 닉네임 중복확인</td><td><span class="chip ok">완료</span></td><td class="note">키워드 32종 · 활동강도 · 홈지역</td></tr>
+          <tr><td>위치 권한 하드 게이트</td><td><span class="chip ok">완료</span></td><td class="note"><code>permission_service.dart</code> · 설정 딥링크</td></tr>
+          <tr><td>EXP 계산 엔진 · 상한 · 레벨 테이블</td><td><span class="chip ok">완료</span></td><td class="note">1회 1,600 / 1일 3,000 · <code>LevelTable</code> DB 관리</td></tr>
+          <tr><td>멱등성 (requestId unique)</td><td><span class="chip ok">완료</span></td><td class="note">중복 인증 요청에도 EXP 1회만</td></tr>
+          <tr><td>속도 어뷰징 (&gt;40km/h) · 정확도 100m 컷</td><td><span class="chip ok">완료</span></td><td class="note"><code>quest.service.ts:499, 533</code></td></tr>
+          <tr><td>배지 규칙 엔진 (rule_json 4종)</td><td><span class="chip ok">완료</span></td><td class="note">트랜잭션 내 재계산으로 멱등 보장</td></tr>
+          <tr><td>배지 컬렉션 3상태 · 상세 · 대표 지정</td><td><span class="chip ok">완료</span></td><td class="note">색이 아니라 형태로 상태 구분</td></tr>
+          <tr><td>지도 마커 108장 (유형 7 × 난이도 5 × 배율 3)</td><td><span class="chip ok">완료</span></td><td class="note">코드 생성기 · 회귀 테스트 포함</td></tr>
+          <tr><td>서버 뷰포트 조회 + geohash 클러스터링</td><td><span class="chip ok">서버만</span></td><td class="note"><code>quest.service.ts:285</code> — 앱이 호출하지 않음</td></tr>
+          <tr><td>S3 Presigned URL 발급</td><td><span class="chip ok">서버만</span></td><td class="note"><code>upload.service.ts</code> — 앱이 호출하지 않음</td></tr>
+          <tr><td>한국관광공사 API 연동 (대표 이미지)</td><td><span class="chip ok">완료</span></td><td class="note">의뢰서에 없던 추가 구현</td></tr>
+          <tr><td>테스트 138개 · analyze 이슈 0</td><td><span class="chip ok">완료</span></td><td class="note">실서버 상대 live 테스트 포함</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <div class="sechead">
+      <div class="secnum">02</div>
+      <div>
+        <h2>화면별 구현 현황</h2>
+        <p class="dek">와이어프레임 화면 ID를 그대로 씀. 20개 중 완료 12 · 부분 6 · 미착수 2</p>
+      </div>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>ID</th><th>화면</th><th>상태</th><th>빠진 것</th></tr></thead>
+        <tbody>
+          <tr><td class="id">1a</td><td>스플래시</td><td><span class="chip ok">완료</span></td><td class="note">—</td></tr>
+          <tr><td class="id">1b</td><td>로그인</td><td><span class="chip part">부분</span></td><td class="note">이메일 로그인 버튼 없음 (Google·Kakao만). 개발용 계정 버튼이 노출됨</td></tr>
+          <tr><td class="id">1c</td><td>회원가입</td><td><span class="chip part">부분</span></td><td class="note">약관 체크박스 3종 없음 — 묵시적 동의로 전송</td></tr>
+          <tr><td class="id">1d</td><td>온보딩 1 · 프로필</td><td><span class="chip ok">완료</span></td><td class="note">—</td></tr>
+          <tr><td class="id">1e</td><td>온보딩 2 · 키워드</td><td><span class="chip ok">완료</span></td><td class="note">—</td></tr>
+          <tr><td class="id">1f</td><td>위치 권한</td><td><span class="chip ok">완료</span></td><td class="note">—</td></tr>
+          <tr><td class="id">2a</td><td>홈 대시보드</td><td><span class="chip part">부분</span></td><td class="note">대표 배지가 로컬 저장소를 봄 → 프로필에서 지정해도 홈에 안 뜸. 완료한 퀘스트가 추천에 계속 노출</td></tr>
+          <tr><td class="id">3a</td><td>지도 0단계 · 마커+검색</td><td><span class="chip part">부분</span></td><td class="note">키워드 필터 칩 없음. 검색이 서버가 아니라 로컬 리스트 필터</td></tr>
+          <tr><td class="id">3b</td><td>지도 1단계 · 요약 시트</td><td><span class="chip ok">완료</span></td><td class="note">—</td></tr>
+          <tr><td class="id">3c</td><td>지도 2단계 · 상세 시트</td><td><span class="chip ok">완료</span></td><td class="note">—</td></tr>
+          <tr><td class="id">3d</td><td>줌아웃 · 클러스터</td><td><span class="chip none">미착수</span></td><td class="note">위젯은 있으나 지도에 연결 안 됨. 조회 자체가 반경 기준이라 뷰포트 개념이 없음</td></tr>
+          <tr><td class="id">4a</td><td>이동 · 도달</td><td><span class="chip ok">완료</span></td><td class="note">첫 실측 표본을 분모로 쓰는 진행바 수정 반영됨</td></tr>
+          <tr><td class="id">4b</td><td>방문 인증</td><td><span class="chip part">부분</span></td><td class="note">촬영은 되지만 <b>업로드가 없다</b>. 사진이 기기에만 남고 서버 <code>photo_url</code>은 항상 비어 있음</td></tr>
+          <tr><td class="id">4c</td><td>보상 획득</td><td><span class="chip ok">완료</span></td><td class="note">서버 <code>badgeProgress</code> 우선 · 히든 은닉</td></tr>
+          <tr><td class="id">4d</td><td>레벨업</td><td><span class="chip ok">완료</span></td><td class="note">—</td></tr>
+          <tr><td class="id">5a</td><td>배지 컬렉션</td><td><span class="chip ok">완료</span></td><td class="note">—</td></tr>
+          <tr><td class="id">5b</td><td>배지 상세</td><td><span class="chip part">부분</span></td><td class="note">“달성한 퀘스트” 이력이 최신순 <code>limit threshold</code>라 실제로 채운 완료와 다름</td></tr>
+          <tr><td class="id">5c</td><td>프로필 · 대표 배지</td><td><span class="chip ok">완료</span></td><td class="note">서버 통계·발자국 사용</td></tr>
+          <tr><td class="id">5d</td><td>설정</td><td><span class="chip part">부분</span></td><td class="note">약관·개인정보 항목이 “준비 중” 토스트. 알림 스위치가 실제 푸시와 연결 안 됨. 회원 탈퇴 없음</td></tr>
+          <tr><td class="id">—</td><td>푸시 알림 (온보딩 3단계 약속)</td><td><span class="chip none">미착수</span></td><td class="note">FCM 의존성 자체가 없음</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead">
+      <div class="secnum">03</div>
+      <div>
+        <h2>API 명세 대비</h2>
+        <p class="dek">의뢰서 4장의 17개 초안 기준 · 구현 13 · 미구현 2 · 대체 2</p>
+      </div>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>경로</th><th>서버</th><th>앱 연동</th><th>비고</th></tr></thead>
+        <tbody>
+          <tr><td class="id">POST /auth/login · signup · refresh</td><td><span class="chip ok">있음</span></td><td><span class="chip ok">연동</span></td><td class="note"><code>GUEST</code> 분기가 무검증으로 열림</td></tr>
+          <tr><td class="id">GET /auth/check-nickname</td><td><span class="chip ok">있음</span></td><td><span class="chip ok">연동</span></td><td class="note">명세의 <code>/users/nickname/check</code>를 대체</td></tr>
+          <tr><td class="id">PATCH /users/me</td><td><span class="chip ok">있음</span></td><td><span class="chip ok">연동</span></td><td class="note">명세의 온보딩 PUT을 대체</td></tr>
+          <tr><td class="id">GET /quests <b>(bounds+zoom)</b></td><td><span class="chip ok">있음</span></td><td><span class="chip none">미연동</span></td><td class="note"><b>핵심 미달.</b> 앱은 <code>/quests/nearby</code>(반경)를 부름</td></tr>
+          <tr><td class="id">GET /quests/search</td><td><span class="chip none">없음</span></td><td><span class="chip none">—</span></td><td class="note">지역명·퀘스트명 검색 엔드포인트 자체가 없음</td></tr>
+          <tr><td class="id">GET /quests/:id</td><td><span class="chip ok">있음</span></td><td><span class="chip ok">연동</span></td><td class="note">—</td></tr>
+          <tr><td class="id">POST · DELETE /quests/:id/accept</td><td><span class="chip ok">있음</span></td><td><span class="chip ok">연동</span></td><td class="note">—</td></tr>
+          <tr><td class="id">POST /quests/:id/verify</td><td><span class="chip ok">있음</span></td><td><span class="chip ok">연동</span></td><td class="note">verify가 complete까지 겸함 (명세의 2단계를 1개로 합침)</td></tr>
+          <tr><td class="id">POST /quests/:id/upload-url</td><td><span class="chip ok">있음</span></td><td><span class="chip none">미연동</span></td><td class="note">S3 presign 발급까지만 구현</td></tr>
+          <tr><td class="id">GET /home</td><td><span class="chip none">없음</span></td><td><span class="chip none">—</span></td><td class="note">앱이 <code>/quests/my</code> + <code>/quests/recommended</code> + 배지를 각각 호출</td></tr>
+          <tr><td class="id">GET /badges · /badges/:id</td><td><span class="chip ok">있음</span></td><td><span class="chip ok">연동</span></td><td class="note">—</td></tr>
+          <tr><td class="id">GET · PUT /users/me/featured-badges</td><td><span class="chip ok">있음</span></td><td><span class="chip part">일부</span></td><td class="note">프로필만 연동. 홈은 로컬 저장소</td></tr>
+          <tr><td class="id">GET /users/me · /users/me/profile</td><td><span class="chip ok">있음</span></td><td><span class="chip ok">연동</span></td><td class="note">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <div class="sechead">
+      <div class="secnum">04</div>
+      <div>
+        <h2>메워야 할 구멍</h2>
+        <p class="dek">P0은 지금 제출하면 사고가 나는 것, P1은 스펙 미달, P2는 출시 품질</p>
+      </div>
+    </div>
+
+    <h3><span class="chip crit">P0</span>&ensp;제출 전 반드시</h3>
+    <div class="gaps">
+
+      <div class="gap p0">
+        <h4>GUEST 로그인이 토큰 검증 없이 열려 있다</h4>
+        <p>아무 문자열이나 <code>providerUid</code>로 보내면 그 계정이 된다. 앱에서 버튼만 지워도 서버 구멍은 남는다. 저장소가 공개되는 순간 누구나 남의 계정에 들어갈 수 있다.</p>
+        <p class="where"><em>src/services/auth.service.ts:44</em></p>
+      </div>
+
+      <div class="gap p0">
+        <h4>개발자 모드가 일반 기능으로 빌드에 들어간다</h4>
+        <p>좌표 순간이동·토큰 강제 만료 도구가 빌드 플래그 없이 포함돼 있고, <code>lib/dev/</code>는 git에 추적되고 있다. 로그인 화면의 “개발용 계정” 버튼도 같은 경로다.</p>
+        <p class="where"><em>lib/dev/dev_tools.dart · dev_quest_panel.dart · settings_screen.dart:229 · signup_screen.dart:19</em></p>
+      </div>
+
+      <div class="gap p0">
+        <h4>약관 화면이 없는데 동의로 기록된다</h4>
+        <p>가입 시 <code>termsAgreed: true</code>, <code>termsVersion: "2026-08-implicit-v1"</code>이 화면 없이 전송된다. 위치정보를 수집하는 서비스라 <b>동의 화면과 개인정보처리방침은 법적 필수</b>다. 설정의 약관·개인정보 항목도 “준비 중” 토스트만 띄운다.</p>
+        <p class="where"><em>lib/screens/signup_screen.dart:11 · settings_screen.dart:191, 196</em></p>
+      </div>
+
+      <div class="gap p0">
+        <h4>카카오 네이티브 앱 키가 소스에 박혀 있다</h4>
+        <p><code>.env</code>는 git에 추적되지 않고 있어 다행이지만, 카카오 키는 Dart 리터럴이라 저장소와 함께 노출된다.</p>
+        <p class="where"><em>lib/main.dart:53</em></p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:32px"><span class="chip part">P1</span>&ensp;스펙 미달 — 의뢰서·와이어프레임과 다른 동작</h3>
+    <div class="gaps">
+
+      <div class="gap p1">
+        <h4>지도가 반경으로 조회한다 <span class="chip info">절대원칙 ③ 위반</span></h4>
+        <p>의뢰서는 “반경 개념 없음, 항상 뷰포트(bounds) 기준”이라고 못 박았다. 서버에는 bounds 조회와 geohash 클러스터링이 이미 구현돼 있는데, 앱은 <code>/quests/nearby</code>를 부른다. 그래서 지도를 옮겨도 새 영역의 퀘스트가 안 뜨고, 줌아웃해도 클러스터가 생기지 않는다. <b>여기 하나가 3a·3d 두 화면을 동시에 막고 있다.</b></p>
+        <p class="where"><em>lib/screens/map_screen.dart:242–247</em> ↔ <em>src/services/quest.service.ts:285</em></p>
+      </div>
+
+      <div class="gap p1">
+        <h4>찍은 사진이 서버로 가지 않는다</h4>
+        <p>4b에서 촬영·갤러리 선택은 되지만 업로드 호출이 없다. <code>photoUrl</code>은 항상 비어서 verify로 넘어가고, DB <code>photo_url</code>은 계속 null이다. 공개/비공개 선택 UI도 의미가 없는 상태다.</p>
+        <p class="where"><em>lib/screens/quest_verify_screen.dart</em> — <code>/quests/:id/upload-url</code> 호출부 부재</p>
+      </div>
+
+      <div class="gap p1">
+        <h4>EXP 배율 5개 중 3개가 상수다</h4>
+        <p><code>isNewArea</code>는 <b>항상 true</b>(×1.5 상시 적용), <code>isOffPeak</code>는 <b>항상 false</b>(×1.2 영영 미적용), <code>streakDays</code>는 <b>어디서도 갱신되지 않아</b> 영원히 0이다. 즉 지금 지급되는 EXP는 6b 표와 다르고, 모든 지역이 “첫 방문”으로 계산된다.</p>
+        <p class="where"><em>src/services/quest.service.ts:556–560</em> · <code>streakDays</code> 쓰기 코드 없음</p>
+      </div>
+
+      <div class="gap p1">
+        <h4>재수행이 아예 막혀 있다</h4>
+        <p>스펙은 “24h 후 1일 1회 ×0.3”인데, 구현은 이전 완료가 있으면 <code>QUEST_ALREADY_DONE</code> 409로 전면 차단한다. 재수행 배율이 코드에 들어갈 자리가 없다.</p>
+        <p class="where"><em>src/services/quest.service.ts:491</em></p>
+      </div>
+
+      <div class="gap p1">
+        <h4>위치 위조(Mock location) 검사가 없다</h4>
+        <p>속도·정확도 검사는 있지만 <code>isMocked</code>는 서버로 전송되지도, 검사되지도 않는다. 가짜 위치 앱 하나면 집에서 전국을 완주할 수 있다. 의뢰서 6장이 S3 범위로 지정한 항목이다.</p>
+        <p class="where"><em>lib/services/geolocator_location_service.dart:95</em> (주석으로만 인지)</p>
+      </div>
+
+      <div class="gap p1">
+        <h4>완료한 퀘스트가 추천과 지도에 계속 뜬다</h4>
+        <p>추천 쿼리가 <code>quest_completions</code>를 제외하지 않는다. 다시 수락하면 서버가 막지만, 사용자에겐 끝낸 걸 계속 권하는 셈이다.</p>
+        <p class="where"><em>src/services/quest.service.ts:369 getRecommendedQuests</em></p>
+      </div>
+
+      <div class="gap p1">
+        <h4>홈 대표 배지가 서버를 안 본다</h4>
+        <p>프로필에서 대표 배지를 지정해도 홈은 “아직 획득한 배지가 없어요”라고 한다. 홈만 아직 로컬 <code>BadgeRepository</code>를 쓴다.</p>
+        <p class="where"><em>lib/screens/home_screen.dart:7</em> — <code>badge_api.dart</code> 미사용</p>
+      </div>
+
+      <div class="gap p1">
+        <h4>배지 상세의 “달성한 퀘스트”가 엉뚱한 완료를 고른다</h4>
+        <p>최신순으로 <code>limit threshold</code>를 걸어서, threshold 1인 배지에 두 번째 완료가 올라온다. 실제로 배지를 채운 그 완료들을 골라야 한다.</p>
+        <p class="where"><em>src/services/badge.service.ts</em> — 이력 조회부</p>
+      </div>
+
+      <div class="gap p1">
+        <h4>혼잡도 배치가 등록되지 않았다</h4>
+        <p><code>node-cron</code>으로 10분마다 도는 잡이 작성돼 있지만 <code>index.ts</code>가 이 파일을 import하지 않는다. 즉 <b>한 번도 실행된 적이 없다.</b> 모든 장소가 시드 초기값 그대로다.</p>
+        <p class="where"><em>src/jobs/congestionScore.job.ts:7</em> ↔ <em>src/index.ts</em></p>
+      </div>
+
+      <div class="gap p1">
+        <h4>퀘스트 7종 유형이 마커 색으로만 존재한다</h4>
+        <p>DB에는 퀴즈 정답·수집 목표 개수·시간대 창 컬럼이 다 있고 시드도 7종으로 배분돼 있는데, <code>verifyQuest</code>는 거리만 본다. 앱 인증 화면도 방문형 하나뿐이다. <b>퀴즈 퀘스트를 받아도 문제 없이 위치만으로 완료된다.</b> 범위 결정이 필요한 가장 큰 항목이다.</p>
+        <p class="where"><em>prisma/schema.prisma Quest.quizAnswer · requiredCount · timeWindow*</em> — 검증 코드 없음</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:32px"><span class="chip info">P2</span>&ensp;출시 품질</h3>
+    <div class="gaps">
+      <div class="gap p2">
+        <h4>CI가 없다 · 마커 생성기가 테스트에 섞여 있다</h4>
+        <p><code>.github/</code>가 없어 PR마다 검증되는 것이 없다. 전체 테스트를 돌릴 때마다 PNG 108장이 다시 구워진다 — 결과는 같지만 테스트가 에셋을 쓰는 구조다.</p>
+      </div>
+      <div class="gap p2">
+        <h4>공간 인덱스가 없다</h4>
+        <p>PostGIS 대신 <code>@@index([lat, lng])</code> B-tree 하나다. 뷰포트 조회가 최다 호출이 될 텐데, 시드 21개라 아직 문제가 드러나지 않았을 뿐이다.</p>
+      </div>
+      <div class="gap p2">
+        <h4>오프라인·약전파 재시도 큐가 없다</h4>
+        <p>멱등 <code>requestId</code>는 준비돼 있어 재시도해도 안전하지만, 실패한 인증을 보관했다가 다시 보내는 큐 자체가 없다. 산 위에서 전파가 끊기면 그 완료는 사라진다.</p>
+      </div>
+      <div class="gap p2">
+        <h4>회원 탈퇴 경로가 없다</h4>
+        <p>와이어프레임 5d에 있고 스토어 심사에서도 요구된다. 서버에 탈퇴 엔드포인트가 없다.</p>
+      </div>
+      <div class="gap p2">
+        <h4>콘텐츠가 21개다</h4>
+        <p>의뢰서가 “가장 큰 리스크”로 지목한 항목. 시드 21개로는 지도를 옮겼을 때 빈 화면이 대부분이다. 관광공사 API 동기화가 이를 일부 메우고 있지만, 퀘스트 텍스트는 사람이 써야 한다.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <div class="sechead">
+      <div class="secnum">05</div>
+      <div>
+        <h2>로드맵 · 5개 마일스톤 19일</h2>
+        <p class="dek">순서는 위험도 순이다. R1은 다른 무엇보다 먼저, R5는 R2–R4가 끝나야 의미가 있다</p>
+      </div>
+    </div>
+
+    <div class="ms">
+      <div class="mshead"><span class="mstag">R1</span><h3>제출 방어선</h3><span class="owner">FE 2일 · BE 1일</span></div>
+      <p class="msmeta">3 영업일 · 병렬 가능 · 코드보다 문서 작업이 많다</p>
+      <p class="goal">지금 이 상태로 스토어에 올리거나 저장소를 공개하면 문제가 되는 것만 걷어낸다. 기능은 하나도 늘지 않는다.</p>
+
+      <div class="task"><span class="n">1</span><div>
+        <p class="t">GUEST 프로바이더를 운영 환경에서 차단</p>
+        <p class="d"><code>auth.service.ts:44</code>의 GUEST 분기를 <code>NODE_ENV !== 'production'</code>일 때만 타도록 감싼다. 지우지 말 것 — 개발·테스트가 이 계정에 의존한다.</p>
+        <p class="dod"><b>DoD</b> 운영 빌드에 <code>provider:"GUEST"</code>로 요청하면 403, 개발 서버에서는 통과</p>
+      </div></div>
+
+      <div class="task"><span class="n">2</span><div>
+        <p class="t">개발자 도구를 컴파일 타임 플래그로 감싼다</p>
+        <p class="d">삭제보다 <code>const bool kDevTools = bool.fromEnvironment('DEV_TOOLS')</code> 게이트가 낫다. false면 Dart 컴파일러가 <code>lib/dev/</code> 참조를 통째로 트리셰이킹한다. 로그인 화면의 개발용 계정 버튼, 설정의 DEV-ONLY 블록이 같은 플래그를 본다.</p>
+        <p class="dod"><b>DoD</b> <code>flutter build apk --release</code> 산출물에서 개발자 진입점이 보이지 않고, <code>--dart-define=DEV_TOOLS=true</code>로는 그대로 동작</p>
+      </div></div>
+
+      <div class="task"><span class="n">3</span><div>
+        <p class="t">키를 소스 밖으로 · <code>.env.example</code> 추가</p>
+        <p class="d">카카오 네이티브 키를 <code>--dart-define=KAKAO_NATIVE_KEY=</code>로 옮기고, Android <code>strings.xml</code> 쪽 참조도 같이 정리한다. 백엔드는 <code>.env.example</code>을 만들어 필요한 변수 이름만 저장소에 남긴다.</p>
+        <p class="dod"><b>DoD</b> <code>grep -rn "bddd99" lib/</code> 결과 0건 · 새 개발자가 <code>.env.example</code>만 보고 서버를 띄울 수 있음</p>
+      </div></div>
+
+      <div class="task"><span class="n">4</span><div>
+        <p class="t">약관 3종 문서 작성 + 1c 동의 UI + 설정 연결</p>
+        <p class="d">서비스 이용약관 · <b>위치정보 이용약관</b> · 개인정보처리방침. 위치정보를 수집하므로 두 번째와 세 번째는 협상 대상이 아니다. 1c에 필수 2 + 선택 1(마케팅) 체크박스를 넣고, <code>termsVersion</code>을 <code>2026-09-v1</code> 같은 실제 버전으로 바꾼다. 서버는 이미 동의 이력 컬럼을 갖고 있다.</p>
+        <p class="dod"><b>DoD</b> 필수 미체크 시 “동의하고 계속” 비활성 · DB <code>terms_agreed_at</code>·<code>terms_version</code>에 실버전 기록 · 설정 5d에서 문서 열람 가능</p>
+      </div></div>
+
+      <div class="task"><span class="n">5</span><div>
+        <p class="t">회원 탈퇴</p>
+        <p class="d"><code>DELETE /users/me</code> + 설정 화면 진입점. <code>onDelete: Cascade</code>가 이미 걸려 있어 서버는 짧다. 스토어 심사 요건이기도 하다.</p>
+        <p class="dod"><b>DoD</b> 탈퇴 후 같은 소셜 계정으로 재가입이 되고, 이전 완료·배지가 남아 있지 않음</p>
+      </div></div>
+    </div>
+
+    <div class="ms">
+      <div class="mshead"><span class="mstag">R2</span><h3>지도를 뷰포트로</h3><span class="owner">FE 3일 · BE 1.5일</span></div>
+      <p class="msmeta">4 영업일 · 3a·3d 두 화면과 절대원칙 ③이 여기서 닫힌다</p>
+      <p class="goal">서버에 이미 있는 bounds 조회로 갈아탄다. 전국 어디로 지도를 옮겨도 1초 내 마커가 갱신되고, 줌아웃하면 클러스터가 나온다.</p>
+
+      <div class="task"><span class="n">1</span><div>
+        <p class="t"><code>QuestRepository.fetchQuestsInBounds()</code> 신설</p>
+        <p class="d"><code>GET /quests?swLat&amp;swLng&amp;neLat&amp;neLng&amp;zoom&amp;keywords</code>. 서버 <code>getQuestsByViewport</code>가 이미 클러스터 응답도 만들어 주므로, 앱은 응답이 마커 목록인지 클러스터 목록인지 분기하는 파서만 있으면 된다. <code>fetchNearbyQuests</code>는 홈 추천용으로 남긴다.</p>
+        <p class="dod"><b>DoD</b> 응답 200건 상한 · 초과 시 클러스터 전용 응답을 앱이 정상 파싱</p>
+      </div></div>
+
+      <div class="task"><span class="n">2</span><div>
+        <p class="t">카메라 idle 300ms 디바운스 → 재조회</p>
+        <p class="d"><code>map_screen.dart</code>의 <code>_fetchQuestsFromBackend(lat, lng)</code>를 bounds 버전으로 교체하고, 카메라 이동이 멈춘 뒤 300ms 후에만 부른다. 이동 중 연속 호출이 서버 최다 호출 경로가 되는 것을 막는 장치다.</p>
+        <p class="dod"><b>DoD</b> 지도를 한 번 크게 스와이프할 때 요청이 1회만 나감 (로그로 확인)</p>
+      </div></div>
+
+      <div class="task"><span class="n">3</span><div>
+        <p class="t">클러스터 마커 연결 · 탭하면 줌인 (3d)</p>
+        <p class="d"><code>app_widgets.dart:1372</code>의 <code>MarkerCluster</code>는 이미 만들어져 있고 지도에 붙기만 하면 된다. 카카오맵 오버레이는 PNG만 받으므로 <code>(+n)</code> 숫자는 기존 마커 생성기와 같은 방식으로 캔버스에서 굽거나, 커스텀 오버레이 HTML로 처리한다.</p>
+        <p class="dod"><b>DoD</b> 시드 기준 줌 레벨을 낮추면 클러스터가 뜨고, 탭하면 그 영역으로 줌인</p>
+      </div></div>
+
+      <div class="task"><span class="n">4</span><div>
+        <p class="t">키워드 필터 칩 가로 스크롤 (3a)</p>
+        <p class="d">온보딩에서 고른 키워드가 앞으로 정렬된다. 선택 상태를 <code>keywords</code> 쿼리 파라미터로 그대로 서버에 넘긴다 — 이 키워드 축은 퀘스트 태그·배지 분류와 같은 축이라 새로 정의할 것이 없다.</p>
+        <p class="dod"><b>DoD</b> 칩을 켜면 마커가 줄고, 앱을 껐다 켜도 마지막 선택이 유지됨</p>
+      </div></div>
+
+      <div class="task"><span class="n">5</span><div>
+        <p class="t"><code>GET /quests/search</code> 신설 + 검색바 연결</p>
+        <p class="d">지금 검색은 이미 받아온 목록을 클라이언트에서 거른다. 화면 밖 퀘스트는 검색되지 않는다는 뜻이다. 지역명·퀘스트명 <code>ILIKE</code> 검색으로 서버에 옮기고, 결과 선택 시 지도를 그 좌표로 이동시킨다.</p>
+        <p class="dod"><b>DoD</b> 수원에서 “전주”를 검색하면 결과가 나오고 지도가 이동함</p>
+      </div></div>
+
+      <div class="task"><span class="n">6</span><div>
+        <p class="t">공간 인덱스 점검</p>
+        <p class="d">PostGIS 도입은 마이그레이션 비용이 있으니, 먼저 현재 B-tree로 뷰포트 쿼리 <code>EXPLAIN ANALYZE</code>를 떠 본다. 시드를 500개로 늘려 측정하고, 그때도 100ms 이내면 MVP는 이대로 간다 — 판단 근거를 남기는 것이 목적이다.</p>
+        <p class="dod"><b>DoD</b> 측정 결과와 “PostGIS 도입 / 보류” 결정이 문서에 기록됨</p>
+      </div></div>
+    </div>
+
+    <div class="ms">
+      <div class="mshead"><span class="mstag">R3</span><h3>보상을 스펙대로</h3><span class="owner">BE 3일 · FE 1.5일</span></div>
+      <p class="msmeta">4 영업일 · 6b 배율표와 실제 지급액을 일치시킨다</p>
+      <p class="goal">지금 EXP는 6b 표와 다르게 계산된다. 상수로 박힌 배율 3개를 실제 판정으로 바꾸고, 사진 파이프라인을 잇고, 위조 방어를 마저 넣는다.</p>
+
+      <div class="task"><span class="n">1</span><div>
+        <p class="t">신규 지역 판정</p>
+        <p class="d">지금은 <code>isNewArea: true</code> 고정이다. 해당 유저의 <code>quest_completions</code>를 <code>quest.place.regionCode</code>로 조인해 처음 보는 시·군일 때만 ×1.5. 시드가 카카오 표기(<code>경기</code>·<code>서울</code>)로 통일돼 있어 비교 기준은 이미 있다.</p>
+        <p class="dod"><b>DoD</b> 같은 지역 두 번째 완료의 <code>multipliers_json.area</code>가 1.0</p>
+      </div></div>
+
+      <div class="task"><span class="n">2</span><div>
+        <p class="t">비피크 시간대 · 스트릭</p>
+        <p class="d"><code>isOffPeak</code>는 평일 오전 기준으로 계산한다(<b>KST 기준임에 주의</b> — 서버 시각이 UTC면 그대로 쓰면 9시간 어긋난다). <code>streakDays</code>는 아무도 쓰지 않아 항상 0이므로, 로그인 또는 완료 시점에 <code>lastActiveAt</code>과 비교해 갱신한다.</p>
+        <p class="dod"><b>DoD</b> 이틀 연속 완료 시 <code>streak_days = 2</code>, 배율에 ×1.1이 반영</p>
+      </div></div>
+
+      <div class="task"><span class="n">3</span><div>
+        <p class="t">재수행 ×0.3 허용</p>
+        <p class="d">현재는 이전 완료가 있으면 409로 끝난다. “마지막 완료로부터 24h 경과 + 그날 첫 재수행”이면 통과시키고 <code>mRepeat = 0.3</code>을 적용한다. 24h 이내면 지금처럼 409를 유지한다. <code>requestId</code> 멱등성은 그대로 살아 있어야 한다.</p>
+        <p class="dod"><b>DoD</b> 24h 전 재시도는 409, 이후 재시도는 기본 EXP의 30%가 지급</p>
+      </div></div>
+
+      <div class="task"><span class="n">4</span><div>
+        <p class="t">사진 업로드 파이프라인 연결</p>
+        <p class="d">4b에서 촬영 → <code>POST /quests/:id/upload-url</code>로 presign 요청 → S3에 PUT → 받은 <code>publicUrl</code>을 verify 바디에 실어 보낸다. 업로드 전에 클라이언트에서 리사이즈·압축(장변 1600px 내외)한다. 서버 <code>validatePhotoMetadata</code>(촬영 5분 이내)가 이미 있으니 EXIF 촬영 시각도 함께 보낸다.</p>
+        <p class="dod"><b>DoD</b> 완료 후 DB <code>photo_url</code>이 채워지고 S3 객체가 실제로 존재 · 공개/비공개 선택이 <code>photo_visibility</code>에 반영</p>
+      </div></div>
+
+      <div class="task"><span class="n">5</span><div>
+        <p class="t">Mock location 차단</p>
+        <p class="d"><code>Position.isMocked</code>를 verify 요청에 실어 보내고, 서버는 참이면 <code>is_abused = true</code>로 기록하며 EXP 0으로 처리한다. 클라이언트 값을 그대로 믿는 것이지만, 없는 것보다는 낫고 로그가 남는다.</p>
+        <p class="dod"><b>DoD</b> 가짜 위치 앱으로 인증 시 EXP 0 · <code>quest_completions.is_abused</code> 기록</p>
+      </div></div>
+
+      <div class="task"><span class="n">6</span><div>
+        <p class="t">혼잡도 배치를 실제로 켠다</p>
+        <p class="d"><code>src/index.ts</code>가 <code>congestionScore.job.ts</code>를 import하지 않아 한 번도 돈 적이 없다. 등록하고, 방문 로그가 아직 얕으므로 초기값은 의뢰서대로 <b>관광지별 상수 등급</b>으로 시드해 둔다.</p>
+        <p class="dod"><b>DoD</b> 서버 기동 로그에 잡 등록이 찍히고, 10분 뒤 <code>congestion_score</code>가 갱신됨</p>
+      </div></div>
+    </div>
+
+    <div class="ms">
+      <div class="mshead"><span class="mstag">R4</span><h3>홈과 배지 마감</h3><span class="owner">FE 2일 · BE 1일</span></div>
+      <p class="msmeta">3 영업일 · S4 인수인계에서 “열림”으로 넘긴 것들이 여기 모여 있다</p>
+      <p class="goal">화면끼리 어긋나 있는 것을 맞춘다. 새 화면은 없고, 데이터 출처를 서버로 통일하는 일이다.</p>
+
+      <div class="task"><span class="n">1</span><div>
+        <p class="t"><code>GET /home</code> 통합 API</p>
+        <p class="d">진행중 + 추천 + 대표배지를 1회 호출로. 지금은 홈 진입마다 3번 왕복한다. 의뢰서 S4 BE 6번 항목이고, 홈이 앱에서 가장 자주 열리는 화면이라 왕복 수가 체감 속도를 좌우한다.</p>
+        <p class="dod"><b>DoD</b> 홈 진입 시 네트워크 요청 1건 · 응답 300ms 이내(로컬 기준)</p>
+      </div></div>
+
+      <div class="task"><span class="n">2</span><div>
+        <p class="t">홈 대표 배지를 서버 값으로</p>
+        <p class="d"><code>home_screen.dart</code>가 아직 로컬 <code>BadgeRepository</code>를 본다. 보상 화면이 이미 쓰는 방식대로 <code>badge_api.dart</code>에 붙인다. 0개일 때 “배지를 모아보세요” 안내는 5c 스펙대로 유지한다.</p>
+        <p class="dod"><b>DoD</b> 프로필에서 대표 배지를 바꾸면 홈에 즉시 반영 · 기기를 바꿔도 유지</p>
+      </div></div>
+
+      <div class="task"><span class="n">3</span><div>
+        <p class="t">완료 퀘스트를 추천·지도에서 제외</p>
+        <p class="d">추천 쿼리에서 <code>quest_completions</code>를 <code>NOT EXISTS</code>로 뺀다. 지도는 재수행 대상이므로 <b>지우지 말고 완료 표식</b>(마커 흐리게 + 시트에 “완료함”)으로 구분하는 편이 낫다 — R3에서 재수행을 열기 때문이다.</p>
+        <p class="dod"><b>DoD</b> 완료한 퀘스트가 홈 추천에 없고, 지도에서는 완료 상태로 구분됨</p>
+      </div></div>
+
+      <div class="task"><span class="n">4</span><div>
+        <p class="t">배지 이력이 “채운 그 완료”를 고르게</p>
+        <p class="d">최신순 <code>limit threshold</code>를 버리고, 규칙 조건을 만족한 완료를 <b>오래된 순</b>으로 threshold개 고른다. 배지 획득 판정이 이미 완료 목록을 재계산하고 있으므로 같은 쿼리를 재사용할 수 있다.</p>
+        <p class="dod"><b>DoD</b> threshold 1인 “첫 발자국”의 이력이 첫 번째 완료를 가리킴</p>
+      </div></div>
+
+      <div class="task"><span class="n">5</span><div>
+        <p class="t">푸시 알림 — 또는 약속 철회</p>
+        <p class="d"><b>결정이 먼저다.</b> 온보딩 3단계가 “주변에 퀘스트가 뜨면 알려드릴까요?”라고 묻고 설정에 스위치까지 있는데 발송 경로가 없다. 구현하면 FCM + 토큰 저장 + 발송 트리거로 <b>3일이 더 든다</b>. MVP에서 뺀다면 온보딩 3단계와 설정 문구를 “출시 후 제공” 으로 정직하게 바꾸는 것이 30분 작업이다.</p>
+        <p class="dod"><b>DoD</b> 둘 중 하나가 선택되어 화면 문구와 실제 동작이 일치</p>
+      </div></div>
+
+      <div class="task"><span class="n">6</span><div>
+        <p class="t">이메일 로그인 — 또는 버튼 제거</p>
+        <p class="d">와이어프레임 1b·1c에 “이메일로 계속하기”가 있지만 구현도 계획도 없다. 이메일은 인증 메일·비밀번호 재설정까지 딸려 오는 별도 과제다. <b>MVP에서 빼고 와이어프레임을 갱신하는 쪽을 권한다.</b></p>
+        <p class="dod"><b>DoD</b> 화면과 문서가 일치 (구현하거나, 양쪽에서 지우거나)</p>
+      </div></div>
+    </div>
+
+    <div class="ms">
+      <div class="mshead"><span class="mstag">R5</span><h3>안정화와 출시</h3><span class="owner">FE 3일 · BE 2일</span></div>
+      <p class="msmeta">5 영업일 · 야외 실측 테스트가 이 마일스톤의 절반이다</p>
+      <p class="goal">의뢰서 S5. 밖에서 실제로 한 바퀴 돌고, CI를 세우고, 스토어에 올릴 수 있는 상태로 만든다.</p>
+
+      <div class="task"><span class="n">1</span><div>
+        <p class="t">CI 구축 · 마커 생성기 분리</p>
+        <p class="d">PR마다 <code>flutter analyze</code> + <code>flutter test</code> + <code>npm run build</code>. 실서버 상대 live 테스트는 태그로 분리해 CI에서 제외한다. 마커 생성기도 <code>test/</code>에서 <code>tool/</code>이나 별도 스크립트로 옮긴다 — 지금은 테스트를 돌릴 때마다 PNG 108장이 다시 구워진다.</p>
+        <p class="dod"><b>DoD</b> PR에서 초록불이 뜨고, 생성기가 일반 테스트 실행에 섞이지 않음</p>
+      </div></div>
+
+      <div class="task"><span class="n">2</span><div>
+        <p class="t">오프라인 재시도 큐</p>
+        <p class="d">멱등 <code>requestId</code>가 이미 있으므로 큐 자체는 단순하다. 실패한 verify를 로컬에 쌓아두고 네트워크 복구 시 같은 <code>requestId</code>로 재전송한다. 산·해안 퀘스트가 있는 서비스라 이건 예외가 아니라 정상 경로다.</p>
+        <p class="dod"><b>DoD</b> 비행기 모드에서 완료 → 해제 시 자동 전송 → EXP 1회만 지급</p>
+      </div></div>
+
+      <div class="task"><span class="n">3</span><div>
+        <p class="t">야외 실측 테스트 <span class="chip crit">생략 불가</span></p>
+        <p class="d">GPS는 실내에서 검증되지 않는다. 실제로 밖에서 퀘스트 3개를 완주하고, 앱 표시값과 DB를 한 줄씩 대조한다. 이번에 열린 재수행·신규지역·스트릭 배율이 모두 실제 이동에서만 드러난다. 배터리 소모와 위치 갱신 주기도 이때 잰다.</p>
+        <p class="dod"><b>DoD</b> EXP·레벨·배지 진행도가 서버와 100% 일치 · 1시간 사용 시 배터리 소모 기록</p>
+      </div></div>
+
+      <div class="task"><span class="n">4</span><div>
+        <p class="t">부하·인덱스·백업·prod 분리</p>
+        <p class="d">뷰포트 조회를 최다 호출로 가정하고 부하를 준다. dev와 prod DB를 분리하고 백업 정책을 정한다. 어뷰징 로그(<code>is_abused</code>)를 볼 수 있는 최소한의 조회 경로도 이때 만든다.</p>
+        <p class="dod"><b>DoD</b> 동시 50 요청에서 뷰포트 조회 p95 &lt; 500ms · prod 환경 분리 완료</p>
+      </div></div>
+
+      <div class="task"><span class="n">5</span><div>
+        <p class="t">스토어 제출 자산 · 법적 절차</p>
+        <p class="d">앱 아이콘·스플래시·스크린샷, Play Console 등록, 내부 테스트 배포. 개인정보처리방침 URL은 R1에서 쓴 문서를 공개 페이지로 올린다. <b>위치기반서비스 사업자 신고</b> 필요 여부는 법무 확인이 필요하고, 확인에 시간이 걸리므로 R1 시점에 문의를 걸어 둔다.</p>
+        <p class="dod"><b>DoD</b> 내부 테스트 트랙에 배포되어 팀원 기기에 설치됨</p>
+      </div></div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section>
+    <div class="sechead">
+      <div class="secnum">06</div>
+      <div>
+        <h2>먼저 정해야 할 것</h2>
+        <p class="dek">코드보다 결정이 먼저인 항목. 셋 다 R1 시작 전에 답이 나와야 일정이 흔들리지 않는다</p>
+      </div>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>결정</th><th>선택지</th><th>영향</th><th>기한</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>퀘스트 7종 유형</b><br><span class="note">DB·마커·시드는 7종인데 검증은 방문형뿐</span></td>
+            <td class="note">① MVP는 방문형만 — 시드를 방문형으로 되돌리고 마커 유형 표시는 유지<br>② 7종 전부 — 퀴즈·수집·시간대 검증 + 인증 화면 6개 추가</td>
+            <td class="note">②를 고르면 <b>+1.5주</b>. 지금은 퀴즈 퀘스트가 위치만으로 완료된다</td>
+            <td class="num">R2 착수 전</td>
+          </tr>
+          <tr>
+            <td><b>푸시 알림</b><br><span class="note">온보딩·설정이 약속하는데 발송 경로 없음</span></td>
+            <td class="note">① FCM 구현<br>② MVP 제외 + 화면 문구 정정</td>
+            <td class="note">①은 <b>+3일</b>. ②는 30분. 지금 상태는 “묻고 답을 버리는” 화면이라 그대로 둘 수 없다</td>
+            <td class="num">R4 착수 전</td>
+          </tr>
+          <tr>
+            <td><b>PostGIS 도입</b><br><span class="note">의뢰서는 “사실상 필수”, 현재는 B-tree</span></td>
+            <td class="note">① 지금 마이그레이션<br>② R2에서 측정 후 판단</td>
+            <td class="note">②를 권한다. 500개 시드로 재보고 100ms 이내면 MVP는 현재 구조로 충분하다</td>
+            <td class="num">R2 중</td>
+          </tr>
+          <tr>
+            <td><b>콘텐츠 확보</b><br><span class="note">시드 21개</span></td>
+            <td class="note">개발과 <b>병행</b>해 도시별 30개 수작업. 관광공사 API는 장소를 채워줄 뿐 퀘스트 텍스트를 쓰지 않는다</td>
+            <td class="note">R5 실측 테스트 때 최소 1개 도시가 채워져 있어야 의미 있는 테스트가 된다</td>
+            <td class="num">지금부터 상시</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>일정 요약</h3>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>마일스톤</th><th>일수</th><th>누적</th><th>끝나면 할 수 있는 말</th></tr></thead>
+        <tbody>
+          <tr><td class="id">R1 제출 방어선</td><td class="num">3</td><td class="num">3</td><td class="note">저장소를 공개해도, 스토어에 올려도 사고가 나지 않는다</td></tr>
+          <tr><td class="id">R2 지도 뷰포트</td><td class="num">4</td><td class="num">7</td><td class="note">전국 어디로 지도를 옮겨도 퀘스트가 뜬다</td></tr>
+          <tr><td class="id">R3 보상 정합</td><td class="num">4</td><td class="num">11</td><td class="note">화면에 뜬 EXP가 6b 표대로 계산된 값이다</td></tr>
+          <tr><td class="id">R4 홈·배지 마감</td><td class="num">3</td><td class="num">14</td><td class="note">모든 화면이 같은 데이터(서버)를 본다</td></tr>
+          <tr><td class="id">R5 안정화·출시</td><td class="num">5</td><td class="num">19</td><td class="note">내부 테스트 배포가 팀원 기기에 깔린다</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">7종 유형을 전부 구현하기로 하면 +7일, 푸시를 넣으면 +3일. 최대 <b>29 영업일 ≈ 6주</b>. 콘텐츠 작성은 이 일정에 포함돼 있지 않다 — 개발과 병행하는 별도 트랙이다.</p>
+  </section>
+
+  <p class="foot">로컬 퀘스트 · 현황 조사와 로드맵 · 2026-08-28 · 커밋 8339bc8 기준<br>근거는 모두 저장소 실물에서 확인함 — 파일·라인 표기가 붙은 항목은 그 자리에서 재확인 가능</p>
+</div>
+</body>
+</html>

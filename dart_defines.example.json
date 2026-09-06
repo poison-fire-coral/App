@@ -10,5 +10,8 @@
   "_DEV_TOOLS": "개발자 도구 노출 여부. 지우면 디버그 빌드에서만 켜진다. 릴리스 빌드에서는 반드시 false 여야 한다.",
   "DEV_TOOLS": "true",
 
+  "_LEGAL_BASE_URL": "약관 문서가 올라간 서버 주소 (마지막 슬래시 없이). 앱 설정 화면의 '전문 보기'와 스토어 등록에 쓰는 같은 주소다. 예: https://api.example.com — 비우면 화면이 '준비 중'으로 뜬다.",
+  "LEGAL_BASE_URL": "",
+
   "_API_BASE_URL": "여기 두지 말 것. 사람마다 값이 달라서 launch.json 의 실행 구성이 --dart-define=API_BASE_URL=... 로 직접 넘긴다. 로컬 서버는 http://localhost:5001/api/v1, 안드로이드 에뮬레이터는 http://10.0.2.2:5001/api/v1 이다."
 }

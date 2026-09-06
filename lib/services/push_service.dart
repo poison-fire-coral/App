@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -19,8 +20,48 @@ import '../models/api_exception.dart';
 ///
 /// **실패해도 앱을 막지 않는다.** 알림은 부가 기능이다. 권한을 거절당하거나
 /// 네트워크가 없어 등록에 실패해도 나머지는 그대로 돌아가야 한다.
+/// 앱이 백그라운드·종료 상태일 때 도착한 메시지.
+///
+/// **최상위 함수여야 하고 `@pragma('vm:entry-point')` 가 있어야 한다.**
+/// 이 콜백은 별도의 격리(isolate)에서 도는데, 릴리스 빌드에서는 어디서도
+/// 호출되지 않는 것으로 보여 트리셰이킹된다 — 그러면 알림이 오지 않는다.
+///
+/// 여기서는 아무것도 하지 않는다. 시스템이 알림 자체는 이미 표시했고,
+/// 이 시점에 화면을 띄우거나 서버를 부를 이유가 없다. 등록해 두는 이유는
+/// 등록하지 않으면 FCM 이 경고를 남기고, 나중에 처리할 것이 생겼을 때
+/// 붙일 자리가 없기 때문이다.
+@pragma('vm:entry-point')
+Future<void> handleBackgroundMessage(RemoteMessage message) async {
+  debugPrint('백그라운드 알림 수신: ${message.messageId}');
+}
+
 class PushService {
   const PushService._();
+
+  /// 앱이 떠 있는 동안 온 알림. 표시 여부는 아래 [initialize] 참고.
+  static StreamSubscription<RemoteMessage>? _foregroundSub;
+
+  /// 앱 시작 때 한 번. Firebase 초기화 **뒤에** 불러야 한다.
+  ///
+  /// 권한도 토큰도 건드리지 않는다 — 그건 사용자가 스위치를 켤 때의 일이다.
+  /// 여기서 하는 것은 메시지가 도착할 자리를 만들어 두는 것뿐이다.
+  static Future<void> initialize() async {
+    try {
+      FirebaseMessaging.onBackgroundMessage(handleBackgroundMessage);
+
+      // 안드로이드는 포그라운드에서 시스템 알림을 자동으로 띄우지 않는다.
+      // 지금은 배너를 직접 그리지 않고 로그만 남긴다 — 알림의 목적이
+      // "앱을 안 보고 있을 때 알리는 것"이라, 보고 있는 중에 가리는 것은
+      // 오히려 방해다. 인앱 배너가 필요해지면 여기에 붙인다.
+      _foregroundSub?.cancel();
+      _foregroundSub = FirebaseMessaging.onMessage.listen((message) {
+        debugPrint('포그라운드 알림 수신: ${message.notification?.title}');
+      });
+    } catch (e) {
+      // Firebase 가 초기화되지 않은 환경(테스트·설정 누락)에서도 앱은 떠야 한다.
+      debugPrint('푸시 수신 준비 실패: $e');
+    }
+  }
 
   /// 사용자가 설정에서 켜 둔 값. OS 권한과는 **다른 것**이다.
   ///

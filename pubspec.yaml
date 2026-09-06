@@ -1,5 +1,5 @@
 name: local_quest
-description: "A new Flutter project."
+description: "로컬 퀘스트 — 걸어서 닿는 곳에서 시작하는 장소 기반 퀘스트 앱"
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -29,6 +29,11 @@ dependencies:
   uuid: ^4.6.0
   image_picker: ^1.2.3
   firebase_messaging: ^16.6.0
+
+  # 설정 화면의 버전 표시. 상수로 적어 두면 pubspec 과 어긋나는데,
+  # 실제로 0.1.0 이라 적혀 있는 동안 pubspec 은 1.0.0 이었다.
+  package_info_plus: ^10.2.1
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

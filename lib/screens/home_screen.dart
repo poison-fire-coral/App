@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../data/badge_api.dart';
+import '../data/home_repository.dart';
 import '../data/quest_repository.dart';
 import '../dev/dev_tools.dart'; // DEV-ONLY
 import '../models/active_quest.dart';
@@ -20,7 +21,6 @@ import '../widgets/badge_widgets.dart';
 class HomeScreen extends StatefulWidget {
   final UserModel user;
   final List<ActiveQuest> activeQuests;
-  final List<QuestModel> recommendedQuests;
   final ValueChanged<ActiveQuest> onContinueQuest;
   final ValueChanged<QuestModel> onSelectQuest;
   final void Function(BuildContext context)? onOpenSettings;
@@ -34,7 +34,6 @@ class HomeScreen extends StatefulWidget {
     required this.onContinueQuest,
     required this.onSelectQuest,
     this.activeQuests = const [],
-    this.recommendedQuests = const [],
     this.onOpenSettings,
     this.onOpenMap,
     this.onOpenBadges,
@@ -49,7 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final PageController _carouselController;
   int _carouselIndex = 0;
 
-  // Real-time nearest 3 quests state
+  // 내 위치 기준 추천 3개.
   List<QuestModel> _nearbyQuests = [];
   bool _isLoadingNearby = true;
   double? _userLat;
@@ -59,69 +58,70 @@ class _HomeScreenState extends State<HomeScreen> {
   List<BadgeSummary> _badges = const [];
   bool _isLoadingBadges = true;
 
+  /// 서버를 못 불렀을 때. null이면 정상이다.
+  ///
+  /// 예전에는 실패하면 하드코딩된 목업 퀘스트로 갈아 끼웠다. 화면은 멀쩡해 보이지만
+  /// 존재하지 않는 퀘스트가 뜨고, 누르면 그 id로 수락을 시도한다. 실패는 실패라고 말한다.
+  bool _loadFailed = false;
+
   @override
   void initState() {
     super.initState();
     _carouselController = PageController();
-    _loadNearbyQuests();
-    _loadBadges();
+    _loadHome();
   }
 
-  /// 대표 배지를 서버에서 받아 3칸을 채운다.
-  Future<void> _loadBadges() async {
-    try {
-      final result = await BadgeApi.list();
+  /// 홈에 필요한 것을 **한 번에** 받는다 — 체크리스트 20번.
+  ///
+  /// 예전에는 `BadgeApi.list()`와 `fetchNearbyQuests()`를 따로 불렀다. 홈은 앱에서
+  /// 가장 자주 열리는 화면이라 그 왕복 수가 그대로 체감 속도가 된다.
+  ///
+  /// 위치는 서버로 넘겨 **가까운 순**으로 받는다. 권한을 아직 안 줬으면 좌표 없이
+  /// 보내고, 그때는 키워드·홈지역 기준 추천이 온다 — 홈이 비어 보이지 않게 하려는 것이다.
+  Future<void> _loadHome() async {
+    double? lat;
+    double? lng;
 
-      final featured =
-          result.items.where((b) => b.isFeatured).toList(growable: false);
-      final achieved = result.items
-          .where((b) => b.state == BadgeState.achieved && !b.isFeatured)
-          .toList(growable: false);
+    try {
+      final pos = await PermissionService.currentPosition();
+      final override = DevTools.locationOverride;
+      lat = override?.latitude ?? pos?.latitude;
+      lng = override?.longitude ?? pos?.longitude;
+    } catch (_) {
+      // 위치를 못 잡아도 홈은 뜬다. 거리 표기만 흐려질 뿐이다.
+    }
+
+    if (lat != null && lng != null) {
+      // 거리 표기와 검색 정렬이 같은 기준을 보도록 알려 둔다.
+      QuestRepository.updateUserLocation(lat, lng);
+    }
+
+    try {
+      final summary = await HomeRepository.fetchSummary(lat: lat, lng: lng);
 
       if (!mounted) return;
       setState(() {
-        _badges = [...featured, ...achieved].take(3).toList();
+        _userLat = lat;
+        _userLng = lng;
+        _nearbyQuests = summary.recommendedQuests
+            .where((q) => !widget.user.hasCompleted(q.id))
+            .take(3)
+            .toList();
+        _badges = summary.badges;
+        _loadFailed = false;
+        _isLoadingNearby = false;
         _isLoadingBadges = false;
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _isLoadingBadges = false);
-    }
-  }
-
-  /// 백엔드 API를 호출하여 내 위치 기준 가장 가까운 퀘스트 3개를 로드합니다.
-  Future<void> _loadNearbyQuests() async {
-    try {
-      final pos = await PermissionService.currentPosition();
-      final override = DevTools.locationOverride;
-
-      final lat = override?.latitude ??
-          pos?.latitude ??
-          QuestRepository.mockUserLocation.latitude;
-      final lng = override?.longitude ??
-          pos?.longitude ??
-          QuestRepository.mockUserLocation.longitude;
-
-      final quests = await QuestRepository.fetchNearbyQuests(lat: lat, lng: lng);
-
-      if (mounted) {
-        setState(() {
-          _userLat = lat;
-          _userLng = lng;
-          _nearbyQuests = quests
-              .where((q) => !widget.user.hasCompleted(q.id))
-              .take(3)
-              .toList();
-          _isLoadingNearby = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _nearbyQuests = widget.recommendedQuests.take(3).toList();
-          _isLoadingNearby = false;
-        });
-      }
+      setState(() {
+        _userLat = lat;
+        _userLng = lng;
+        _nearbyQuests = const [];
+        _loadFailed = true;
+        _isLoadingNearby = false;
+        _isLoadingBadges = false;
+      });
     }
   }
 
@@ -162,9 +162,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final displayQuests = _nearbyQuests.isNotEmpty
-        ? _nearbyQuests
-        : widget.recommendedQuests.take(3).toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -182,12 +179,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: RefreshIndicator(
                 color: AppColors.quest500,
-                onRefresh: () async {
-                  await Future.wait([
-                    _loadNearbyQuests(),
-                    _loadBadges(),
-                  ]);
-                },
+                onRefresh: _loadHome,
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(
@@ -208,8 +200,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         title: '내 주변 추천 퀘스트',
                         trailingText: '새로고침',
                         onTapTrailing: () {
-                          setState(() => _isLoadingNearby = true);
-                          _loadNearbyQuests();
+                          setState(() {
+                            _isLoadingNearby = true;
+                            _isLoadingBadges = true;
+                          });
+                          _loadHome();
                         },
                       ),
                       const SizedBox(height: AppSpacing.md),
@@ -227,11 +222,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         )
-                      else if (displayQuests.isEmpty)
+                      else if (_loadFailed)
+                        _buildLoadError()
+                      else if (_nearbyQuests.isEmpty)
                         NoteBox.text('주변에 추천할 퀘스트가 없어요. 지도를 움직여 다른 지역을 살펴보세요.',
                             fontSize: 12)
                       else
-                        for (final quest in displayQuests)
+                        for (final quest in _nearbyQuests)
                           _buildRecommendedRow(quest),
                       const SizedBox(height: AppSpacing.xxl),
                       SectionHeader(
@@ -299,7 +296,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   '‹', () => _moveCarousel(-1), quests.length > 1),
               Expanded(
                 child: SizedBox(
-                  height: 104,
+                  // PageView는 높이를 스스로 못 정해서 여기서 잡아 줘야 한다.
+                  //
+                  // 고정 104는 좁은 화면에서 제목이 두 줄로 접히는 순간 모자랐다
+                  // (320×568에서 30px 넘침). 글자 크기를 키운 기기에서도 같은 일이
+                  // 난다 — 카드 안이 전부 글자라 배율을 그대로 따라간다.
+                  height: 104 *
+                      MediaQuery.textScalerOf(context)
+                          .scale(1.0)
+                          .clamp(1.0, 1.4),
                   child: PageView.builder(
                     controller: _carouselController,
                     itemCount: quests.length,
@@ -375,16 +380,21 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     } else {
       distanceMeters = Geo.distanceMeters(
-          QuestRepository.mockUserLocation, active.currentSpot.point);
+          QuestRepository.defaultMapCenter, active.currentSpot.point);
     }
 
     final isNear = active.progress >= 0.85;
 
-    return Row(
+    // 320px 폭 기기에서는 이 카드 안쪽이 250px 남짓이다. 등급 상자와 제목 두 줄을
+    // 그대로 두면 가로로 20px, 세로로 30px 넘쳤다. 좁으면 둘 다 한 단계 줄인다.
+    return LayoutBuilder(builder: (context, constraints) {
+      final isNarrow = constraints.maxWidth < 260;
+
+      return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
-          width: 76,
+          width: isNarrow ? 56 : 76,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             gradient: AppSurface.sunken,
@@ -403,7 +413,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Text(
                 quest.title,
-                maxLines: 2,
+                maxLines: isNarrow ? 1 : 2,
                 overflow: TextOverflow.ellipsis,
                 style: AppType.h3,
               ),
@@ -412,11 +422,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   RewardPill(exp: quest.displayExp),
                   const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    Geo.formatDistance(distanceMeters),
-                    style: AppType.numeric.copyWith(
-                      fontSize: 11,
-                      color: AppColors.textTertiary,
+                  // 좁은 화면에서는 EXP 배지가 먼저고 거리는 줄어들어도 된다.
+                  Flexible(
+                    child: Text(
+                      Geo.formatDistance(distanceMeters),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppType.numeric.copyWith(
+                        fontSize: 11,
+                        color: AppColors.textTertiary,
+                      ),
                     ),
                   ),
                 ],
@@ -427,12 +442,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 accent: isNear ? AppColors.jade500 : null,
               ),
               const SizedBox(height: AppSpacing.xs),
-              Text(active.progressLabel, style: AppType.micro),
+              Text(
+                active.progressLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppType.micro,
+              ),
             ],
           ),
         ),
       ],
-    );
+      );
+    });
   }
 
   Widget _buildEmptyQuestCard() {
@@ -473,6 +494,33 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// 추천을 못 받아 왔을 때. 조용히 넘어가지 않고 다시 시도할 길을 준다.
+  Widget _buildLoadError() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        NoteBox.text(
+          '주변 퀘스트를 불러오지 못했어요. 네트워크를 확인해 주세요.',
+          fontSize: 12,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        TextButton(
+          onPressed: () {
+            setState(() {
+              _isLoadingNearby = true;
+              _isLoadingBadges = true;
+            });
+            _loadHome();
+          },
+          child: const Text(
+            '다시 시도',
+            style: TextStyle(color: AppColors.quest500, fontSize: 13),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildRecommendedRow(QuestModel quest) {
     String distanceStr;
     if (_userLat != null && _userLng != null && quest.spots.isNotEmpty) {
@@ -497,7 +545,6 @@ class _HomeScreenState extends State<HomeScreen> {
             TierBadge(
               stars: quest.difficulty.stars,
               hasHalfStar: quest.hasHalfStar,
-              showLabel: false,
             ),
             const SizedBox(width: AppSpacing.md),
             Expanded(
@@ -515,6 +562,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     '${quest.spotName} · $distanceStr',
                     style: AppType.caption,
                   ),
+                  const SizedBox(height: 5),
+                  // 난이도(별)만 보이던 줄에 "무엇을 하는 퀘스트인지"를 더한다.
+                  QuestTypeBadge(questType: quest.questType),
                 ],
               ),
             ),

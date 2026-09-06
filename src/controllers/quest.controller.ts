@@ -7,7 +7,8 @@ export class QuestController {
   // 1. 퀘스트 목록 / 뷰포트 / 클러스터링 조회
   static async getQuests(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { swLat, swLng, neLat, neLng, zoom, keywords, search } = req.query;
+      const { swLat, swLng, neLat, neLng, zoom, keywords, search, originLat, originLng } =
+        req.query;
 
       const parsedSwLat = swLat ? parseFloat(swLat as string) : undefined;
       const parsedSwLng = swLng ? parseFloat(swLng as string) : undefined;
@@ -24,6 +25,9 @@ export class QuestController {
         zoom: parsedZoom,
         keywords: parsedKeywords,
         search: search as string,
+        // 검색 거리순 정렬의 기준점 — 앱이 아는 마지막 내 위치다 (12번).
+        originLat: originLat ? parseFloat(originLat as string) : undefined,
+        originLng: originLng ? parseFloat(originLng as string) : undefined,
         // optionalAuth 가 채운다. 비로그인이면 undefined.
         userId: req.user?.id,
       });
@@ -188,9 +192,12 @@ export class QuestController {
         lng,
         accuracyM,
         photoUrl,
+        photoUrls,
         photoVisibility,
         userText,
         emotionTag,
+        isMocked,
+        answer,
       } = req.body;
 
       if (!requestId) {
@@ -209,9 +216,19 @@ export class QuestController {
         lng: Number(lng),
         accuracyM: Number(accuracyM),
         photoUrl,
+        // 08 수집형이 모은 사진들. 배열이 아닌 것이 오면 없는 것으로 본다 —
+        // 검증에서 장수를 세므로 형태가 어긋나면 그대로 거절된다.
+        photoUrls: Array.isArray(photoUrls)
+          ? photoUrls.filter((u: unknown): u is string => typeof u === "string")
+          : undefined,
         photoVisibility,
         userText,
         emotionTag,
+        // 체크리스트 18번 — 앱은 이미 보내고 있었다. 받아서 넘기지 않아
+        // 그동안 조용히 버려졌다.
+        isMocked: isMocked === true,
+        // 09 퀴즈형·10 탐색형이 고른 답. 채점은 서버에서만 한다.
+        answer,
       });
 
       res.status(200).json({ data: result, error: null });
@@ -225,6 +242,7 @@ export class QuestController {
     try {
       const userId = req.user?.id;
       const questId = Number(req.params.id);
+      // 확장자는 화이트리스트로 정규화한다 (upload.service).
       const ext = (req.body.ext || req.query.ext || "jpg") as string;
 
       if (!userId) {

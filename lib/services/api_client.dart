@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
+
 import 'package:http/http.dart' as http;
 
 import '../models/api_exception.dart';
@@ -31,9 +33,32 @@ class ApiClient {
   // ---------------------------------------------------------------------------
   static const String _override = String.fromEnvironment('API_BASE_URL');
 
+  /// 개발용 기본값. **릴리스에서는 쓰이지 않는다.**
+  ///
+  /// 폰에서 `adb reverse tcp:5001 tcp:5001` 로 PC 서버에 붙는 경로다.
+  static const String _devFallback = 'http://localhost:5001/api/v1';
+
+  /// 서버 주소.
+  ///
+  /// **릴리스 빌드는 `--dart-define=API_BASE_URL=...` 없이는 뜨지 않는다.**
+  /// 예전에는 값이 없으면 개발자의 ngrok 무료 터널 주소로 떨어졌다. HTTPS라
+  /// 잘 되는 것처럼 보이다가, 그 터널이 죽는 순간 스토어에 나가 있는 앱 전부가
+  /// 서버를 잃는다. 조용히 잘못된 곳을 가리키느니 빌드에서 막는 편이 낫다.
   static String get baseUrl {
     if (_override.isNotEmpty) return _override;
-    return 'https://chewing-asleep-vest.ngrok-free.dev/api/v1';
+
+    assert(
+      kDebugMode,
+      'API_BASE_URL 이 없습니다. 릴리스 빌드에는 반드시 넘겨야 합니다: '
+      'flutter build appbundle --dart-define=API_BASE_URL=https://<운영 도메인>/api/v1',
+    );
+
+    if (!kDebugMode) {
+      // assert 가 꺼지는 프로파일·릴리스 빌드에서도 즉시 드러나게 한다.
+      throw StateError('API_BASE_URL 이 빌드에 포함되지 않았습니다.');
+    }
+
+    return _devFallback;
   }
 
   // ---------------------------------------------------------------------------

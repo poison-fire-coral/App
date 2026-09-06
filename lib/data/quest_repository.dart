@@ -9,112 +9,23 @@ import '../services/geo.dart';
 import '../services/photo_uploader.dart';
 
 class QuestRepository {
-  /// 가상 내 위치 (수원화성/행궁동 시드 데이터 위치)
-  static const GeoPoint mockUserLocation = GeoPoint(37.2882, 127.0163);
+  /// GPS를 아직 못 잡았을 때 지도를 놓을 자리 (수원화성/행궁동, 시드 데이터가 있는 곳).
+  ///
+  /// **가짜 위치가 아니라 기본 중심점이다.** 권한을 받기 전이나 실내에서 첫 표본을
+  /// 기다리는 동안 지도가 바다 한가운데를 보여주지 않게 하려는 것뿐이고,
+  /// 실제 좌표가 들어오는 순간 [currentUserLocation]이 덮어쓴다.
+  static const GeoPoint defaultMapCenter = GeoPoint(37.2882, 127.0163);
 
   /// KakaoMap LatLng 포맷이 필요한 경우
-  static final LatLng mockUserLatLng = LatLng(37.2882, 127.0163);
+  static final LatLng defaultMapCenterLatLng = LatLng(37.2882, 127.0163);
 
-  /// 앱 전역에서 사용할 실시간 사용자 GPS 위치 (기본값은 목업 위치)
-  static GeoPoint currentUserLocation = mockUserLocation;
+  /// 앱 전역에서 사용할 실시간 사용자 GPS 위치.
+  static GeoPoint currentUserLocation = defaultMapCenter;
 
   /// 위치 업데이트용 메서드
   static void updateUserLocation(double lat, double lng) {
     currentUserLocation = GeoPoint(lat, lng);
   }
-
-  /// 💡 models/quest_model.dart의 정의와 100% 일치하도록 구성한 목업 데이터
-  static final List<QuestModel> mockQuests = [
-    QuestModel(
-      id: 'q_01',
-      title: '화성행궁 골목 탐방',
-      summary: '행궁동 골목길의 숨은 명소를 찾아 떠나는 여행',
-      description: '아름다운 행궁동 골목길의 숨은 명소를 찾아보세요.',
-      difficulty: QuestDifficulty.star3,
-      latitude: 37.2882,
-      longitude: 127.0163,
-      spotName: '화성행궁 정문 (신풍루)',
-      regionLabel: '수원 행궁동',
-      keywords: const ['역사', '산책', '카페'],
-      spots: const [
-        QuestSpot(
-          name: '화성행궁 정문 (신풍루)',
-          latitude: 37.2882,
-          longitude: 127.0163,
-        ),
-        QuestSpot(
-          name: '행리단길 카페거리',
-          latitude: 37.2890,
-          longitude: 127.0170,
-        ),
-      ],
-    ),
-    QuestModel(
-      id: 'q_02',
-      title: '방화수류정 성곽길 산책',
-      summary: '수원화성의 탁 트인 절경을 감상하는 코스',
-      description: '수원화성에서 가장 경치가 뛰어난 방화수류정을 거닐어 보세요.',
-      difficulty: QuestDifficulty.star4,
-      latitude: 37.2850,
-      longitude: 127.0180,
-      spotName: '방화수류정 연못',
-      regionLabel: '수원 성곽길',
-      keywords: const ['풍경', '힐링', '야경'],
-      spots: const [
-        QuestSpot(
-          name: '방화수류정 연못',
-          latitude: 37.2850,
-          longitude: 127.0180,
-        ),
-      ],
-    ),
-    QuestModel(
-      id: 'q_03',
-      title: '장안문 역사 기행',
-      summary: '수원화성 북문 장안문 탐방',
-      description: '수원화성의 북문인 장안문의 웅장함을 느껴보세요.',
-      difficulty: QuestDifficulty.star2,
-      latitude: 37.2910,
-      longitude: 127.0145,
-      spotName: '장안문 성곽 입구',
-      regionLabel: '수원 장안문',
-      keywords: const ['역사', '문화재'],
-      spots: const [
-        QuestSpot(
-          name: '장안문 성곽 입구',
-          latitude: 37.2910,
-          longitude: 127.0145,
-        ),
-      ],
-    ),
-  ];
-
-  /// ID로 퀘스트 단건 조회 (main.dart에서 사용)
-  static QuestModel? findById(String id) {
-    try {
-      return mockQuests.firstWhere((q) => q.id == id);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// 동기 방식 추천 퀘스트 목록 조회 (main.dart에서 사용)
-  static List<QuestModel> nearby({Set<String>? excludeIds}) {
-    if (excludeIds == null || excludeIds.isEmpty) {
-      return List.unmodifiable(mockQuests);
-    }
-    return mockQuests.where((q) => !excludeIds.contains(q.id)).toList();
-  }
-
-  /// .env 백엔드 설정에 맞춘 5001번 포트 Base URL
-  static String get baseUrl {
-    if (kIsWeb) return 'http://localhost:5001/api/v1';
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:5001/api/v1'; // 안드로이드 에뮬레이터
-    }
-    return 'http://192.168.219.198:5001/api/v1';// ios 실제 기기
-  }
-
 
   /// 사용자 위치 기준 거리를 '350m', '1.2km' 형식 문자열로 반환
   static String distanceFromUser(
@@ -220,7 +131,10 @@ class QuestRepository {
         if (keywords != null && keywords.isNotEmpty) 'keywords': keywords,
         if (trimmed != null && trimmed.isNotEmpty) 'search': trimmed,
       },
-      auth: false,
+      // 서버가 `optionalAuth`라 토큰이 **있으면** 각 퀘스트에 `isCompleted`를
+      // 붙여 준다(22번). `auth: false`로 두면 로그인해 놓고도 완료 표식을
+      // 영영 못 받는다 — 토큰이 없으면 그대로 비로그인으로 처리되므로
+      // 지도가 안 뜨는 일은 없다.
     );
 
     if (data is! Map) return const ViewportQuests.empty();
@@ -232,8 +146,9 @@ class QuestRepository {
   /// 검색은 지도 밖도 찾아야 의미가 있다. 좌표 없이 `search`만 보내면
   /// 서버가 `where`에서 place 범위 조건을 빼고 전체에서 찾는다.
   ///
-  /// **서버에 결과 상한이 없다**(체크리스트 08·12번 BE 몫). 한 글자만 넣어도
-  /// 전국이 통째로 올 수 있어서, 받은 뒤 내 위치에서 가까운 순으로 잘라 쓴다.
+  /// 서버가 100건에서 자르고(`SEARCH_MAX_RESULTS`), 내 위치를 함께 보내면
+  /// 거리순으로 정렬해서 준다 — 체크리스트 12번. 받은 뒤 한 번 더 정렬하는 건
+  /// 위치를 모르는 첫 진입(기본값이 목업 좌표일 때)을 위한 안전망이다.
   static Future<List<QuestModel>> searchQuests(
     String query, {
     int limit = 30,
@@ -243,8 +158,17 @@ class QuestRepository {
 
     final data = await ApiClient.get(
       '/quests',
-      query: {'search': trimmed, 'zoom': 15},
-      auth: false,
+      query: {
+        'search': trimmed,
+        'zoom': 15,
+        // 상한을 자를 때 서버가 거리순으로 세우도록 기준점을 준다.
+        'originLat': currentUserLocation.latitude,
+        'originLng': currentUserLocation.longitude,
+      },
+      // 서버가 `optionalAuth`라 토큰이 **있으면** 각 퀘스트에 `isCompleted`를
+      // 붙여 준다(22번). `auth: false`로 두면 로그인해 놓고도 완료 표식을
+      // 영영 못 받는다 — 토큰이 없으면 그대로 비로그인으로 처리되므로
+      // 지도가 안 뜨는 일은 없다.
     );
 
     if (data is! Map) return const [];
@@ -279,7 +203,10 @@ class QuestRepository {
         if (keywords != null && keywords.isNotEmpty && !keywords.contains('전체'))
           'keywords': keywords,
       },
-      auth: false,
+      // 서버가 `optionalAuth`라 토큰이 **있으면** 각 퀘스트에 `isCompleted`를
+      // 붙여 준다(22번). `auth: false`로 두면 로그인해 놓고도 완료 표식을
+      // 영영 못 받는다 — 토큰이 없으면 그대로 비로그인으로 처리되므로
+      // 지도가 안 뜨는 일은 없다.
     );
 
     if (data is! List) return const [];
@@ -371,9 +298,11 @@ class QuestRepository {
     required double accuracyM,
     bool isMocked = false,
     String? photoUrl,
+    List<String> photoUrls = const [],
     String? photoVisibility,
     String? userText,
     String? emotionTag,
+    String? answer,
   }) async {
     final data = await ApiClient.post('/quests/$questId/verify', body: {
       'requestId': requestId,
@@ -381,16 +310,16 @@ class QuestRepository {
       'lng': lng,
       'accuracyM': accuracyM,
       // 체크리스트 18번 — 운영체제가 모의 위치라고 표시한 표본인지.
-      //
-      // **서버는 아직 이 값을 읽지 않는다.** `VerifyQuestDto`에 자리가 없고
-      // `quest_completions`에도 컬럼이 없어서 지금은 버려진다. BE가 필드와
-      // 컬럼을 만들면(EXP 0 처리 + `is_abused` 기록) 앱 배포 없이 곧바로
-      // 값이 흘러 들어간다.
+      // 서버가 참이면 EXP 0으로 처리하고 `is_abused`에 남긴다.
       'isMocked': isMocked,
       'photoUrl': ?photoUrl,
+      // 08 수집형이 모은 사진들. 단일 사진 유형에서는 비어 있어 보내지 않는다.
+      if (photoUrls.isNotEmpty) 'photoUrls': photoUrls,
       'photoVisibility': ?photoVisibility,
       'userText': ?userText,
       'emotionTag': ?emotionTag,
+      // 09 퀴즈형·10 탐색형이 고른 답. 정답 비교는 서버에서만 한다.
+      'answer': ?answer,
     });
     return Map<String, dynamic>.from(data as Map);
   }

@@ -36,6 +36,15 @@ export interface BadgeProgressDto {
   achieved: boolean;
   /** 이번 인증으로 막 달성했는지. 4c 보상 화면의 "배지 획득!" 연출에 쓴다. */
   justEarned: boolean;
+
+  /**
+   * 이번 인증으로 **진행도가 실제로 올랐는지.**
+   *
+   * 없으면 보상 화면이 "진행률이 가장 높은 아무 배지"를 골라, 성북구에서
+   * 완료했는데 "경기 순례자 3/5"가 뜨는 일이 생긴다 — 이번 퀘스트가 기여하지
+   * 않은 배지를 보여 주면 규칙을 잘못 배우게 된다.
+   */
+  advanced: boolean;
   hidden: boolean;
 }
 
@@ -132,6 +141,7 @@ export async function recalculateBadges(
     const before = previous.get(badge.id);
     const wasAchieved = !!before?.achievedAt;
     const justEarned = achieved && !wasAchieved;
+    const advanced = progress > (before?.progress ?? 0);
 
     // 진행도가 그대로면 굳이 쓰지 않는다.
     if (!before || before.progress !== progress || justEarned) {
@@ -160,6 +170,7 @@ export async function recalculateBadges(
       threshold: badge.threshold,
       achieved,
       justEarned,
+      advanced,
       hidden: badge.hidden,
     });
   }
@@ -251,9 +262,13 @@ export async function getBadgeDetail(userId: number, badgeId: number) {
   const rule = parseRule(badge.ruleJson);
 
   // 이 배지에 기여한 완료 기록만 골라 이력으로 보여준다.
+  //
+  // **오래된 순이어야 한다** — 체크리스트 23번. 최신순으로 threshold개를 자르면
+  // threshold가 1인 "첫 발자국"에 가장 최근 완료가 올라온다. 배지를 실제로
+  // 채운 건 그 완료가 아니라 맨 처음 것이다.
   const completions = await prisma.questCompletion.findMany({
     where: { userId, isAbused: false },
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: "asc" },
     select: {
       createdAt: true,
       quest: {

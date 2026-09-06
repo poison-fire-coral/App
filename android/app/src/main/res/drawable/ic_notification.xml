@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  상태 표시줄 알림 아이콘.
+
+  안드로이드는 이 아이콘의 **모양만** 쓰고 색은 전부 흰색으로 덮는다. 그래서
+  앱 아이콘을 그대로 지정하면 배경까지 흰색으로 채워져 흰 사각형이 뜬다.
+  실루엣으로 따로 그려야 한다 — 핀 안의 별은 뚫어서(evenOdd) 형태가 남게 했다.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M12,2C8.13,2 5,5.13 5,9c0,5.25 7,13 7,13s7,-7.75 7,-13c0,-3.87 -3.13,-7 -7,-7z M12,6.0 L12.911,8.346 L15.424,8.488 L13.474,10.079 L14.116,12.512 L12,11.15 L9.884,12.512 L10.526,10.079 L8.576,8.488 L11.089,8.346 z" />
+</vector>

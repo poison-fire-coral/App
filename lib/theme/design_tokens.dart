@@ -372,3 +372,58 @@ enum QuestTierStyle {
     }
   }
 }
+
+/// 퀘스트 **유형**별 표기 — 난이도([QuestTierStyle])와는 다른 축이다.
+///
+/// 지금까지 유형은 지도 핀 안의 작은 심볼로만 존재했고, 시트에도 목록에도
+/// 이름이 나오지 않았다. 그래서 "이게 사진 퀘스트인지 퀴즈인지"를 핀을 확대해
+/// 들여다봐야 알 수 있었다.
+///
+/// **아이콘은 마커 생성기가 그리는 심볼과 짝을 맞춘다**
+/// (`tool/generate_marker_icons.dart`의 `_drawFootprint` 등). 핀에서 본 기호와
+/// 시트에서 본 기호가 다르면 같은 유형이라는 걸 알아볼 수 없다.
+enum QuestTypeStyle {
+  /// 01 방문형 — 발자국
+  visit(key: 'VISIT', label: '방문', icon: Icons.directions_walk_rounded),
+
+  /// 05 시간대 제한형 — 해/달
+  timeWindow(key: 'TIME_WINDOW', label: '시간대', icon: Icons.schedule_rounded),
+
+  /// 06 피사체 지정형 — 카메라
+  photoSingle(key: 'PHOTO_SINGLE', label: '사진', icon: Icons.photo_camera_rounded),
+
+  /// 08 수집 사진형 — 겹친 장
+  photoCollect(key: 'PHOTO_COLLECT', label: '사진 수집', icon: Icons.burst_mode_rounded),
+
+  /// 09 퀴즈형 — 물음표
+  quiz(key: 'QUIZ', label: '퀴즈', icon: Icons.question_mark_rounded),
+
+  /// 10 탐색형 — 나침반
+  exploration(key: 'EXPLORATION', label: '탐색', icon: Icons.explore_rounded),
+
+  /// 13 기록형 — 펜
+  record(key: 'RECORD', label: '기록', icon: Icons.edit_note_rounded);
+
+  /// 서버 `Quest.questType` 문자열 그대로.
+  final String key;
+
+  /// 화면에 보이는 이름. 짧게 — 배지 한 칸에 들어가야 한다.
+  final String label;
+
+  final IconData icon;
+
+  const QuestTypeStyle({
+    required this.key,
+    required this.label,
+    required this.icon,
+  });
+
+  /// 모르는 값이 와도 화면이 비지 않도록 방문형으로 떨어뜨린다.
+  /// 서버 enum이 늘어나도 앱이 먼저 깨지지는 않는다.
+  static QuestTypeStyle fromKey(String? key) {
+    for (final t in QuestTypeStyle.values) {
+      if (t.key == key) return t;
+    }
+    return QuestTypeStyle.visit;
+  }
+}

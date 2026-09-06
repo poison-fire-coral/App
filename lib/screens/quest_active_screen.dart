@@ -3,18 +3,22 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
+import '../config/app_config.dart';
 import '../data/quest_repository.dart';
 import '../dev/dev_quest_panel.dart'; // DEV-ONLY
 import '../models/active_quest.dart';
 import '../models/api_exception.dart';
 import '../models/quest_completion.dart';
 import '../models/quest_model.dart';
+import '../services/compass_service.dart';
 import '../services/geo.dart';
 import '../services/location_service.dart';
 import '../services/verify_queue.dart';
 import '../theme/app_colors.dart';
 import '../theme/design_tokens.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/heading_cone.dart';
+import '../widgets/quest_route_map.dart';
 import 'level_up_screen.dart';
 import 'quest_reward_screen.dart';
 import 'quest_verify_screen.dart';
@@ -66,7 +70,7 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
 
   /// **첫 실측 표본**의 거리. 진행바 비율(1 - 남은거리/최초거리)의 분모다.
   ///
-  /// 예전에는 목업 좌표(`QuestRepository.mockUserLocation`)로 잡았다. 실기기가
+  /// 예전에는 목업 좌표(`QuestRepository.defaultMapCenter`)로 잡았다. 실기기가
   /// 목업에서 수십 km 떨어져 있으면 분모가 그만큼 커져서 83m를 남기고도
   /// 진행바가 가득 찼다 — 실기기 테스트에서 잡았다.
   /// 첫 표본이 오기 전에는 거리를 **모르는 것이지 0이 아니다.**
@@ -79,6 +83,29 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
 
   bool _isSettling = false;
 
+  /// 현위치 점이 어디를 보고 있는지 — 지도 화면(3a)의 부채꼴과 같은 값이다.
+  ///
+  /// GPS의 `heading`은 **걷고 있을 때만** 나온다. 목표를 앞에 두고 제자리에서
+  /// 두리번거릴 때가 정작 방향이 필요한 순간이라 자기계를 쓴다.
+  final CompassService _compass = CompassService();
+  StreamSubscription<double>? _headingSub;
+
+  /// 지도에 넘기는 방위각. **setState를 부르지 않는다** — 방위각은 초당 열 번
+  /// 넘게 바뀌는데 그때마다 화면을 다시 빌드하면 지도가 눈에 띄게 버벅인다.
+  /// [QuestRouteMap]이 직접 구독해 WebView 안 CSS만 돌린다.
+  final ValueNotifier<double?> _heading = ValueNotifier<double?>(null);
+
+  /// 지도를 못 띄웠을 때 쓰는 폴백 부채꼴의 누적 회전각. 이쪽은 Flutter가
+  /// 직접 그리므로 setState가 필요하다.
+  final ConeAngle _fallbackCone = ConeAngle();
+  double _fallbackConeAngle = 0;
+
+  /// 아래 시트가 실제로 차지하는 높이. 지도가 화면 전체를 채우므로, 이걸
+  /// 넘겨 주지 않으면 카메라가 시트에 가린 자리를 기준으로 맞춰 현위치 점이 숨는다.
+  /// 시트 높이는 남은 거리 문구에 따라 달라져서 상수로 둘 수 없다.
+  final GlobalKey _sheetKey = GlobalKey();
+  double _sheetHeight = 0;
+
   @override
   void initState() {
     super.initState();
@@ -86,11 +113,23 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     _location = widget.locationService ??
         SimulatedLocationService(origin: _startingPoint());
     _startTracking();
+
+    _headingSub = _compass.headingStream.listen((degrees) {
+      if (!mounted) return;
+      _heading.value = degrees;
+      // 지도가 있으면 부채꼴은 WebView가 그린다. 폴백일 때만 다시 그린다.
+      if (!_canShowMap) {
+        setState(() => _fallbackConeAngle = _fallbackCone.advance(degrees));
+      }
+    });
   }
 
   @override
   void dispose() {
     _subscription?.cancel();
+    _headingSub?.cancel();
+    _compass.dispose();
+    _heading.dispose();
     _location.dispose();
     super.dispose();
   }
@@ -102,7 +141,7 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     if (verified > 0 && verified <= quest.spotCount - 1) {
       return quest.visitSpots[verified - 1].point;
     }
-    return QuestRepository.mockUserLocation;
+    return QuestRepository.defaultMapCenter;
   }
 
   void _startTracking() {
@@ -251,7 +290,13 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
           // 그건 어뷰징이 아니라 우리 테스트다.
           isMocked: sample.isMocked,
           photoUrl: verifyResult.photoUrl,
+          // 08 수집형이 모은 사진들. 서버가 장수를 세어 판정한다.
+          photoUrls: verifyResult.photoUrls,
           photoVisibility: verifyResult.isPhotoPublic ? 'PUBLIC' : 'PRIVATE',
+          // 13 기록형이 남긴 한 줄. 다른 유형에서는 null이다.
+          userText: verifyResult.userText,
+          // 09 퀴즈형·10 탐색형이 고른 답. 채점은 서버가 한다.
+          answer: verifyResult.answer,
         );
       } on ApiException catch (e) {
         // 체크리스트 29번 — 연결이 없어서 못 보낸 것은 **실패가 아니라 지연**이다.
@@ -277,7 +322,13 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
           accuracyM: sample.accuracyMeters,
           isMocked: sample.isMocked,
           photoUrl: verifyResult.photoUrl,
+          photoUrls: verifyResult.photoUrls,
           photoVisibility: verifyResult.isPhotoPublic ? 'PUBLIC' : 'PRIVATE',
+          // 큐에 넣을 때도 사진 목록·한 줄·답을 함께 보관한다. 빠뜨리면 신호가
+          // 돌아온 뒤 재전송이 서버에서 PHOTO_COUNT_NOT_MET·NOTE_REQUIRED·
+          // ANSWER_REQUIRED로 튕긴다.
+          userText: verifyResult.userText,
+          answer: verifyResult.answer,
           queuedAt: DateTime.now(),
         ));
 
@@ -377,17 +428,55 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
   // ---------------------------------------------------------------------------
   // 빌드
   // ---------------------------------------------------------------------------
+  /// 카카오 JS 키가 없으면 지도를 띄울 수 없다.
+  /// 그때만 예전의 추상 표현으로 떨어진다 — 빈 화면보다는 낫다.
+  bool get _canShowMap => AppConfig.kakaoJavaScriptKey.isNotEmpty;
+
+  /// 시트를 그린 뒤 높이를 재서 지도에 알린다.
+  /// 레이아웃 도중에 setState를 부를 수 없으므로 프레임이 끝난 뒤로 미룬다.
+  void _measureSheet() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box = _sheetKey.currentContext?.findRenderObject() as RenderBox?;
+      final height = box?.size.height ?? 0;
+      // 1px 미만의 흔들림으로 지도를 다시 그리지 않는다.
+      if ((height - _sheetHeight).abs() < 1) return;
+      setState(() => _sheetHeight = height);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final spot = _activeQuest.currentSpot;
+    _measureSheet();
+
     return Scaffold(
       backgroundColor: AppColors.surface,
       body: SafeArea(
         child: Stack(
           children: [
-            const Positioned.fill(child: MapBackdrop()),
-            Positioned.fill(child: _buildApproachOverlay()),
+            if (_canShowMap)
+              Positioned.fill(
+                child: QuestRouteMap(
+                  quest: _activeQuest.quest,
+                  target: spot.point,
+                  radiusMeters: spot.radiusMeters,
+                  user: _sample?.point,
+                  heading: _heading,
+                  bottomInset: _sheetHeight,
+                ),
+              )
+            else ...[
+              const Positioned.fill(child: MapBackdrop()),
+              Positioned.fill(child: _buildApproachOverlay()),
+            ],
             Positioned(left: 12, top: 12, child: _buildBackButton()),
-            Positioned(left: 0, right: 0, bottom: 0, child: _buildSheet()),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: KeyedSubtree(key: _sheetKey, child: _buildSheet()),
+            ),
           ],
         ),
       ),
@@ -409,8 +498,12 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
     );
   }
 
-  /// 목표 지점의 인증 반경 원과 현재 위치 점을 겹쳐 그린다.
-  /// 실제 타일맵이 아니므로 남은 거리에 비례해 사용자 점이 원 쪽으로 다가오게만 표현한다.
+  /// **폴백 전용.** 카카오 JS 키가 없어 지도를 못 띄웠을 때만 그린다.
+  ///
+  /// 지리 좌표가 개입하지 않는 추상 표현이다 — 목표 원을 화면 한 곳에 고정해 두고
+  /// 남은 거리에 비례해 사용자 점이 그쪽으로 다가오게만 한다. 방향 부채꼴도
+  /// 바탕에 북쪽이 없으니 여기서는 "돌아가고 있다"는 것 이상을 뜻하지 못한다.
+  /// 제대로 된 방위는 [QuestRouteMap] 경로에서만 나온다.
   Widget _buildApproachOverlay() {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -440,6 +533,18 @@ class _QuestActiveScreenState extends State<QuestActiveScreen> {
               left: center.dx - 10,
               top: center.dy - 20,
               child: const QuestMarker(isActive: true),
+            ),
+            // 방향 부채꼴 — 점보다 **아래**에 깔아야 점을 가리지 않는다.
+            Positioned(
+              // 부채꼴 상자 한가운데가 현위치다.
+              left: position.dx - headingConeBoxSize / 2,
+              top: position.dy - headingConeBoxSize / 2,
+              child: IgnorePointer(
+                child: Transform.rotate(
+                  angle: degreesToRadians(_fallbackConeAngle),
+                  child: const HeadingCone(),
+                ),
+              ),
             ),
             Positioned(
               left: position.dx - 9,

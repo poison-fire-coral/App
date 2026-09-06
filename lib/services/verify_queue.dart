@@ -22,9 +22,15 @@ class PendingVerification {
   final double accuracyM;
   final bool isMocked;
   final String? photoUrl;
+
+  /// 08 수집형이 모은 사진들. 단일 사진 유형에서는 비어 있다.
+  final List<String> photoUrls;
   final String? photoVisibility;
   final String? userText;
   final String? emotionTag;
+
+  /// 09 퀴즈형·10 탐색형이 고른 답.
+  final String? answer;
 
   /// 인증을 **시도한** 시각. 보낸 시각이 아니다.
   ///
@@ -40,9 +46,11 @@ class PendingVerification {
     required this.queuedAt,
     this.isMocked = false,
     this.photoUrl,
+    this.photoUrls = const [],
     this.photoVisibility,
     this.userText,
     this.emotionTag,
+    this.answer,
   });
 
   Map<String, dynamic> toJson() => {
@@ -53,9 +61,11 @@ class PendingVerification {
         'accuracyM': accuracyM,
         'isMocked': isMocked,
         'photoUrl': photoUrl,
+        'photoUrls': photoUrls,
         'photoVisibility': photoVisibility,
         'userText': userText,
         'emotionTag': emotionTag,
+        'answer': answer,
         'queuedAt': queuedAt.toIso8601String(),
       };
 
@@ -78,9 +88,14 @@ class PendingVerification {
       accuracyM: (json['accuracyM'] as num?)?.toDouble() ?? 0,
       isMocked: json['isMocked'] == true,
       photoUrl: json['photoUrl'] as String?,
+      photoUrls: [
+        if (json['photoUrls'] is List)
+          for (final u in (json['photoUrls'] as List)) '$u',
+      ],
       photoVisibility: json['photoVisibility'] as String?,
       userText: json['userText'] as String?,
       emotionTag: json['emotionTag'] as String?,
+      answer: json['answer'] as String?,
       queuedAt: DateTime.tryParse('${json['queuedAt']}') ?? DateTime.now(),
     );
   }
@@ -232,9 +247,11 @@ class VerifyQueue {
             accuracyM: item.accuracyM,
             isMocked: item.isMocked,
             photoUrl: item.photoUrl,
+            photoUrls: item.photoUrls,
             photoVisibility: item.photoVisibility,
             userText: item.userText,
             emotionTag: item.emotionTag,
+            answer: item.answer,
           );
           delivered++;
         } on ApiException catch (e) {

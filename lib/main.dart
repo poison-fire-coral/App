@@ -1,4 +1,5 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show runZonedGuarded, unawaited;
+import 'dart:ui' show PlatformDispatcher;
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -12,7 +13,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'config/app_config.dart';
 import 'data/auth_repository.dart';
 import 'data/badge_api.dart';
-import 'data/badge_repository.dart';
 import 'data/quest_repository.dart';
 import 'dev/dev_tools.dart'; // DEV-ONLY
 import 'models/api_exception.dart';
@@ -32,24 +32,95 @@ import 'screens/settings_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/api_client.dart';
+import 'services/app_settings.dart';
 import 'services/auth_service.dart';
 import 'services/exp_service.dart';
 import 'services/geolocator_location_service.dart';
 import 'services/token_store.dart';
 import 'services/push_service.dart';
 import 'services/verify_queue.dart';
+import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
+import 'theme/design_tokens.dart';
 import 'widgets/app_widgets.dart';
 
 const String _activeQuestsPrefsKey = 'active_quests';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  // **모든 것을 한 존 안에서 돌린다.**
+  //
+  // 지금까지 잡히지 않는 예외를 받는 곳이 한 군데도 없었다. 릴리스에서 빌드
+  // 도중 예외가 나면 회색 오류 상자가 그대로 보였고, 비동기 콜백에서 터진
+  // 것은 어디에도 남지 않고 사라졌다. 사용자는 "눌렀는데 아무 일도 안 남"만 겪는다.
+  //
+  // `runZonedGuarded`는 async 경로를, `FlutterError.onError`는 위젯 트리를,
+  // `PlatformDispatcher.onError`는 그 둘이 놓친 것을 받는다. 셋 다 필요하다.
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      _reportCrash(details.exception, details.stack, context: 'flutter');
+    };
+
+    PlatformDispatcher.instance.onError = (error, stack) {
+      _reportCrash(error, stack, context: 'platform');
+      return true;
+    };
+
+    // 릴리스에서 회색·붉은 오류 상자를 사용자에게 보여 주지 않는다.
+    // 디버그에서는 그대로 둔다 — 개발 중에는 그 상자가 가장 빠른 신호다.
+    if (!kDebugMode) {
+      ErrorWidget.builder = (details) => const _FriendlyErrorBox();
+    }
+
+    await _startApp();
+  }, (error, stack) {
+    _reportCrash(error, stack, context: 'zone');
+  });
+}
+
+/// 잡히지 않은 예외가 도착하는 한 곳.
+///
+/// 지금은 로그로 남기는 것이 전부다. 크래시 리포팅 SDK를 붙이면 여기 한 줄만
+/// 늘리면 된다 — 호출부가 세 군데로 흩어져 있지 않도록 모아 둔 이유다.
+void _reportCrash(Object error, StackTrace? stack, {required String context}) {
+  debugPrint('[$context] 처리되지 않은 오류: $error');
+  if (stack != null) debugPrint(stack.toString());
+}
+
+/// 오류 위젯 자리에 들어가는 조용한 대체 화면.
+///
+/// 무엇이 잘못됐는지 사용자가 할 수 있는 일이 없으므로 원인을 적지 않는다.
+/// 화면 하나가 못 그려진 것이지 앱이 죽은 것은 아니라는 것만 알린다.
+class _FriendlyErrorBox extends StatelessWidget {
+  const _FriendlyErrorBox();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.background,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(AppSpacing.gutter),
+      child: const Text(
+        '이 화면을 그리지 못했어요. 뒤로 갔다 다시 열어 주세요.',
+        textAlign: TextAlign.center,
+        style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+      ),
+    );
+  }
+}
+
+/// 앱을 실제로 띄운다. 이름이 State의 `_bootstrap`(세션 복원)과 겹치지 않게
+/// 따로 둔다 — 둘 다 '시작'이지만 하나는 프로세스, 하나는 세션이다.
+Future<void> _startApp() async {
   // 1. Firebase 초기화
   try {
     await Firebase.initializeApp();
     debugPrint("✅ Firebase 초기화 성공!");
+    // 메시지가 도착할 자리를 만들어 둔다. 권한·토큰은 사용자가 스위치를
+    // 켤 때 처리한다.
+    await PushService.initialize();
   } catch (e) {
     debugPrint("❌ Firebase 초기화 실패 에러: $e");
   }
@@ -82,8 +153,10 @@ void main() async {
     debugPrint("❌ [경고] KakaoJavaScriptKey가 비어있어 지도 초기화를 스킵했습니다.");
   }
 
-  // 4. 토큰과 개발자 모드 설정을 메모리로 올린다.
+  // 4. 토큰과 설정을 메모리로 올린다. 지도 카메라가 멈출 때마다 디스크를
+  //    읽을 수는 없어서, 설정은 여기서 한 번 읽어 둔다.
   await TokenStore.load();
+  await AppSettings.load();
   // DEV-ONLY — 릴리스에서는 상수가 false라 이 호출째로 트리쉐이킹된다.
   if (AppConfig.devToolsEnabled) {
     await DevTools.load();
@@ -122,12 +195,7 @@ List<ActiveQuest> _loadActiveQuests(SharedPreferences prefs) {
     final restored = <ActiveQuest>[];
     for (final entry in decoded) {
       final map = Map<String, dynamic>.from(entry as Map);
-      final legacyId = map['questId'] as String?;
-      final active = ActiveQuest.fromJson(
-        map,
-        fallbackQuest:
-            legacyId == null ? null : QuestRepository.findById(legacyId),
-      );
+      final active = ActiveQuest.fromJson(map);
       if (active != null) restored.add(active);
     }
     return restored;
@@ -166,6 +234,12 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
 
   bool _isEditingSurvey = false;
   bool _showSplash = true;
+
+  /// 시작할 때 서버에 닿지 못해 저장된 프로필로 들어왔는지.
+  ///
+  /// 화면 위에 한 줄로 알린다 — 지도가 비어 있고 추천이 없는 이유를 모르면
+  /// 앱이 고장 난 줄 안다.
+  bool _sessionOffline = false;
   double _splashProgress = 0.2;
   bool _isAuthBusy = false;
   AppTab _currentTab = AppTab.home;
@@ -245,13 +319,34 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
         // 바뀐다. 켜 둔 사람만, 세션이 살아 있을 때마다 다시 등록한다.
         // await 하지 않는다 — 알림 등록 때문에 스플래시가 길어질 이유가 없다.
         unawaited(PushService.registerIfEnabled());
-      } on ApiException {
-        await TokenStore.clear();
-        if (mounted) {
-          setState(() {
-            _isLoggedIn = false;
-            _currentUser = null;
-          });
+      } on ApiException catch (e) {
+        // **네트워크 실패와 세션 만료를 구분한다.**
+        //
+        // 예전에는 둘 다 토큰을 지우고 로그인 화면으로 보냈다. 그래서 지하철에서
+        // 앱을 켜기만 해도 로그아웃됐다 — 다시 소셜 로그인을 해야 하고,
+        // 저장해 둔 대기 인증까지 남의 계정 것이 될까 봐 지워진다.
+        //
+        // 연결이 안 된 것은 세션에 대해 아무것도 말해 주지 않는다. 토큰을
+        // 그대로 두고, 저장돼 있던 프로필로 계속 쓰게 한다. 서버가 실제로
+        // 거절했을 때(만료·탈퇴)만 지운다.
+        if (e.isNetwork) {
+          debugPrint('세션 확인을 건너뛴다(연결 없음): $e');
+          final cached = widget.initialUser;
+          if (mounted && cached != null) {
+            setState(() {
+              _currentUser = cached;
+              _isLoggedIn = true;
+              _sessionOffline = true;
+            });
+          }
+        } else {
+          await TokenStore.clear();
+          if (mounted) {
+            setState(() {
+              _isLoggedIn = false;
+              _currentUser = null;
+            });
+          }
         }
       }
     }
@@ -427,6 +522,8 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     // 남은 대기 인증은 이 계정의 것이다. 다음 사람이 로그인했을 때
     // 앞사람의 인증이 그 계정으로 나가면 안 된다(29번).
     await VerifyQueue.clear();
+    // 다음 사람이 앞사람의 설정을 물려받으면 안 된다.
+    await AppSettings.clear();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_profile');
     await prefs.remove(_activeQuestsPrefsKey);
@@ -444,43 +541,40 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
     });
   }
 
-  /// 회원 탈퇴 — 백엔드 계정 삭제 API 호출 및 소셜 세션/캐시 완전 정리
+  /// 회원 탈퇴 — 백엔드 계정 삭제 API 호출 및 소셜 세션/캐시 완전 정리.
+  ///
+  /// **실패를 삼키지 않는다.** 확인 다이얼로그와 진행 표시는 설정 화면이 들고
+  /// 있으므로, 여기서 잡아 토스트만 띄우면 그쪽은 성공한 줄 알고 스피너를 내린다.
+  /// 던져 올려서 부른 쪽이 판단하게 한다.
   Future<void> _deleteAccount() async {
-    try {
-      // 계정이 사라지면 UserDevice 도 Cascade 로 함께 지워지지만, 이 기기가
-      // 들고 있는 등록 상태까지 지우려면 여기서 한 번 정리해야 한다.
-      await PushService.unregisterOnLogout();
+    // 계정이 사라지면 UserDevice 도 Cascade 로 함께 지워지지만, 이 기기가
+    // 들고 있는 등록 상태까지 지우려면 여기서 한 번 정리해야 한다.
+    await PushService.unregisterOnLogout();
 
-      await AuthRepository.deleteAccount();
-      await AuthService.signOutSocial();
-      await VerifyQueue.clear();
+    await AuthRepository.deleteAccount();
+    await AuthService.signOutSocial();
+    await VerifyQueue.clear();
+    await AppSettings.clear();
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('user_profile');
-      await prefs.remove(_activeQuestsPrefsKey);
-      await prefs.remove('is_logged_in');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('user_profile');
+    await prefs.remove(_activeQuestsPrefsKey);
+    await prefs.remove('is_logged_in');
 
-      if (!mounted) return;
-      setState(() {
-        _isLoggedIn = false;
-        _currentUser = null;
-        _isEditingSurvey = false;
-        _pendingSignup = null;
-        _showSettings = false;
-        _showProfile = false;
-        _authPhase = _AuthPhase.login;
-        _activeQuests = [];
-        _currentTab = AppTab.home;
-      });
+    if (!mounted) return;
+    setState(() {
+      _isLoggedIn = false;
+      _currentUser = null;
+      _isEditingSurvey = false;
+      _pendingSignup = null;
+      _showSettings = false;
+      _showProfile = false;
+      _authPhase = _AuthPhase.login;
+      _activeQuests = [];
+      _currentTab = AppTab.home;
+    });
 
-      _toast('회원 탈퇴가 완료되었습니다.');
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      _toast(e.displayMessage);
-    } catch (e) {
-      if (!mounted) return;
-      _toast('회원 탈퇴 처리 중 오류가 발생했습니다.');
-    }
+    _toast('회원 탈퇴가 완료되었습니다.');
   }
 
   // ---------------------------------------------------------------------------
@@ -631,14 +725,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
                     : null),
           );
 
-    final completedQuests = [
-      for (final id in completedIds)
-        if (QuestRepository.findById(id) != null) QuestRepository.findById(id)!,
-    ];
-    final badge = BadgeRepository.highlightFor(
-      completedQuests: completedQuests,
-      justCompleted: quest,
-    );
 
     final remaining =
         _activeQuests.where((a) => a.quest.id != quest.id).toList();
@@ -654,8 +740,6 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       quest: quest,
       breakdown: breakdown,
       levelResult: levelResult,
-      badge: badge,
-      badgeJustEarned: badge != null && badge.count == badge.rule.requiredCount,
       serverBadge: serverBadge,
     );
   }
@@ -678,8 +762,71 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: _buildCurrentScreen(),
+      home: _buildOfflineAware(_buildCurrentScreen()),
     );
+  }
+
+  /// 서버에 닿지 못한 채 저장된 프로필로 들어왔을 때 그 사실을 한 줄로 알린다.
+  ///
+  /// 지도가 비어 있고 추천이 없는 이유를 모르면 앱이 고장 난 줄 안다.
+  /// 스플래시 위에는 띄우지 않는다 — 아직 판단이 끝나지 않은 상태다.
+  Widget _buildOfflineAware(Widget child) {
+    if (!_sessionOffline || _showSplash) return child;
+
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Column(
+        children: [
+          Material(
+            color: AppColors.amber100,
+            child: SafeArea(
+              bottom: false,
+              child: InkWell(
+                onTap: _retrySession,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.gutter,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.cloud_off_rounded,
+                          size: 15, color: AppColors.amber700),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          '서버에 연결하지 못했어요. 저장된 정보로 보고 있어요.',
+                          style: TextStyle(
+                              fontSize: 12, color: AppColors.amber700),
+                        ),
+                      ),
+                      Text(
+                        '다시 시도',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.amber700,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                          decorationColor: AppColors.amber700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+
+  /// 배너의 '다시 시도'. 세션 확인을 처음부터 다시 돌린다.
+  Future<void> _retrySession() async {
+    if (!mounted) return;
+    setState(() => _sessionOffline = false);
+    await _bootstrap();
   }
 
   Widget _buildCurrentScreen() {
@@ -815,13 +962,11 @@ class _LocalQuestAppState extends State<LocalQuestApp> {
       );
     }
 
-    // 홈의 배지 3칸은 HomeScreen이 서버에서 직접 받아 온다(체크리스트 21번).
-    // 여기서 로컬 계산을 넘겨 주던 자리다.
+    // 홈의 추천과 배지는 HomeScreen이 서버에서 직접 받아 온다(체크리스트 20·21번).
+    // 여기서 로컬 목록을 넘겨 주던 자리다 — 그게 서버 실패 시의 가짜 퀘스트 출처였다.
     return HomeScreen(
       user: user,
       activeQuests: _activeQuests,
-      recommendedQuests:
-          QuestRepository.nearby(excludeIds: {...activeIds, ...completedIds}),
       onContinueQuest: _openQuestFlow,
       onSelectQuest: _focusQuestOnMap,
       onOpenSettings: (_) => setState(() => _showSettings = true),

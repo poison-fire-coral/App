@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../config/app_config.dart';
 import '../data/terms.dart';
+import '../models/api_exception.dart';
 import '../dev/dev_tools.dart'; // DEV-ONLY
+import '../services/app_settings.dart';
 import '../services/permission_service.dart';
 import '../services/push_service.dart';
 import '../services/token_store.dart';
@@ -13,7 +16,6 @@ import '../widgets/terms_widgets.dart';
 
 /// 5d · 설정
 class SettingsScreen extends StatefulWidget {
-  final String appVersion;
   final VoidCallback onBack;
   final VoidCallback onEditProfile;
   final VoidCallback onEditKeywords;
@@ -27,7 +29,6 @@ class SettingsScreen extends StatefulWidget {
     required this.onEditKeywords,
     required this.onLogout,
     required this.onDeleteAccount, // 💡 회원 탈퇴 콜백 필수 전달
-    this.appVersion = '0.1.0',
   });
 
   @override
@@ -36,8 +37,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _notifications = true;
-  bool _dataSaver = false;
-  bool _photoPublic = true;
+  bool _dataSaver = AppSettings.dataSaver;
+  bool _photoPublic = AppSettings.photoPublicByDefault;
   bool _isDeleting = false;
 
   /// 스위치를 누른 뒤 권한 팝업과 서버 등록이 끝날 때까지. 그 사이에 또
@@ -46,11 +47,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   LocationAccess? _locationState;
 
+  /// 실제로 설치된 빌드의 버전. 상수로 적어 두면 반드시 어긋난다 —
+  /// 실제로 여기에는 0.1.0 이 박혀 있었고 pubspec 은 1.0.0 이었다.
+  /// 읽어 오기 전에는 빈 문자열이라 자리만 잡아 둔다.
+  String _appVersion = '';
+
   @override
   void initState() {
     super.initState();
     _checkLocation();
     _loadPushSetting();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() => _appVersion = '${info.version} (${info.buildNumber})');
+    } catch (e) {
+      // 버전을 못 읽어도 설정 화면은 떠야 한다.
+      debugPrint('버전 정보를 읽지 못했다: $e');
+    }
   }
 
   Future<void> _loadPushSetting() async {
@@ -155,10 +173,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() => _isDeleting = true);
       try {
         await widget.onDeleteAccount();
+      } on ApiException catch (e) {
+        // 서버가 이유를 말해 줬으면 그대로 보여준다.
+        if (mounted) _toast(e.displayMessage);
       } catch (e) {
-        if (mounted) {
-          _toast('회원 탈퇴 처리 중 오류가 발생했습니다.');
-        }
+        if (mounted) _toast('회원 탈퇴 처리 중 오류가 발생했습니다.');
       } finally {
         if (mounted) {
           setState(() => _isDeleting = false);
@@ -253,16 +272,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: '데이터 절약 모드',
                         subtitle: '지도 갱신 주기를 늘려 데이터를 아껴요',
                         value: _dataSaver,
-                        onChanged: (v) => setState(() => _dataSaver = v),
+                        onChanged: (v) {
+                          setState(() => _dataSaver = v);
+                          AppSettings.setDataSaver(v);
+                        },
                       ),
                       _SwitchRow(
                         icon: Icons.photo_camera_outlined,
                         title: '사진 기본 공개',
                         subtitle: _photoPublic
-                            ? '인증 사진이 다른 모험가에게 보여요'
-                            : '인증 사진은 나만 봐요',
+                            ? '새 인증은 공개로 시작해요. 인증할 때 바꿀 수 있어요'
+                            : '새 인증은 비공개로 시작해요. 인증할 때 바꿀 수 있어요',
                         value: _photoPublic,
-                        onChanged: (v) => setState(() => _photoPublic = v),
+                        onChanged: (v) {
+                          setState(() => _photoPublic = v);
+                          AppSettings.setPhotoPublicByDefault(v);
+                        },
                       ),
 
                       const SizedBox(height: AppSpacing.xl),
@@ -283,13 +308,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onTap: () => showLicensePage(
                           context: context,
                           applicationName: '로컬 퀘스트',
-                          applicationVersion: widget.appVersion,
+                          applicationVersion: _appVersion,
                         ),
                       ),
                       _Row(
                         icon: Icons.info_outline_rounded,
                         title: '버전',
-                        trailing: widget.appVersion,
+                        trailing: _appVersion.isEmpty ? '확인 중' : _appVersion,
                       ),
 
                       const SizedBox(height: AppSpacing.xl),

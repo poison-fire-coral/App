@@ -740,12 +740,21 @@ class _PrimaryButtonState extends State<PrimaryButton> {
                       ),
                       const SizedBox(width: AppSpacing.sm),
                     ],
-                    Text(
-                      widget.label,
-                      style: AppType.button.copyWith(
-                        fontSize: widget.fontSize,
-                        color:
-                            on ? AppColors.textOnDark : AppColors.textDisabled,
+                    // 문구가 버튼보다 길어질 수 있다 — "사진 올리는 중… (2 / 3)"처럼
+                    // 상태에 따라 늘어나는 문구가 있고, 글자 크기를 키운 기기에서도
+                    // 넘친다. 넘치면 줄여서 버튼 모양을 지킨다.
+                    Flexible(
+                      child: Text(
+                        widget.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: AppType.button.copyWith(
+                          fontSize: widget.fontSize,
+                          color: on
+                              ? AppColors.textOnDark
+                              : AppColors.textDisabled,
+                        ),
                       ),
                     ),
                   ],
@@ -888,16 +897,76 @@ class TagChip extends StatelessWidget {
 }
 
 /// 난이도(★1~★5) 배지 — 등급마다 색과 광택이 다르다. 목록의 단조로움을 깬다.
+/// 퀘스트 **유형** 배지 — 방문 / 퀴즈 / 사진 …
+///
+/// [TierBadge]가 난이도(★)를 말한다면 이쪽은 "무엇을 해야 하는가"를 말한다.
+/// 둘은 다른 축이라 나란히 놓아도 겹치지 않는다.
+///
+/// 아이콘은 지도 핀 안의 심볼과 같은 기호다. 핀에서 본 것과 시트에서 본 것이
+/// 같아야 "아, 아까 그 유형" 하고 이어진다.
+class QuestTypeBadge extends StatelessWidget {
+  /// 서버 `questType` 문자열. 모르는 값이면 방문형으로 떨어진다.
+  final String questType;
+
+  /// 좁은 자리(목록 한 줄 등)에서는 아이콘만 남긴다.
+  final bool showLabel;
+
+  const QuestTypeBadge({
+    super.key,
+    required this.questType,
+    this.showLabel = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final type = QuestTypeStyle.fromKey(questType);
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: showLabel ? 8 : 5,
+        vertical: 3,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.ink100,
+        borderRadius: BorderRadius.circular(AppRadius.xs),
+        border: Border.all(
+          color: AppColors.ink500.withValues(alpha: 0.20),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(type.icon, size: 12, color: AppColors.ink700),
+          if (showLabel) ...[
+            const SizedBox(width: 4),
+            Text(
+              type.label,
+              style: AppType.micro.copyWith(
+                color: AppColors.ink700,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 난이도 배지 — 별만 보여준다.
+///
+/// 예전에는 별 뒤에 등급 이름("산책"·"전설")을 붙였다. 별이 이미 같은 것을
+/// 말하는 데다, 유형 배지([QuestTypeBadge])와 나란히 서면 짧은 줄에 글자가
+/// 셋(★★★ · 탐험 · 방문)이 되어 무엇이 무엇인지 읽기 어려웠다.
 class TierBadge extends StatelessWidget {
   final int stars;
   final bool hasHalfStar;
-  final bool showLabel;
 
   const TierBadge({
     super.key,
     required this.stars,
     this.hasHalfStar = false,
-    this.showLabel = true,
   });
 
   @override
@@ -933,16 +1002,6 @@ class TierBadge extends StatelessWidget {
               color: tier.accent,
             ),
           ),
-          if (showLabel) ...[
-            const SizedBox(width: 5),
-            Text(
-              tier.label,
-              style: AppType.micro.copyWith(
-                color: tier.onTint,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
         ],
       ),
     );

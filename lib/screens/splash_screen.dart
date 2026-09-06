@@ -20,37 +20,46 @@ class SplashScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Column(
-          children: [
-            const Spacer(flex: 3),
-            SvgPicture.asset(AppAssets.logo, width: 132),
-            const SizedBox(height: AppSpacing.xxl),
-            Text(
-              '로컬 퀘스트',
-              style: AppType.display.copyWith(
-                color: AppColors.quest500,
-                fontSize: 28,
+        // `Scaffold.body`는 폭을 **느슨하게**(0 <= w <= 화면폭) 준다. 이 Column의
+        // 자식은 전부 고유 크기(로고 132 · 텍스트 · 진행바 132)뿐이라, 감싸지 않으면
+        // Column이 가장 넓은 자식 폭으로 줄어든 뒤 왼쪽에 붙는다 — 로고가 화면
+        // 왼쪽에서 튀어나오는 것처럼 보이던 원인이다.
+        //
+        // Center는 느슨한 제약을 받으면 스스로 최대 폭까지 벌어지므로,
+        // Column이 화면 전체 폭 안에서 가운데 정렬된다. 세로 배치(Spacer)는 그대로다.
+        child: Center(
+          child: Column(
+            children: [
+              const Spacer(flex: 3),
+              SvgPicture.asset(AppAssets.logo, width: 132),
+              const SizedBox(height: AppSpacing.xxl),
+              Text(
+                '로컬 퀘스트',
+                style: AppType.display.copyWith(
+                  color: AppColors.quest500,
+                  fontSize: 28,
+                ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text('아는 길 전체가 하나의 퀘스트 맵', style: AppType.bodyMuted),
-            const SizedBox(height: AppSpacing.xxxl),
-            SizedBox(
-              width: 132,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0, end: progress.clamp(0.0, 1.0)),
-                duration: AppMotion.slow,
-                curve: AppMotion.emphasized,
-                builder: (_, value, _) => _Track(value: value),
+              const SizedBox(height: AppSpacing.xs),
+              Text('아는 길 전체가 하나의 퀘스트 맵', style: AppType.bodyMuted),
+              const SizedBox(height: AppSpacing.xxxl),
+              SizedBox(
+                width: 132,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: progress.clamp(0.0, 1.0)),
+                  duration: AppMotion.slow,
+                  curve: AppMotion.emphasized,
+                  builder: (_, value, _) => _Track(value: value),
+                ),
               ),
-            ),
-            const Spacer(flex: 4),
-            Text(
-              'team 붉은사슴뿔버섯',
-              style: AppType.micro.copyWith(color: AppColors.textDisabled),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-          ],
+              const Spacer(flex: 4),
+              Text(
+                'team 붉은사슴뿔버섯',
+                style: AppType.micro.copyWith(color: AppColors.textDisabled),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+            ],
+          ),
         ),
       ),
     );
