@@ -1,26 +1,12 @@
 import { Router, Request, Response } from "express";
 
 /**
- * 공개 약관 3종.
- *
- * **왜 서버가 HTML로 들고 있는가.** 스토어와 앱 양쪽이 같은 문서를 봐야 한다.
- * 스토어(원스토어 상품 등록)는 공개 URL을 요구하고, 앱 설정 화면도 그 URL을
- * 연다. 문서를 앱 안에 문자열로 심으면 고칠 때마다 앱을 새로 배포해야 하고,
- * 그 사이 스토어에 걸린 문서와 앱 안 문서가 갈라진다.
- *
- * **수집 항목은 코드에서 확인한 실제 값이다.** 이전 문서에는 FCM 토큰이
- * 빠져 있었고(앱은 `POST /users/me/devices`로 보내고 있다), 위치를 "인증 시점
- * 일회성"이라고만 적었지만 실제로는 홈·지도·검색에서도 좌표를 보낸다.
- *
- * ⚠️ 이 문서는 **초안**이다. 아래 CONTACT 값은 반드시 실제 연락 가능한 것으로
- * 바꿔야 하고, 시행일자는 실제 서비스 개시일에 맞춰야 한다.
+ * 공개 약관 4종 (서비스, 위치기반서비스, 개인정보, 마케팅) 및 계정 삭제 안내
  */
-
-/** 문서 머리에 함께 쓰는 값들. 한 곳에서 고치면 세 문서가 같이 바뀐다. */
 const SERVICE_NAME = "로컬 퀘스트 (Local Quest)";
-const CONTACT_EMAIL = "support@localquest.example"; // TODO(운영): 실제 주소로 교체
-const EFFECTIVE_DATE = "2026년 9월 6일";
-const PROVIDER_NAME = "로컬 퀘스트 운영팀"; // TODO(운영): 상호 또는 개인 이름
+const CONTACT_EMAIL = "raenpyu73@gmail.com"; // TODO(운영): 실제 문의 주소로 교체
+const EFFECTIVE_DATE = "2026년 9월 12일";          // 서비스 시행일
+const PROVIDER_NAME = "로컬 퀘스트 운영팀";          // 상호명 또는 이름
 
 const STYLE = `
   :root { color-scheme: light dark; }
@@ -75,7 +61,6 @@ const router = Router();
 
 function send(res: Response, title: string, body: string) {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  // 문서는 자주 바뀌지 않지만, 고쳤을 때 하루 넘게 옛것이 보이면 곤란하다.
   res.setHeader("Cache-Control", "public, max-age=3600");
   res.status(200).send(page(title, body));
 }
@@ -335,12 +320,33 @@ router.get("/privacy", (_req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. 계정 삭제 안내 (웹)
+// 4. 마케팅 정보 수신 동의
 // ---------------------------------------------------------------------------
-//
-// 앱을 지운 뒤에 탈퇴하고 싶어진 사람은 앱 안의 탈퇴 버튼에 닿을 수 없다.
-// 스토어에 계정 삭제 안내 URL 을 함께 등록해 두면 그때 갈 곳이 생긴다.
-// (구글 플레이는 이 URL 을 필수로 요구하고, 원스토어도 있으면 심사가 매끄럽다)
+router.get("/terms/marketing", (_req: Request, res: Response) => {
+  send(
+    res,
+    "마케팅 정보 수신 동의",
+    `
+<h2>제1조 (목적)</h2>
+<p>${SERVICE_NAME}가 제공하는 이벤트, 혜택, 신규 퀘스트 및 맞춤형 정보 안내를 위해 마케팅 정보를 발송합니다.</p>
+
+<h2>제2조 (수집 및 이용 항목)</h2>
+<ul>
+  <li>이메일 주소, 푸시 알림 토큰(FCM), 서비스 이용 기록</li>
+</ul>
+
+<h2>제3조 (보유 및 이용 기간)</h2>
+<p><strong>회원 탈퇴 시 또는 마케팅 동의 철회 시까지</strong> 보관 및 이용됩니다.</p>
+
+<h2>제4조 (동의 거부권)</h2>
+<p>마케팅 정보 수신 동의는 선택 사항이며, 동의하지 않아도 서비스의 기본 기능(퀘스트 수행 및 인증)을 동일하게 이용하실 수 있습니다.</p>
+`
+  );
+});
+
+// ---------------------------------------------------------------------------
+// 5. 계정 삭제 안내 (웹)
+// ---------------------------------------------------------------------------
 router.get("/account/delete", (_req: Request, res: Response) => {
   send(
     res,

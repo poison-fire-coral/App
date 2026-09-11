@@ -20,7 +20,7 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": ["c9:0a:2b:37:1d:ab:6a:03:0b:ce:d1:3c:78:4c:74:a5:d6:47:b6:6e"]
         }
       }
     }
